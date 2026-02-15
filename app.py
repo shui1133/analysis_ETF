@@ -195,19 +195,13 @@ def run_backtest():
                 'chart_data': chart_data,
                 'table_data': table_data,
                 'etf_weights': result['etf_weights'],
-<<<<<<< HEAD
-                'etf_details': result['results']['etf_details'],  # 新增ETF明細
-=======
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
+                'etf_details': result['results']['etf_details'],
                 'hist_stats': {
                     t: {
                         'cagr': round(v['cagr'] * 100, 2),
                         'avg_div_per_share': round(v['avg_div_per_share'], 4),
                         'avg_div_times': round(v['avg_div_times'], 1),
-<<<<<<< HEAD
                         'avg_price': round(v['avg_price'], 2),
-=======
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
                         'last_price': round(v['last_price'], 2)
                     }
                     for t, v in result['hist_stats'].items()
