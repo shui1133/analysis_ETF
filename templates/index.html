@@ -524,55 +524,57 @@
 
         const labels = chartData.labels || [];
 
-        // ── 1. 將後端的月份資料聚合成「每年末」一個點 ──────────────
-        // labels 格式可能是 "第0年","第1年","第3年第2月" 等，
-        // 也可能是 "2023-01","2024" 等。統一用正則取出年份數字。
-        function extractYear(lbl) {
-            if (!lbl) return null;
-            const m = String(lbl).match(/(\d{4})/);   // 先嘗試匹配四位年份
-            if (m) return parseInt(m[1]);
-            const m2 = String(lbl).match(/第\s*(\d+)\s*年/); // 再嘗試 "第N年"
-            if (m2) return parseInt(m2[1]);
-            const m3 = String(lbl).match(/(\d+)/);
-            return m3 ? parseInt(m3[1]) : null;
+        // ── 1. 解析年份：支援 "第N年"、"第N年第M月"、"2023-01"、"2023" ──
+        function extractYearNum(lbl) {
+            const s = String(lbl || '');
+            // "第N年..." → N
+            const a = s.match(/第\s*(\d+)\s*年/);
+            if (a) return parseInt(a[1]);
+            // "2023" or "2023-01" → 2023
+            const b = s.match(/^(\d{4})/);
+            if (b) return parseInt(b[1]);
+            // 純數字
+            const c = s.match(/^(\d+)$/);
+            if (c) return parseInt(c[1]);
+            return null;
         }
 
-        // 找出每個唯一年份的「最後一個」索引 → 作為年末資料點
-        const yearLastIndex = new Map(); // year → last index with that year
+        // 每個年份取「最後一個」索引（= 年末資料點）
+        const yearLastIndex = new Map();
         labels.forEach((lbl, i) => {
-            const yr = extractYear(lbl);
+            const yr = extractYearNum(lbl);
             if (yr !== null) yearLastIndex.set(yr, i);
         });
-        const sortedYears   = [...yearLastIndex.keys()].sort((a,b) => a - b);
+        const sortedYears   = [...yearLastIndex.keys()].sort((a, b) => a - b);
         const yearlyIndices = sortedYears.map(yr => yearLastIndex.get(yr));
 
         function pickYearly(arr) {
-            if (!arr || arr.length === 0) return [];
-            return yearlyIndices.map(i => (i < arr.length ? arr[i] : null));
+            if (!arr || arr.length === 0) return new Array(sortedYears.length).fill(null);
+            return yearlyIndices.map(i => (i != null && i < arr.length ? arr[i] : null));
         }
 
-        const yearlyLabels    = sortedYears.map(yr => {
-            // 如果原始 label 是 "第N年" 格式就沿用，否則用原始 label
-            const lbl = labels[yearLastIndex.get(yr)];
-            return lbl || String(yr);
+        // 生成精簡 X 軸標籤
+        const yearlyLabels = sortedYears.map(yr => {
+            const lbl = String(labels[yearLastIndex.get(yr)] || '');
+            const a = lbl.match(/第\s*(\d+)\s*年/);
+            if (a) return `第${a[1]}年`;
+            const b = lbl.match(/^(\d{4})/);
+            if (b) return b[1];
+            return String(yr);
         });
+
         const actualYearly    = pickYearly(chartData.actual_assets);
         const forecastYearly  = pickYearly(chartData.forecast_assets);
         const inflationYearly = pickYearly(chartData.inflation_threshold);
         const return8Yearly   = pickYearly(chartData.return_8_assets);
 
-        // ── 2. Y 軸範圍：只用資產線，排除通膨門檻 ──────────────────
-        const assetValues = [
-            ...actualYearly, ...forecastYearly, ...return8Yearly
-        ].filter(v => v !== null && v !== undefined && !isNaN(v));
-
+        // ── 2. Y 軸：只用資產線決定範圍，通膨門檻截斷顯示 ──────────
+        const assetValues = [...actualYearly, ...forecastYearly, ...return8Yearly]
+            .filter(v => v !== null && v !== undefined && !isNaN(v));
         const rawMax = assetValues.length > 0 ? Math.max(...assetValues) : 1000000;
-        const rawMin = assetValues.length > 0 ? Math.min(...assetValues) : 0;
         const yMax   = Math.ceil(rawMax * 1.15 / 500000) * 500000 || 1000000;
-        const yMin   = Math.min(0, rawMin);
         const step   = Math.ceil(yMax / 8 / 100000) * 100000;
 
-        // ── 3. 通膨門檻截斷，避免影響比例；tooltip 仍顯示原始值 ────
         const clampedInflation = inflationYearly.map(v =>
             (v !== null && v !== undefined && !isNaN(v)) ? Math.min(v, yMax) : null
         );
@@ -586,12 +588,13 @@
                         label: '歷史實際',
                         data: actualYearly,
                         borderColor: '#10b981',
-                        backgroundColor: 'rgba(16,185,129,0.08)',
+                        backgroundColor: 'transparent',
                         borderWidth: 2.5,
                         tension: 0.3,
-                        pointRadius: 3,
-                        pointHoverRadius: 5,
-                        fill: true,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#10b981',
+                        fill: false,
                         spanGaps: false
                     },
                     {
@@ -602,8 +605,9 @@
                         borderWidth: 2.5,
                         borderDash: [6, 3],
                         tension: 0.3,
-                        pointRadius: 3,
-                        pointHoverRadius: 5,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#3b82f6',
                         fill: false,
                         spanGaps: false
                     },
@@ -642,7 +646,6 @@
                         callbacks: {
                             label: function(context) {
                                 if (context.parsed.y === null) return null;
-                                // 通膨門檻顯示原始未截斷值
                                 if (context.datasetIndex === 2) {
                                     const orig = inflationYearly[context.dataIndex];
                                     if (orig == null) return null;
@@ -666,7 +669,7 @@
                         }
                     },
                     y: {
-                        min: yMin,
+                        min: 0,
                         max: yMax,
                         ticks: {
                             stepSize: step,
@@ -683,7 +686,7 @@
         });
     }
 
-    // ── 更新表格 ─────────────────────────────────────────────────
+        // ── 更新表格 ─────────────────────────────────────────────────
     function updateTable(tableData) {
         let html = '';
         for (const row of tableData) {
