@@ -523,6 +523,28 @@
         
         if (myChart) myChart.destroy();
 
+        // ── 計算 Y 軸範圍：以資產線為主，避免被通膨門檻拉爆比例 ──
+        const assetValues = [
+            ...(chartData.actual_assets   || []),
+            ...(chartData.forecast_assets || []),
+            ...(chartData.return_8_assets || [])
+        ].filter(v => v !== null && v !== undefined && !isNaN(v));
+
+        const rawMax  = assetValues.length > 0 ? Math.max(...assetValues) : 0;
+        const rawMin  = assetValues.length > 0 ? Math.min(...assetValues) : 0;
+
+        // 上方留 15% 空間，下方從 0 開始（資產不會負值）
+        const yMax = rawMax > 0 ? Math.ceil(rawMax * 1.15 / 1000000) * 1000000 : 1000000;
+        const yMin = Math.min(0, rawMin);
+
+        // 步距：讓刻度不超過 8 格
+        const step = Math.ceil(yMax / 8 / 100000) * 100000;
+
+        // 通膨門檻：若超出 yMax 就截斷，避免影響比例
+        const clampedInflation = (chartData.inflation_threshold || []).map(v =>
+            (v !== null && v !== undefined && !isNaN(v)) ? Math.min(v, yMax) : null
+        );
+
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -532,31 +554,34 @@
                         label: '歷史實際',
                         data: chartData.actual_assets,
                         borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.08)',
                         borderWidth: 3,
                         tension: 0.4,
                         pointRadius: 0,
+                        fill: true,
                         spanGaps: false
                     },
                     {
                         label: '推估預測',
                         data: chartData.forecast_assets,
                         borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.06)',
                         borderWidth: 3,
                         borderDash: [5, 5],
                         tension: 0.4,
                         pointRadius: 0,
+                        fill: true,
                         spanGaps: false
                     },
                     {
                         label: '通膨門檻',
-                        data: chartData.inflation_threshold,
+                        data: clampedInflation,
                         borderColor: '#ef4444',
                         backgroundColor: 'transparent',
                         borderWidth: 2,
                         borderDash: [3, 3],
-                        pointRadius: 0
+                        pointRadius: 0,
+                        spanGaps: true
                     },
                     {
                         label: '8%年化報酬',
@@ -565,7 +590,8 @@
                         backgroundColor: 'transparent',
                         borderWidth: 1,
                         borderDash: [2, 4],
-                        pointRadius: 0
+                        pointRadius: 0,
+                        spanGaps: false
                     }
                 ]
             },
@@ -579,19 +605,39 @@
                         callbacks: {
                             label: function(context) {
                                 if (context.parsed.y === null) return null;
-                                return context.dataset.label + ': ' + 
+                                // 通膨門檻 tooltip 顯示原始值（未截斷）
+                                if (context.datasetIndex === 2) {
+                                    const origVal = (chartData.inflation_threshold || [])[context.dataIndex];
+                                    if (origVal === null || origVal === undefined) return null;
+                                    return context.dataset.label + ': ' +
+                                           (origVal / 10000).toFixed(0) + ' 萬';
+                                }
+                                return context.dataset.label + ': ' +
                                        (context.parsed.y / 10000).toFixed(0) + ' 萬';
                             }
                         }
                     }
                 },
                 scales: {
+                    x: {
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: { color: '#64748b', font: { size: 11 } }
+                    },
                     y: {
+                        min: yMin,
+                        max: yMax,
                         ticks: {
+                            stepSize: step,
+                            color: '#64748b',
+                            font: { size: 11 },
                             callback: function(value) {
-                                return (value / 10000).toFixed(0) + '萬';
+                                if (value >= 10000) {
+                                    return (value / 10000).toFixed(0) + '萬';
+                                }
+                                return value;
                             }
-                        }
+                        },
+                        grid: { color: 'rgba(0,0,0,0.06)' }
                     }
                 }
             }
