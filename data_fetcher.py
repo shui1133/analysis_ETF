@@ -19,6 +19,7 @@ from urllib.parse import quote
 
 def get_data_dir():
     """
+<<<<<<< HEAD
     根據環境自動選擇資料目錄
     Render/Production: 使用 /tmp/data (暫存)
     Windows 開發: C:\Python\退休理財規劃分析\data
@@ -32,6 +33,16 @@ def get_data_dir():
     else:
         # 本地開發環境，使用相對路徑
         data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+=======
+    根據作業系統自動選擇資料目錄
+    Windows: C:\Python\退休理財規劃分析\data
+    Linux/Mac: /data
+    """
+    if platform.system() == 'Windows':
+        data_dir = r"C:\Python\退休理財規劃分析\data"
+    else:
+        data_dir = "/data"
+>>>>>>> 931bb19cc3de11cab7fde42b99600df6b130f315
     
     # 確保目錄存在
     os.makedirs(data_dir, exist_ok=True)

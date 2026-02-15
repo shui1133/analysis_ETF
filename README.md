@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 台灣 ETF 投資分析系統
 
 完整的 ETF 投資回測分析系統，支援多種投資組合策略。
@@ -172,3 +173,6 @@ python test_system.py
 ## 📞 問題回報
 
 如有問題或建議，歡迎開 Issue 討論。
+=======
+# analysis_ETF
+>>>>>>> 931bb19cc3de11cab7fde42b99600df6b130f315

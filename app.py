@@ -104,6 +104,7 @@ def run_backtest():
         return jsonify({
             'status': 'success',
             'result': {
+<<<<<<< HEAD
                 'portfolio_name':    result['portfolio_name'],
                 'finish_year':       result['finish_year'],
                 'finish_age':        result['finish_age'],
@@ -129,6 +130,17 @@ def run_backtest():
                     }
                     for t, v in result['hist_stats'].items()
                 }
+=======
+                'portfolio_name': result['portfolio_name'],
+                'finish_year': result['finish_year'],
+                'finish_age': result['finish_age'],
+                'final_assets': round(result['final_assets']),
+                'total_invested': round(result['total_invested']),
+                'total_dividend': round(result['total_dividend']),
+                'chart_data': chart_data,
+                'table_data': table_data,
+                'etf_weights': result['etf_weights']
+>>>>>>> 931bb19cc3de11cab7fde42b99600df6b130f315
             }
         })
         
@@ -153,7 +165,11 @@ def download_csv(portfolio_type):
         
         result = cached_results[portfolio_type]
         
+<<<<<<< HEAD
         # 建立DataFrame（含資料類型欄位）
+=======
+        # 建立DataFrame
+>>>>>>> 931bb19cc3de11cab7fde42b99600df6b130f315
         df = pd.DataFrame(result['results']['annual_summary'])
         
         # 轉換為CSV
@@ -177,6 +193,7 @@ def download_csv(portfolio_type):
 
 
 def prepare_chart_data(result):
+<<<<<<< HEAD
     """
     準備圖表資料：
       actual_assets       -> 歷史實際線（含交界點，之後為 null）
@@ -246,10 +263,25 @@ def prepare_chart_data(result):
         'actual_assets':       actual_series,
         'forecast_assets':     forecast_series,
         'return_8_assets':     return_8_series
+=======
+    """準備圖表資料"""
+    results = result['results']
+    
+    # 按年度採樣 (減少資料點)
+    dates = results['dates']
+    sample_indices = [i for i in range(0, len(dates), 12)]  # 每年採樣一次
+    
+    return {
+        'labels': [f"第{i//12}年" for i in sample_indices],
+        'inflation_threshold': [round(results['inflation_threshold'][i]) for i in sample_indices],
+        'predicted_assets': [round(results['predicted_assets'][i]) for i in sample_indices],
+        'actual_assets': [round(results['total_assets'][i]) for i in sample_indices]
+>>>>>>> 931bb19cc3de11cab7fde42b99600df6b130f315
     }
 
 
 def prepare_table_data(result):
+<<<<<<< HEAD
     """準備表格資料（含資料類型欄位）"""
     table_data = []
     for row in result['results']['annual_summary']:
@@ -264,10 +296,28 @@ def prepare_table_data(result):
             'year_return':        f"{year_return_val:,}",
             'year_return_raw':    year_return_val            # 給前端判斷正負色
         })
+=======
+    """準備表格資料"""
+    annual_summary = result['results']['annual_summary']
+    
+    # 轉換為前端格式
+    table_data = []
+    for row in annual_summary:
+        table_data.append({
+            'year': row['年份'],
+            'year_invested': f"{row['年度投入']:,}",
+            'year_dividend': f"{row['年度股利']:,}",
+            'year_end_assets': f"{row['年末資產']:,}",
+            'inflation_threshold': f"{row['通膨門檻']:,}",
+            'year_return': f"{row['年度報酬']:,}"
+        })
+    
+>>>>>>> 931bb19cc3de11cab7fde42b99600df6b130f315
     return table_data
 
 
 if __name__ == '__main__':
+<<<<<<< HEAD
     # 從環境變數取得 PORT，Render 會自動設定
     port = int(os.environ.get('PORT', 5000))
     
@@ -281,3 +331,10 @@ if __name__ == '__main__':
     host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
     
     app.run(debug=False, host=host, port=port)
+=======
+    print("="*60)
+    print("台灣ETF投資分析系統啟動")
+    print("請在瀏覽器開啟: http://127.0.0.1:5000")
+    print("="*60)
+    app.run(debug=True, host='0.0.0.0', port=5000)
+>>>>>>> 931bb19cc3de11cab7fde42b99600df6b130f315
