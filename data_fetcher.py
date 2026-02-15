@@ -135,10 +135,42 @@ class ETFDataFetcher:
             from io import StringIO
             price_df = pd.read_csv(StringIO(price_response.text))
             
+            print(f"  股價檔案欄位: {list(price_df.columns)}")
+            
+            # 欄位名稱標準化（支援多種可能的欄位名稱）
+            # 將常見的欄位名稱統一為標準名稱
+            column_mapping = {}
+            
+            # 日期欄位
+            for col in price_df.columns:
+                col_lower = col.lower().strip()
+                if col_lower in ['date', '日期', 'datetime', '時間']:
+                    column_mapping[col] = '日期'
+                    break
+            
+            # 收盤價欄位
+            for col in price_df.columns:
+                col_lower = col.lower().strip()
+                if col_lower in ['close', '收盤價', 'closing', 'price']:
+                    column_mapping[col] = '收盤價'
+                    break
+            
+            if column_mapping:
+                price_df = price_df.rename(columns=column_mapping)
+            
             # 檢查必要欄位
             if '日期' not in price_df.columns or '收盤價' not in price_df.columns:
-                print(f"  股價檔案欄位不符（需要：日期、收盤價）")
-                return None
+                print(f"  ⚠️ 股價檔案欄位不符")
+                print(f"     實際欄位: {list(price_df.columns)}")
+                print(f"     需要欄位: ['日期', '收盤價']")
+                
+                # 如果欄位數量正確，嘗試自動修正
+                if len(price_df.columns) >= 2:
+                    print(f"     嘗試使用前兩個欄位作為 日期 和 收盤價")
+                    new_columns = ['日期', '收盤價'] + list(price_df.columns[2:])
+                    price_df.columns = new_columns
+                else:
+                    return None
             
             # 轉換為標準格式
             price_data = []
@@ -163,6 +195,28 @@ class ETFDataFetcher:
                 
                 if div_response.status_code == 200:
                     div_df = pd.read_csv(StringIO(div_response.text))
+                    
+                    print(f"  配息檔案欄位: {list(div_df.columns)}")
+                    
+                    # 欄位名稱標準化
+                    column_mapping = {}
+                    
+                    # 除息日欄位
+                    for col in div_df.columns:
+                        col_lower = col.lower().strip()
+                        if col_lower in ['date', '除息日', 'datetime', '日期', 'ex-dividend date']:
+                            column_mapping[col] = '除息日'
+                            break
+                    
+                    # 股利欄位
+                    for col in div_df.columns:
+                        col_lower = col.lower().strip()
+                        if col_lower in ['dividend', '股利', 'div', 'amount', '金額']:
+                            column_mapping[col] = '股利'
+                            break
+                    
+                    if column_mapping:
+                        div_df = div_df.rename(columns=column_mapping)
                     
                     # 檢查必要欄位
                     if '除息日' in div_df.columns and '股利' in div_df.columns:
@@ -343,23 +397,76 @@ class ETFDataFetcher:
             # ── 股價 CSV ─────────────────────────────────────────────
             if data.get('price_data'):
                 price_df = pd.DataFrame(data['price_data'])
-                # date → 日期、close → 收盤價
-                price_df = price_df.rename(columns={'date': '日期', 'close': '收盤價'})
-                price_df = price_df[[c for c in ['日期', '收盤價'] if c in price_df.columns]]
+                
+                # 欄位名稱標準化：支援多種可能的欄位名稱
+                # date/日期 → 日期
+                if 'date' in price_df.columns:
+                    price_df = price_df.rename(columns={'date': '日期'})
+                elif 'Date' in price_df.columns:
+                    price_df = price_df.rename(columns={'Date': '日期'})
+                
+                # close/收盤價/Close → 收盤價
+                if 'close' in price_df.columns:
+                    price_df = price_df.rename(columns={'close': '收盤價'})
+                elif 'Close' in price_df.columns:
+                    price_df = price_df.rename(columns={'Close': '收盤價'})
+                
+                # 確保必要欄位存在
+                if '日期' not in price_df.columns or '收盤價' not in price_df.columns:
+                    print(f"  ⚠️ 警告：{ticker} 股價資料欄位異常")
+                    print(f"     實際欄位: {list(price_df.columns)}")
+                    print(f"     需要欄位: ['日期', '收盤價']")
+                    # 嘗試使用第一個和第二個欄位
+                    if len(price_df.columns) >= 2:
+                        price_df.columns = ['日期', '收盤價'] + list(price_df.columns[2:])
+                        print(f"     已自動修正欄位名稱")
+                    else:
+                        return
+                
+                # 只保留必要欄位
+                price_df = price_df[['日期', '收盤價']]
+                
+                # 儲存檔案
                 price_file = os.path.join(self.output_dir, f"{ticker}_price.csv")
                 price_df.to_csv(price_file, index=False, encoding='utf-8-sig')
-                print(f"  已儲存股價資料: {price_file}")
+                print(f"  已儲存股價資料: {price_file} ({len(price_df)} 筆)")
 
             # ── 配息 CSV ─────────────────────────────────────────────
-            # 檔名含 _配息 才能被 backtest.py 的 glob(*_配息.csv) 找到
             if data.get('dividend_data'):
                 div_df = pd.DataFrame(data['dividend_data'])
-                # date → 除息日、dividend → 股利
-                div_df = div_df.rename(columns={'date': '除息日', 'dividend': '股利'})
-                div_df = div_df[[c for c in ['除息日', '股利'] if c in div_df.columns]]
+                
+                # 欄位名稱標準化
+                # date/除息日 → 除息日
+                if 'date' in div_df.columns:
+                    div_df = div_df.rename(columns={'date': '除息日'})
+                elif 'Date' in div_df.columns:
+                    div_df = div_df.rename(columns={'Date': '除息日'})
+                
+                # dividend/股利/Dividend → 股利
+                if 'dividend' in div_df.columns:
+                    div_df = div_df.rename(columns={'dividend': '股利'})
+                elif 'Dividend' in div_df.columns:
+                    div_df = div_df.rename(columns={'Dividend': '股利'})
+                
+                # 確保必要欄位存在
+                if '除息日' not in div_df.columns or '股利' not in div_df.columns:
+                    print(f"  ⚠️ 警告：{ticker} 配息資料欄位異常")
+                    print(f"     實際欄位: {list(div_df.columns)}")
+                    print(f"     需要欄位: ['除息日', '股利']")
+                    # 嘗試使用第一個和第二個欄位
+                    if len(div_df.columns) >= 2:
+                        div_df.columns = ['除息日', '股利'] + list(div_df.columns[2:])
+                        print(f"     已自動修正欄位名稱")
+                    else:
+                        return
+                
+                # 只保留必要欄位
+                div_df = div_df[['除息日', '股利']]
+                
+                # 儲存檔案
                 div_file = os.path.join(self.output_dir, f"{ticker}_hist_配息.csv")
                 div_df.to_csv(div_file, index=False, encoding='utf-8-sig')
-                print(f"  已儲存配息資料: {div_file}")
+                print(f"  已儲存配息資料: {div_file} ({len(div_df)} 筆)")
 
             # ── 完整 JSON（備用）────────────────────────────────────
             json_file = os.path.join(self.output_dir, f"{ticker}_data.json")
@@ -367,7 +474,9 @@ class ETFDataFetcher:
                 json.dump(data, f, ensure_ascii=False, indent=2)
 
         except Exception as e:
-            print(f"儲存資料錯誤: {str(e)}")
+            print(f"  ❌ 儲存 {ticker} 資料錯誤: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def fetch_all_etfs(self, etf_list):
         """批量爬取多支ETF"""
