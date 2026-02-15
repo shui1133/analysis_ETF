@@ -22,6 +22,10 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # 全域變數存放回測結果
 cached_results = {}
 
+# ✅ 新增：記憶體快取，存放爬取到的 ETF DataFrame
+# 格式：{ 'etf_code': pd.DataFrame, ... }
+etf_memory_cache = {}
+
 
 @app.route('/')
 def index():
@@ -49,6 +53,11 @@ def fetch_data():
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
         results = fetcher.fetch_all_etfs(etf_list)
         
+        # ✅ 將爬取結果同時存入記憶體快取
+        for etf_code, df in results.items():
+            if df is not None:
+                etf_memory_cache[etf_code] = df
+
         success_count = sum(1 for r in results.values() if r is not None)
         
         return jsonify({
@@ -75,6 +84,15 @@ def run_backtest():
         monthly_investment = int(data.get('monthly_investment', 3)) * 10000
         current_age = int(data.get('current_age', 30))
         target_monthly_spend = int(data.get('target_monthly_spend', 4)) * 10000
+
+        # ✅ 回測前，先將記憶體快取的資料寫回磁碟（避免 Render 重啟後資料不見）
+        if etf_memory_cache:
+            for etf_code, df in etf_memory_cache.items():
+                try:
+                    file_path = os.path.join(DATA_DIR, f"{etf_code}.csv")
+                    df.to_csv(file_path, index=False, encoding='utf-8-sig')
+                except Exception as write_err:
+                    print(f"⚠️ 寫入 {etf_code} 失敗: {write_err}")
         
         # 執行回測
         backtester = PortfolioBacktest(data_dir=DATA_DIR)
@@ -89,7 +107,7 @@ def run_backtest():
         if result is None:
             return jsonify({
                 'status': 'error',
-                'message': '回測失敗，請先爬取資料'
+                'message': '回測失敗，請先點擊「爬取資料」後再執行回測'
             }), 400
         
         # 快取結果
