@@ -41,20 +41,43 @@
         .legend-dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
         
         /* ETF明細表動畫 */
-        #etfDetailsSection, #etfStatsSection {
+        #etfDetailsSection, #etfStatsSection, #cashflowSection {
             transition: all 0.3s ease-in-out;
             overflow: hidden;
         }
-        #etfDetailsSection.collapsed, #etfStatsSection.collapsed {
+        #etfDetailsSection.collapsed, #etfStatsSection.collapsed, #cashflowSection.collapsed {
             max-height: 0;
             padding: 0;
             margin: 0;
             border: none;
             opacity: 0;
         }
-        #etfDetailsSection.expanded, #etfStatsSection.expanded {
+        #etfDetailsSection.expanded, #etfStatsSection.expanded, #cashflowSection.expanded {
             max-height: 5000px;
             opacity: 1;
+        }
+        
+        /* 現金流分析特殊樣式 */
+        .etf-selector-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: bold;
+            border: 2px solid #e2e8f0;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .etf-selector-btn.active {
+            background: linear-gradient(135deg, #9333ea 0%, #ec4899 100%);
+            color: white;
+            border-color: #9333ea;
+        }
+        .etf-selector-btn.inactive {
+            background: white;
+            color: #64748b;
+        }
+        .etf-selector-btn.inactive:hover {
+            background: #f8fafc;
+            border-color: #9333ea;
         }
     </style>
 </head>
@@ -145,6 +168,17 @@
                         class="w-full bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
                     <i class="fa-solid fa-file-csv mr-2"></i>
                     下載CSV報表
+                </button>
+            </div>
+
+            <!-- 現金流分析按鈕 -->
+            <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border-2 border-purple-200">
+                <button id="btnCashflowAnalysis" 
+                        onclick="toggleCashflowAnalysis()"
+                        style="display:none;"
+                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
+                    <i class="fa-solid fa-money-bill-trend-up mr-2"></i>
+                    完整現金流分析
                 </button>
             </div>
         </div>
@@ -345,6 +379,77 @@
                         </thead>
                         <tbody id="etfStatsBody"></tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- 完整現金流分析報表 -->
+            <div id="cashflowSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed" style="display:none;">
+                <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
+                    <i class="fa-solid fa-money-bill-trend-up mr-2 text-purple-600"></i>
+                    <span>完整現金流分析報表</span>
+                </h2>
+                
+                <!-- ETF選擇器 -->
+                <div class="mb-4">
+                    <label class="block text-sm font-bold text-slate-700 mb-2">選擇ETF查看詳細記錄：</label>
+                    <div class="flex gap-2" id="cashflowETFSelector"></div>
+                </div>
+
+                <!-- 現金流分析表格 -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gradient-to-r from-purple-100 to-pink-100 text-slate-700">
+                            <tr>
+                                <th class="p-3 text-left font-bold">年份</th>
+                                <th class="p-3 text-center font-bold">類型</th>
+                                <th class="p-3 text-right font-bold">上期剩餘現金</th>
+                                <th class="p-3 text-right font-bold">年度投入</th>
+                                <th class="p-3 text-right font-bold">年度股利</th>
+                                <th class="p-3 text-right font-bold">當年購買股數</th>
+                                <th class="p-3 text-right font-bold">累計持股數</th>
+                                <th class="p-3 text-right font-bold">年末股價</th>
+                                <th class="p-3 text-right font-bold">年末市值</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cashflowTableBody">
+                            <tr>
+                                <td colspan="9" class="p-8 text-center text-slate-400">
+                                    請先執行回測分析
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 統計摘要 -->
+                <div class="mt-6 pt-6 border-t border-slate-200">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-blue-50 p-4 rounded-xl">
+                            <div class="text-xs text-blue-600 font-bold mb-1">累計投入</div>
+                            <div class="text-xl font-black text-blue-700" id="cfTotalInvested">--</div>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-xl">
+                            <div class="text-xs text-green-600 font-bold mb-1">累計股利</div>
+                            <div class="text-xl font-black text-green-700" id="cfTotalDividend">--</div>
+                        </div>
+                        <div class="bg-purple-50 p-4 rounded-xl">
+                            <div class="text-xs text-purple-600 font-bold mb-1">最終持股</div>
+                            <div class="text-xl font-black text-purple-700" id="cfFinalShares">--</div>
+                        </div>
+                        <div class="bg-pink-50 p-4 rounded-xl">
+                            <div class="text-xs text-pink-600 font-bold mb-1">最終市值</div>
+                            <div class="text-xl font-black text-pink-700" id="cfFinalValue">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 下載按鈕 -->
+                <div class="mt-4 text-center">
+                    <button onclick="downloadCashflowCSV()"
+                            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
+                        <i class="fa-solid fa-download mr-2"></i>
+                        下載現金流CSV
+                    </button>
                 </div>
             </div>
 
@@ -573,6 +678,9 @@
             renderETFDetails(result.etf_details);
             renderETFStats(result.etf_details);
         }
+
+        // 更新現金流分析
+        updateCashflowAnalysis();
     }
 
     // ── 更新圖表 ─────────────────────────────────────────────────
@@ -931,6 +1039,169 @@
     function downloadCSV() {
         if (!backtestResult) { alert('請先執行回測分析'); return; }
         window.location.href = '/api/download_csv/' + currentStrategy;
+    }
+
+    // ── 現金流分析功能 ──────────────────────────────────────────────
+    let currentCashflowETF = null;
+
+    // 切換現金流分析顯示
+    function toggleCashflowAnalysis() {
+        const section = document.getElementById('cashflowSection');
+        
+        if (section.style.display === 'none') {
+            // 顯示
+            section.style.display = 'block';
+            section.classList.remove('collapsed');
+            section.classList.add('expanded');
+            
+            // 平滑捲動到section位置
+            setTimeout(() => {
+                section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        } else {
+            // 隱藏
+            section.classList.remove('expanded');
+            section.classList.add('collapsed');
+            setTimeout(() => {
+                section.style.display = 'none';
+            }, 300);
+        }
+    }
+
+    // 更新現金流分析報表
+    function updateCashflowAnalysis() {
+        if (!backtestResult || !backtestResult.results || !backtestResult.results.etf_tracking) {
+            console.log('沒有現金流追蹤資料');
+            return;
+        }
+
+        const tracking = backtestResult.results.etf_tracking;
+        const config = portfolioConfigs[currentStrategy];
+        
+        // 建立ETF選擇器
+        let selectorHTML = '';
+        for (const ticker of Object.keys(config.etfs)) {
+            const isActive = currentCashflowETF === ticker;
+            selectorHTML += `
+                <button class="etf-selector-btn ${isActive ? 'active' : 'inactive'}"
+                        onclick="selectCashflowETF('${ticker}')">
+                    ${ticker}
+                </button>
+            `;
+        }
+        document.getElementById('cashflowETFSelector').innerHTML = selectorHTML;
+
+        // 如果還沒選擇ETF，預設選擇第一個
+        if (!currentCashflowETF) {
+            currentCashflowETF = Object.keys(config.etfs)[0];
+            updateCashflowAnalysis(); // 重新渲染
+            return;
+        }
+
+        // 顯示選中ETF的數據
+        const etfData = tracking[currentCashflowETF] || [];
+        if (etfData.length === 0) {
+            document.getElementById('cashflowTableBody').innerHTML = `
+                <tr>
+                    <td colspan="9" class="p-8 text-center text-slate-400">
+                        此ETF沒有詳細追蹤資料
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        // 建立表格內容
+        let html = '';
+        let totalInvested = 0;
+        let totalDividend = 0;
+
+        for (const row of etfData) {
+            const rowClass = row['資料類型'] === 'actual' ? 'row-actual' : 'row-forecast';
+            const badge = row['資料類型'] === 'actual' ? 'badge-actual' : 'badge-forecast';
+            const badgeText = row['資料類型'] === 'actual' ? '實際' : '推估';
+
+            totalInvested += row['年度投入'] || 0;
+            totalDividend += row['年度股利'] || 0;
+
+            html += `
+                <tr class="${rowClass}">
+                    <td class="p-3">${row['年份']}</td>
+                    <td class="p-3 text-center"><span class="${badge}">${badgeText}</span></td>
+                    <td class="p-3 text-right">${(row['上期剩餘現金'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${(row['年度投入'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right text-green-600 font-bold">${(row['年度股利'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right text-blue-600 font-bold">${(row['當年購買股數'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right font-bold">${(row['累計持股數'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${(row['年末股價'] || 0).toFixed(2)}</td>
+                    <td class="p-3 text-right font-black text-purple-600">${(row['年末市值'] || 0).toLocaleString()}</td>
+                </tr>
+            `;
+        }
+
+        document.getElementById('cashflowTableBody').innerHTML = html;
+
+        // 更新統計摘要
+        const lastRow = etfData[etfData.length - 1];
+        document.getElementById('cfTotalInvested').textContent = totalInvested.toLocaleString();
+        document.getElementById('cfTotalDividend').textContent = totalDividend.toLocaleString();
+        document.getElementById('cfFinalShares').textContent = (lastRow['累計持股數'] || 0).toLocaleString() + ' 股';
+        document.getElementById('cfFinalValue').textContent = (lastRow['年末市值'] || 0).toLocaleString() + ' 元';
+
+        // 顯示按鈕
+        document.getElementById('btnCashflowAnalysis').style.display = 'block';
+    }
+
+    // 選擇要查看的ETF
+    function selectCashflowETF(ticker) {
+        currentCashflowETF = ticker;
+        updateCashflowAnalysis();
+    }
+
+    // 下載現金流CSV
+    function downloadCashflowCSV() {
+        if (!backtestResult || !currentCashflowETF) {
+            alert('請先執行回測分析並選擇ETF');
+            return;
+        }
+
+        const tracking = backtestResult.results.etf_tracking;
+        const etfData = tracking[currentCashflowETF] || [];
+
+        if (etfData.length === 0) {
+            alert('此ETF沒有詳細追蹤資料');
+            return;
+        }
+
+        // 建立CSV內容
+        const headers = [
+            '年份', '資料類型', '上期剩餘現金', '年度投入', '年度股利',
+            '當年購買股數', '累計持股數', '年末股價', '年末市值'
+        ];
+        
+        let csv = '\ufeff' + headers.join(',') + '\n'; // 添加BOM以支援中文
+
+        for (const row of etfData) {
+            const line = [
+                row['年份'],
+                row['資料類型'],
+                row['上期剩餘現金'] || 0,
+                row['年度投入'] || 0,
+                row['年度股利'] || 0,
+                row['當年購買股數'] || 0,
+                row['累計持股數'] || 0,
+                row['年末股價'] || 0,
+                row['年末市值'] || 0
+            ];
+            csv += line.join(',') + '\n';
+        }
+
+        // 下載
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${currentCashflowETF}_現金流分析_${currentStrategy}.csv`;
+        link.click();
     }
 
     // 初始化
