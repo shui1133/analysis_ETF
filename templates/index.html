@@ -39,7 +39,6 @@
 
         /* 圖例說明 */
         .legend-dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
-<<<<<<< HEAD
         
         /* ETF明細表動畫 */
         #etfDetailsSection {
@@ -57,98 +56,6 @@
             max-height: 5000px;
             opacity: 1;
         }
-=======
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
-    </style>
-</head>
-<body class="bg-slate-50 p-4 md:p-8">
-<div class="max-w-7xl mx-auto bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100">
-
-    <!-- Header -->
-    <div class="header-bg p-8 text-white text-center">
-        <h1 class="text-3xl font-black italic tracking-tighter">
-            台灣ETF投資回測分析系統
-            <span class="text-blue-400 text-sm font-normal not-italic ml-2">v2.0</span>
-        </h1>
-        <p class="text-blue-100 mt-2 text-sm">真實歷史回測 ▸ 歷史統計推估 ▸ 通膨修正分析</p>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 p-8">
-
-        <!-- ═══ 左欄：輸入 ═══ -->
-        <div class="space-y-6">
-            <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                <h2 class="font-bold mb-4 text-slate-700 flex items-center">
-                    <i class="fa-solid fa-calculator mr-2 text-blue-600"></i>輸入規劃參數
-                </h2>
-                <div class="space-y-4 text-sm">
-                    <div>
-                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">目前年齡</label>
-                        <input type="number" id="age" value="30"
-                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">啟動資金 (萬元)</label>
-                        <input type="number" id="start" value="100"
-                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">每月定期定額 (萬元)</label>
-                        <input type="number" id="monthly" value="3"
-                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">目標退休月領 (現值/萬元)</label>
-                        <input type="number" id="spend" value="4"
-                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                    </div>
-                </div>
-
-                <div class="mt-6">
-                    <label class="block text-slate-500 font-bold mb-3 text-xs tracking-widest uppercase">退休後理財投資策略</label>
-                    <div class="grid grid-cols-1 gap-3">
-                        <button id="btn-conservative" onclick="changeStrategy('conservative')"
-                                class="strategy-btn active-btn">
-                            <div class="text-xs opacity-70">保守型 4%</div>
-                            <div class="text-sm">00878+00713+00679B</div>
-                        </button>
-                        <button id="btn-balanced" onclick="changeStrategy('balanced')"
-                                class="strategy-btn inactive-btn">
-                            <div class="text-xs opacity-70">穩健型 6%</div>
-                            <div class="text-sm">00919+00929+0056</div>
-                        </button>
-                        <button id="btn-aggressive" onclick="changeStrategy('aggressive')"
-                                class="strategy-btn inactive-btn">
-                            <div class="text-xs opacity-70">積極型 8%</div>
-                            <div class="text-sm">006208+00929+00915</div>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="mt-6 space-y-3">
-                    <button onclick="fetchData()"
-                            class="w-full bg-indigo-600 text-white p-3 rounded-lg font-bold hover:bg-indigo-700 transition">
-                        <i class="fa-solid fa-download mr-2"></i>爬取股價資料
-                        <span class="loading ml-2"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                    </button>
-                    <button onclick="runBacktest()"
-                            class="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition">
-                        <i class="fa-solid fa-chart-line mr-2"></i>執行回測＋推估
-                        <span class="loading ml-2"><i class="fa-solid fa-spinner fa-spin"></i></span>
-                    </button>
-                    <button onclick="downloadCSV()"
-                            class="w-full bg-emerald-600 text-white p-3 rounded-lg font-bold hover:bg-emerald-700 transition">
-                        <i class="fa-solid fa-file-csv mr-2"></i>下載CSV報表
-                    </button>
-<<<<<<< HEAD
-                    <button id="btnToggleETFDetails" onclick="toggleETFDetails()" 
-                            class="w-full bg-purple-600 text-white p-3 rounded-lg font-bold hover:bg-purple-700 transition"
-                            style="display:none;">
-                        <i class="fa-solid fa-chart-pie mr-2"></i>
-                        <span id="btnETFDetailsText">顯示ETF持倉明細</span>
-                    </button>
-=======
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
                 </div>
             </div>
 
@@ -275,7 +182,6 @@
                 </div>
             </div>
 
-<<<<<<< HEAD
             <!-- ETF持倉明細表 -->
             <div id="etfDetailsSection" class="bg-white p-6 rounded-3xl border border-slate-200 collapsed">
                 <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
@@ -309,181 +215,6 @@
                 </div>
             </div>
 
-=======
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
-        </div><!-- /右欄 -->
-    </div>
-</div><!-- /container -->
-
-<script>
-    let fireChart       = null;
-    let currentStrategy = 'conservative';
-    let backtestResult  = null;
-
-    const portfolioInfo = {
-        conservative: {
-            title: "保守型投資者",
-            etfs: {
-                "00878": {name:"國泰永續高股息",  weight:0.40},
-                "00713": {name:"元大台灣高息低波", weight:0.30},
-                "00679B":{name:"元大美債20年",    weight:0.30}
-            }
-        },
-        balanced: {
-            title: "穩健型投資者",
-            etfs: {
-                "00919": {name:"群益台灣精選高息", weight:0.35},
-                "00929": {name:"復華台灣科技優息", weight:0.40},
-                "0056":  {name:"元大高股息",       weight:0.25}
-            }
-        },
-        aggressive: {
-            title: "積極型投資者",
-            etfs: {
-                "006208":{name:"富邦台50",          weight:0.30},
-                "00929": {name:"復華台灣科技優息",  weight:0.50},
-                "00915": {name:"凱基優選高股息30",  weight:0.20}
-            }
-        }
-    };
-
-    // ── 策略切換 ─────────────────────────────────────────────────
-    function changeStrategy(strategy) {
-        currentStrategy = strategy;
-        document.querySelectorAll('.strategy-btn').forEach(btn => {
-            btn.classList.remove('active-btn');
-            btn.classList.add('inactive-btn');
-        });
-        document.getElementById('btn-' + strategy).classList.add('active-btn');
-        document.getElementById('strategyTitle').innerText = portfolioInfo[strategy].title;
-        updateETFCards();
-    }
-
-    function updateETFCards() {
-        const startWan   = parseFloat(document.getElementById('start').value)   || 0;
-        const monthlyWan = parseFloat(document.getElementById('monthly').value) || 0;
-        const info       = portfolioInfo[currentStrategy];
-        let html = '';
-        for (const [ticker, data] of Object.entries(info.etfs)) {
-            const initAlloc    = (startWan   * data.weight).toFixed(1);
-            const monthlyAlloc = (monthlyWan * data.weight).toFixed(2);
-            html += `
-            <div class="etf-card p-6 rounded-3xl text-center hover:bg-white/10 transition shadow-lg">
-                <div class="text-blue-400 font-bold text-[10px] mb-2 uppercase tracking-widest italic opacity-70">
-                    權重 ${(data.weight*100)}%
-                </div>
-                <div class="font-black text-2xl mb-1 tracking-tighter">${ticker}</div>
-                <div class="text-xs text-slate-400 mb-3">${data.name}</div>
-                <div class="space-y-2">
-                    <div class="amount-tag-blue py-2 px-3 rounded-xl text-xs font-bold">
-                        首筆投入: ${initAlloc} 萬
-                    </div>
-                    <div class="amount-tag-green py-2 px-3 rounded-xl text-xs font-bold">
-                        建議月扣: ${monthlyAlloc} 萬
-                    </div>
-                </div>
-            </div>`;
-        }
-        document.getElementById('etfBoxes').innerHTML = html;
-    }
-
-    // ── 爬取資料 ─────────────────────────────────────────────────
-    async function fetchData() {
-        const btn = event.target;
-        const loading = btn.querySelector('.loading');
-        loading.classList.add('active');
-        btn.disabled = true;
-        try {
-            const res  = await fetch('/api/fetch_data', {
-                method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({portfolio_type: currentStrategy})
-            });
-            const data = await res.json();
-            alert(data.status === 'success' ? '✓ ' + data.message : '❌ ' + data.message);
-        } catch(e) {
-            alert('錯誤: ' + e.message);
-        } finally {
-            loading.classList.remove('active');
-            btn.disabled = false;
-        }
-    }
-
-    // ── 執行回測 ─────────────────────────────────────────────────
-    async function runBacktest() {
-        const btn = event.target;
-        const loading = btn.querySelector('.loading');
-        loading.classList.add('active');
-        btn.disabled = true;
-        try {
-            const res  = await fetch('/api/backtest', {
-                method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({
-                    portfolio_type:    currentStrategy,
-                    initial_capital:   parseInt(document.getElementById('start').value),
-                    monthly_investment:parseInt(document.getElementById('monthly').value),
-                    current_age:       parseInt(document.getElementById('age').value),
-                    target_monthly_spend: parseInt(document.getElementById('spend').value)
-                })
-            });
-            const data = await res.json();
-            if (data.status === 'success') {
-                backtestResult = data.result;
-                displayResults(data.result);
-                alert('✓ 回測＋推估完成！');
-            } else {
-                alert('❌ ' + data.message);
-            }
-        } catch(e) {
-            alert('錯誤: ' + e.message);
-        } finally {
-            loading.classList.remove('active');
-            btn.disabled = false;
-        }
-    }
-
-    // ── 顯示結果 ─────────────────────────────────────────────────
-    function displayResults(r) {
-        // 摘要卡
-        document.getElementById('resFinalAssets').innerText =
-            (r.forecast_assets / 10000).toFixed(0) + ' 萬';
-        document.getElementById('resYears').innerText =
-            r.finish_year !== null ? r.finish_year + ' 年' : '未達成';
-        document.getElementById('resAge').innerText =
-            r.finish_age !== null ? r.finish_age + ' 歲' : '--';
-
-        // 累計投入標籤
-        document.getElementById('totalInvested').innerText =
-            `累計投入（含推估）: ${(r.total_invested / 10000).toFixed(0)} 萬`;
-
-        // 歷史實際統計
-        const actualReturn     = r.final_assets - r.actual_invested;
-        const actualReturnRate = r.actual_invested > 0
-            ? ((actualReturn / r.actual_invested) * 100).toFixed(1) : '0.0';
-        document.getElementById('actualStats').innerHTML = `
-            <div>累計投入: <span class="text-blue-300 font-bold">${r.actual_invested.toLocaleString()} 元</span></div>
-            <div>累計股利: <span class="text-green-300 font-bold">${r.actual_dividend.toLocaleString()} 元</span></div>
-            <div>投資報酬: <span class="text-yellow-300 font-bold">
-                ${actualReturn.toLocaleString()} 元 (${actualReturnRate}%)
-            </span></div>`;
-
-        // 推估統計
-        document.getElementById('forecastStats').innerHTML = `
-            <div>推估末期資產: <span class="text-indigo-300 font-bold">${r.forecast_assets.toLocaleString()} 元</span></div>
-            <div>推估累計投入: <span class="text-blue-300 font-bold">${r.total_invested.toLocaleString()} 元</span></div>
-            <div>推估累計股利: <span class="text-green-300 font-bold">${r.total_dividend.toLocaleString()} 元</span></div>`;
-
-        // 歷史統計卡
-        renderHistStats(r.hist_stats);
-
-        // 圖表 & 表格
-        renderChart(r.chart_data);
-        renderTable(r.table_data);
-<<<<<<< HEAD
-        renderETFDetails(r.etf_details);  // 新增：顯示ETF明細
-=======
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
     }
 
     // ── 歷史統計卡 ───────────────────────────────────────────────
@@ -643,7 +374,6 @@
         document.getElementById('tableBody').innerHTML = html;
     }
 
-<<<<<<< HEAD
     // ── ETF持倉明細表 ─────────────────────────────────────────────
     function renderETFDetails(etfDetails) {
         // 渲染表格內容但不自動展開
@@ -735,8 +465,6 @@
         }
     }
 
-=======
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
     // ── 下載CSV ──────────────────────────────────────────────────
     function downloadCSV() {
         if (!backtestResult) { alert('請先執行回測分析'); return; }
