@@ -27,9 +27,16 @@ wheels/
 instance/
 .webassets-cache
 
+<<<<<<< HEAD
 # 資料檔案
 data/
 *.csv
+=======
+# Data files
+data/
+*.csv
+*.json
+>>>>>>> 51e8d2486879622f739f89269375720d35f76d04
 
 # IDE
 .vscode/
@@ -42,5 +49,14 @@ data/
 .DS_Store
 Thumbs.db
 
+<<<<<<< HEAD
 # 環境變數
 .env
+=======
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+>>>>>>> 51e8d2486879622f739f89269375720d35f76d04

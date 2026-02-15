@@ -39,6 +39,7 @@
 
         /* 圖例說明 */
         .legend-dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
+<<<<<<< HEAD
         
         /* ETF明細表動畫 */
         #etfDetailsSection {
@@ -56,6 +57,8 @@
             max-height: 5000px;
             opacity: 1;
         }
+=======
+>>>>>>> 51e8d2486879622f739f89269375720d35f76d04
     </style>
 </head>
 <body class="bg-slate-50 p-4 md:p-8">
@@ -137,12 +140,15 @@
                             class="w-full bg-emerald-600 text-white p-3 rounded-lg font-bold hover:bg-emerald-700 transition">
                         <i class="fa-solid fa-file-csv mr-2"></i>下載CSV報表
                     </button>
+<<<<<<< HEAD
                     <button id="btnToggleETFDetails" onclick="toggleETFDetails()" 
                             class="w-full bg-purple-600 text-white p-3 rounded-lg font-bold hover:bg-purple-700 transition"
                             style="display:none;">
                         <i class="fa-solid fa-chart-pie mr-2"></i>
                         <span id="btnETFDetailsText">顯示ETF持倉明細</span>
                     </button>
+=======
+>>>>>>> 51e8d2486879622f739f89269375720d35f76d04
                 </div>
             </div>
 
@@ -269,6 +275,7 @@
                 </div>
             </div>
 
+<<<<<<< HEAD
             <!-- ETF持倉明細表 -->
             <div id="etfDetailsSection" class="bg-white p-6 rounded-3xl border border-slate-200 collapsed">
                 <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
@@ -302,6 +309,8 @@
                 </div>
             </div>
 
+=======
+>>>>>>> 51e8d2486879622f739f89269375720d35f76d04
         </div><!-- /右欄 -->
     </div>
 </div><!-- /container -->
@@ -471,7 +480,10 @@
         // 圖表 & 表格
         renderChart(r.chart_data);
         renderTable(r.table_data);
+<<<<<<< HEAD
         renderETFDetails(r.etf_details);  // 新增：顯示ETF明細
+=======
+>>>>>>> 51e8d2486879622f739f89269375720d35f76d04
     }
 
     // ── 歷史統計卡 ───────────────────────────────────────────────
@@ -631,6 +643,7 @@
         document.getElementById('tableBody').innerHTML = html;
     }
 
+<<<<<<< HEAD
     // ── ETF持倉明細表 ─────────────────────────────────────────────
     function renderETFDetails(etfDetails) {
         // 渲染表格內容但不自動展開
@@ -722,6 +735,8 @@
         }
     }
 
+=======
+>>>>>>> 51e8d2486879622f739f89269375720d35f76d04
     // ── 下載CSV ──────────────────────────────────────────────────
     function downloadCSV() {
         if (!backtestResult) { alert('請先執行回測分析'); return; }
