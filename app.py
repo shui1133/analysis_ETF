@@ -77,6 +77,7 @@ def restore_cache_to_disk():
     """
     ✅ 從記憶體快取還原資料到磁碟
     用於 Render 休眠重啟後 /tmp 被清空的情況
+    欄位名稱與檔名必須符合 backtest.py 的格式
     """
     if not etf_memory_cache:
         return 0
@@ -84,16 +85,18 @@ def restore_cache_to_disk():
     restored = 0
     for etf_code, etf_data in etf_memory_cache.items():
         try:
-            # 還原股價 CSV
+            # 還原股價 CSV：欄位 日期、收盤價
             if etf_data.get('price_data'):
                 price_df = pd.DataFrame(etf_data['price_data'])
+                price_df = price_df.rename(columns={'date': '日期', 'close': '收盤價'})
                 price_path = os.path.join(DATA_DIR, f"{etf_code}_price.csv")
                 price_df.to_csv(price_path, index=False, encoding='utf-8-sig')
 
-            # 還原配息 CSV
+            # 還原配息 CSV：欄位 除息日、股利，檔名含 _配息
             if etf_data.get('dividend_data'):
                 div_df = pd.DataFrame(etf_data['dividend_data'])
-                div_path = os.path.join(DATA_DIR, f"{etf_code}_dividend.csv")
+                div_df = div_df.rename(columns={'date': '除息日', 'dividend': '股利'})
+                div_path = os.path.join(DATA_DIR, f"{etf_code}_hist_配息.csv")
                 div_df.to_csv(div_path, index=False, encoding='utf-8-sig')
 
             # 還原 JSON
