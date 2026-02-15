@@ -128,7 +128,7 @@
                 <button onclick="fetchData()"
                         class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
                     <i class="fa-solid fa-download mr-2"></i>
-                    爬取股價資料
+                    取得股價資料
                     <span class="loading ml-2">
                         <i class="fa-solid fa-spinner fa-spin"></i>
                     </span>
@@ -218,7 +218,8 @@
             <div class="bg-white p-6 rounded-2xl border border-slate-200">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="font-bold text-lg text-slate-800 flex items-center">
-                        <i class="fa-solid fa-chart-area mr-2 text-blue-600"></i>資產成長趨勢圖
+                        <i class="fa-solid fa-chart-area mr-2 text-blue-600"></i>
+                        <span id="chartTitle">資產成長趨勢圖</span>
                     </h2>
                     <div class="flex gap-4 text-xs">
                         <div class="flex items-center gap-1">
@@ -424,7 +425,8 @@
             const data = await response.json();
             
             if (data.status === 'success') {
-                alert('✓ ' + data.message);
+                // 取得股價資料成功後，自動執行回測+推估
+                await runBacktestAuto();
             } else {
                 alert('✗ 錯誤: ' + data.message);
             }
@@ -436,7 +438,44 @@
         }
     }
 
-    // ── 執行回測 ─────────────────────────────────────────────────
+    // ── 自動執行回測（不需使用者確認）────────────────────────────
+    async function runBacktestAuto() {
+        const backtestBtn = document.querySelector('button[onclick="runBacktest()"]');
+        const spinner = backtestBtn ? backtestBtn.querySelector('.loading') : null;
+        if (backtestBtn) backtestBtn.disabled = true;
+        if (spinner) spinner.classList.add('active');
+
+        const params = {
+            portfolio_type: currentStrategy,
+            initial_capital: document.getElementById('start').value,
+            monthly_investment: document.getElementById('monthly').value,
+            current_age: document.getElementById('age').value,
+            target_monthly_spend: document.getElementById('target').value
+        };
+
+        try {
+            const response = await fetch('/api/backtest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                backtestResult = data.result;
+                updateResults(data.result);
+            } else {
+                alert('✗ 回測錯誤: ' + data.message);
+            }
+        } catch (error) {
+            alert('✗ 網路錯誤: ' + error.message);
+        } finally {
+            if (backtestBtn) backtestBtn.disabled = false;
+            if (spinner) spinner.classList.remove('active');
+        }
+    }
+
+    // ── 執行回測（手動觸發）─────────────────────────────────────
     async function runBacktest() {
         const btn = event.currentTarget;
         const spinner = btn.querySelector('.loading');
@@ -462,7 +501,6 @@
             if (data.status === 'success') {
                 backtestResult = data.result;
                 updateResults(data.result);
-                alert('✓ 回測分析完成！');
             } else {
                 alert('✗ 錯誤: ' + data.message);
             }
@@ -479,6 +517,12 @@
         // 更新組合名稱
         document.getElementById('portfolioName').textContent = 
             `${result.portfolio_name} : --`;
+
+        // 更新資產成長趨勢圖標題（加上策略類型）
+        const config = portfolioConfigs[currentStrategy];
+        const strategyLabel = config ? `${config.name.replace('投資者', '')}(${config.rate})` : '';
+        document.getElementById('chartTitle').textContent =
+            `資產成長趨勢圖${strategyLabel ? '（' + strategyLabel + '）' : ''}`;
 
         // 更新歷史實際數據
         document.getElementById('actualInvested').textContent = 
