@@ -249,7 +249,7 @@
             <div class="bg-white p-6 rounded-2xl border border-slate-200">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="font-bold text-lg text-slate-800 flex items-center">
-                        <i class="fa-solid fa-table mr-2 text-blue-600"></i>年度投資報表
+                        <i class="fa-solid fa-table mr-2 text-blue-600"></i><span id="reportTitle">年度投資報表</span>
                     </h2>
                     <div class="flex gap-2">
                         <span class="badge-actual">實際歷史</span>
@@ -293,7 +293,7 @@
 
             <div id="etfDetailsSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed">
                 <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
-                    <i class="fa-solid fa-coins mr-2 text-blue-600"></i>各年度ETF持倉明細
+                    <i class="fa-solid fa-coins mr-2 text-blue-600"></i><span id="etfDetailsTitle">各年度ETF持倉明細</span>
                 </h2>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
@@ -327,7 +327,7 @@
             <!-- ETF年度統計表 -->
             <div id="etfStatsSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed">
                 <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
-                    <i class="fa-solid fa-chart-bar mr-2 text-purple-600"></i>各年度ETF累計統計
+                    <i class="fa-solid fa-chart-bar mr-2 text-purple-600"></i><span id="etfStatsTitle">各年度ETF累計統計</span>
                 </h2>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
@@ -520,9 +520,21 @@
 
         // 更新資產成長趨勢圖標題（加上策略類型）
         const config = portfolioConfigs[currentStrategy];
-        const strategyLabel = config ? `${config.name.replace('投資者', '')}(${config.rate})` : '';
+        const strategyLabel = config ? `${config.name.replace('投資者', '')}_${config.rate}` : '';
         document.getElementById('chartTitle').textContent =
             `資產成長趨勢圖${strategyLabel ? '（' + strategyLabel + '）' : ''}`;
+
+        // 更新年度投資報表標題
+        document.getElementById('reportTitle').textContent =
+            `年度投資報表${strategyLabel ? '（' + strategyLabel + '）' : ''}`;
+
+        // 更新各年度ETF持倉明細標題
+        document.getElementById('etfDetailsTitle').textContent =
+            `各年度ETF持倉明細${strategyLabel ? '（' + strategyLabel + '）' : ''}`;
+
+        // 更新各年度ETF累計統計標題
+        document.getElementById('etfStatsTitle').textContent =
+            `各年度ETF累計統計${strategyLabel ? '（' + strategyLabel + '）' : ''}`;
 
         // 更新歷史實際數據
         document.getElementById('actualInvested').textContent = 
