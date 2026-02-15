@@ -240,7 +240,9 @@ class PortfolioBacktest:
                         year_div       += div_amount
 
             # 3) 買股（以當月收盤價計算）
+            # 改為累積現金模式：只扣除實際購買金額，剩餘現金保留到下個月
             if cash > 0:
+                used_cash = 0.0
                 for ticker, weight in etfs.items():
                     alloc = cash * weight
                     price_df = etf_data[ticker]['price']
@@ -253,8 +255,10 @@ class PortfolioBacktest:
                         if price > 0:
                             shares = int(alloc / price / 1000) * 1000
                             if shares > 0:
+                                cost = shares * price
                                 holdings[ticker] += shares
-                cash = 0.0
+                                used_cash += cost
+                cash -= used_cash  # 只扣除實際使用的現金，剩餘保留
 
             # 4) 總資產（月末市值）
             total_assets = 0.0
@@ -417,15 +421,19 @@ class PortfolioBacktest:
                     fc_year_div       += monthly_div
 
                 # 買股（以當月預估股價）
+                # 改為累積現金模式：只扣除實際購買金額，剩餘現金保留到下個月
                 if fc_cash > 0:
+                    used_cash = 0.0
                     for ticker, weight in etfs.items():
                         alloc = fc_cash * weight
                         price = forecast_price[ticker]
                         if price > 0:
                             shares = int(alloc / price / 1000) * 1000
                             if shares > 0:
+                                cost = shares * price
                                 fc_holdings[ticker] += shares
-                    fc_cash = 0.0
+                                used_cash += cost
+                    fc_cash -= used_cash  # 只扣除實際使用的現金，剩餘保留
 
                 # 股價月成長
                 for ticker in etfs:
