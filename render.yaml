@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: taiwan-etf-analyzer
+    env: python
+    region: singapore  # 選擇新加坡節點（亞洲最近）
+    plan: free  # 免費方案
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: RENDER
+        value: "true"
