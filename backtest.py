@@ -62,21 +62,33 @@ class PortfolioBacktest:
         """載入ETF資料"""
         try:
             import glob
-            files = glob.glob(os.path.join(self.data_dir, f"{ticker}_*.csv"))
-            if not files:
+
+            # 明確指定 _price.csv，避免 glob 抓到配息檔
+            price_files = glob.glob(os.path.join(self.data_dir, f"{ticker}_price.csv"))
+            if not price_files:
                 print(f"⚠️  找不到 {ticker} 的股價資料")
                 return None, None
 
-            price_data = pd.read_csv(files[0], parse_dates=['日期'])
-            if price_data['日期'].dtype.tz is not None:
-                price_data['日期'] = price_data['日期'].dt.tz_localize(None)
+            price_data = pd.read_csv(price_files[0])
+            price_data['日期'] = pd.to_datetime(price_data['日期'], errors='coerce')
+            # 相容 pandas 新版：改用 dt.tz 而非 dtype.tz
+            try:
+                if price_data['日期'].dt.tz is not None:
+                    price_data['日期'] = price_data['日期'].dt.tz_localize(None)
+            except Exception:
+                pass
 
+            # 配息檔：找 _配息.csv
             div_files = glob.glob(os.path.join(self.data_dir, f"{ticker}_*_配息.csv"))
             dividend_data = None
             if div_files:
-                dividend_data = pd.read_csv(div_files[0], parse_dates=['除息日'])
-                if dividend_data['除息日'].dtype.tz is not None:
-                    dividend_data['除息日'] = dividend_data['除息日'].dt.tz_localize(None)
+                dividend_data = pd.read_csv(div_files[0])
+                dividend_data['除息日'] = pd.to_datetime(dividend_data['除息日'], errors='coerce')
+                try:
+                    if dividend_data['除息日'].dt.tz is not None:
+                        dividend_data['除息日'] = dividend_data['除息日'].dt.tz_localize(None)
+                except Exception:
+                    pass
 
             return price_data, dividend_data
         except Exception as e:
