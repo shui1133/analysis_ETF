@@ -62,16 +62,29 @@ class PortfolioBacktest:
         """載入ETF資料"""
         try:
             import glob
-            files = glob.glob(os.path.join(self.data_dir, f"{ticker}_*.csv"))
-            if not files:
-                print(f"⚠️  找不到 {ticker} 的股價資料")
-                return None, None
-
-            price_data = pd.read_csv(files[0], parse_dates=['日期'])
+            
+            # 修正：明確指定只讀取 _price.csv 檔案
+            price_file = os.path.join(self.data_dir, f"{ticker}_price.csv")
+            
+            if not os.path.exists(price_file):
+                # 嘗試舊格式（向後相容）
+                files = glob.glob(os.path.join(self.data_dir, f"{ticker}_*.csv"))
+                # 過濾掉配息檔案
+                files = [f for f in files if '_配息' not in f and '_hist_配息' not in f]
+                
+                if not files:
+                    print(f"⚠️  找不到 {ticker} 的股價資料")
+                    return None, None
+                
+                price_file = files[0]
+            
+            # 讀取股價資料
+            price_data = pd.read_csv(price_file, parse_dates=['日期'])
             if price_data['日期'].dtype.tz is not None:
                 price_data['日期'] = price_data['日期'].dt.tz_localize(None)
 
-            div_files = glob.glob(os.path.join(self.data_dir, f"{ticker}_*_配息.csv"))
+            # 讀取配息資料
+            div_files = glob.glob(os.path.join(self.data_dir, f"{ticker}_*配息.csv"))
             dividend_data = None
             if div_files:
                 dividend_data = pd.read_csv(div_files[0], parse_dates=['除息日'])
@@ -81,6 +94,8 @@ class PortfolioBacktest:
             return price_data, dividend_data
         except Exception as e:
             print(f"❌ 載入 {ticker} 資料錯誤: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None, None
 
     # ──────────────────────────────────────────────────────────────
