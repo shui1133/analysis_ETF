@@ -522,71 +522,33 @@
         const ctx = document.getElementById('chart').getContext('2d');
         if (myChart) myChart.destroy();
 
-        const labels = chartData.labels || [];
+        // 後端已回傳年度資料（labels 為年份字串陣列，各 dataset 長度與 labels 一致）
+        const labels  = chartData.labels         || [];
+        const actual  = chartData.actual_assets  || [];
+        const forecast= chartData.forecast_assets|| [];
+        const inflRaw = chartData.inflation_threshold || [];
+        const ret8    = chartData.return_8_assets|| [];
 
-        // ── 1. 解析年份：支援 "第N年"、"第N年第M月"、"2023-01"、"2023" ──
-        function extractYearNum(lbl) {
-            const s = String(lbl || '');
-            // "第N年..." → N
-            const a = s.match(/第\s*(\d+)\s*年/);
-            if (a) return parseInt(a[1]);
-            // "2023" or "2023-01" → 2023
-            const b = s.match(/^(\d{4})/);
-            if (b) return parseInt(b[1]);
-            // 純數字
-            const c = s.match(/^(\d+)$/);
-            if (c) return parseInt(c[1]);
-            return null;
-        }
-
-        // 每個年份取「最後一個」索引（= 年末資料點）
-        const yearLastIndex = new Map();
-        labels.forEach((lbl, i) => {
-            const yr = extractYearNum(lbl);
-            if (yr !== null) yearLastIndex.set(yr, i);
-        });
-        const sortedYears   = [...yearLastIndex.keys()].sort((a, b) => a - b);
-        const yearlyIndices = sortedYears.map(yr => yearLastIndex.get(yr));
-
-        function pickYearly(arr) {
-            if (!arr || arr.length === 0) return new Array(sortedYears.length).fill(null);
-            return yearlyIndices.map(i => (i != null && i < arr.length ? arr[i] : null));
-        }
-
-        // 生成精簡 X 軸標籤
-        const yearlyLabels = sortedYears.map(yr => {
-            const lbl = String(labels[yearLastIndex.get(yr)] || '');
-            const a = lbl.match(/第\s*(\d+)\s*年/);
-            if (a) return `第${a[1]}年`;
-            const b = lbl.match(/^(\d{4})/);
-            if (b) return b[1];
-            return String(yr);
-        });
-
-        const actualYearly    = pickYearly(chartData.actual_assets);
-        const forecastYearly  = pickYearly(chartData.forecast_assets);
-        const inflationYearly = pickYearly(chartData.inflation_threshold);
-        const return8Yearly   = pickYearly(chartData.return_8_assets);
-
-        // ── 2. Y 軸：只用資產線決定範圍，通膨門檻截斷顯示 ──────────
-        const assetValues = [...actualYearly, ...forecastYearly, ...return8Yearly]
+        // ── Y 軸：以資產線最大值決定，排除通膨門檻 ──────────────────
+        const assetVals = [...actual, ...forecast, ...ret8]
             .filter(v => v !== null && v !== undefined && !isNaN(v));
-        const rawMax = assetValues.length > 0 ? Math.max(...assetValues) : 1000000;
+        const rawMax = assetVals.length > 0 ? Math.max(...assetVals) : 1000000;
         const yMax   = Math.ceil(rawMax * 1.15 / 500000) * 500000 || 1000000;
         const step   = Math.ceil(yMax / 8 / 100000) * 100000;
 
-        const clampedInflation = inflationYearly.map(v =>
+        // 通膨門檻截斷，超出 yMax 改為顯示 yMax（tooltip 仍顯示原始值）
+        const inflClamped = inflRaw.map(v =>
             (v !== null && v !== undefined && !isNaN(v)) ? Math.min(v, yMax) : null
         );
 
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: yearlyLabels,
+                labels: labels,
                 datasets: [
                     {
                         label: '歷史實際',
-                        data: actualYearly,
+                        data: actual,
                         borderColor: '#10b981',
                         backgroundColor: 'transparent',
                         borderWidth: 2.5,
@@ -599,7 +561,7 @@
                     },
                     {
                         label: '推估預測',
-                        data: forecastYearly,
+                        data: forecast,
                         borderColor: '#3b82f6',
                         backgroundColor: 'transparent',
                         borderWidth: 2.5,
@@ -613,7 +575,7 @@
                     },
                     {
                         label: '通膨門檻',
-                        data: clampedInflation,
+                        data: inflClamped,
                         borderColor: '#ef4444',
                         backgroundColor: 'transparent',
                         borderWidth: 1.5,
@@ -624,7 +586,7 @@
                     },
                     {
                         label: '8%年化報酬',
-                        data: return8Yearly,
+                        data: ret8,
                         borderColor: '#f59e0b',
                         backgroundColor: 'transparent',
                         borderWidth: 1.5,
@@ -646,8 +608,9 @@
                         callbacks: {
                             label: function(context) {
                                 if (context.parsed.y === null) return null;
+                                // 通膨門檻顯示原始未截斷值
                                 if (context.datasetIndex === 2) {
-                                    const orig = inflationYearly[context.dataIndex];
+                                    const orig = inflRaw[context.dataIndex];
                                     if (orig == null) return null;
                                     return context.dataset.label + ': ' + (orig / 10000).toFixed(0) + ' 萬';
                                 }
