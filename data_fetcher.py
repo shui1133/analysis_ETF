@@ -54,9 +54,17 @@ class ETFDataFetcher:
     def fetch_data(self, ticker):
         """
         爬取單支ETF的資料
-        優先使用 yfinance，失敗時嘗試其他來源
+        優先順序：GitHub > yfinance > MoneyDJ > Goodinfo > 模擬資料
         """
         print(f"\n開始爬取 {ticker} 的資料...")
+        
+        # ✅ 優先嘗試 GitHub
+        print("嘗試從 GitHub 取得資料...")
+        github_data = self._fetch_from_github(ticker)
+        if github_data and github_data.get('price_data') is not None:
+            print(f"✓ GitHub 成功")
+            self._save_data(ticker, github_data)
+            return github_data
         
         print("嘗試 yfinance...")
         yf_data = self._fetch_from_yfinance(ticker)
@@ -83,6 +91,110 @@ class ETFDataFetcher:
         sim_data = self._generate_simulated_data(ticker)
         self._save_data(ticker, sim_data)
         return sim_data
+    
+    def _fetch_from_github(self, ticker):
+        """
+        從 GitHub 倉庫爬取資料
+        GitHub 路徑：https://github.com/shui1133/analysis_ETF/tree/main/data/
+        """
+        try:
+            # GitHub raw file 基礎 URL
+            base_url = "https://raw.githubusercontent.com/shui1133/analysis_ETF/main/data"
+            
+            # ETF 名稱對應（根據上傳的檔案命名）
+            etf_names = {
+                '0056': '元大高股息',
+                '00878': '國泰永續高股息',
+                '00713': '元大台灣高息低波',
+                '00679B': '元大美債20年',
+                '00919': '群益台灣精選高息',
+                '00929': '復華台灣科技優息',
+                '006208': '富邦台50',
+                '00915': '凱基優選高股息30'
+            }
+            
+            if ticker not in etf_names:
+                print(f"  GitHub 未支援 {ticker}")
+                return None
+            
+            etf_name = etf_names[ticker]
+            
+            # 構建檔案 URL
+            price_url = f"{base_url}/{ticker}_{etf_name}.csv"
+            dividend_url = f"{base_url}/{ticker}_{etf_name}_配息.csv"
+            
+            print(f"  嘗試下載: {price_url}")
+            
+            # 下載股價資料
+            price_response = requests.get(price_url, timeout=10)
+            if price_response.status_code != 200:
+                print(f"  股價檔案不存在 (HTTP {price_response.status_code})")
+                return None
+            
+            # 解析股價 CSV
+            from io import StringIO
+            price_df = pd.read_csv(StringIO(price_response.text))
+            
+            # 檢查必要欄位
+            if '日期' not in price_df.columns or '收盤價' not in price_df.columns:
+                print(f"  股價檔案欄位不符（需要：日期、收盤價）")
+                return None
+            
+            # 轉換為標準格式
+            price_data = []
+            for _, row in price_df.iterrows():
+                try:
+                    price_data.append({
+                        'date': str(row['日期']),
+                        'close': float(row['收盤價'])
+                    })
+                except (ValueError, KeyError) as e:
+                    continue
+            
+            if not price_data:
+                print(f"  股價資料為空")
+                return None
+            
+            # 嘗試下載配息資料
+            dividend_data = []
+            try:
+                print(f"  嘗試下載: {dividend_url}")
+                div_response = requests.get(dividend_url, timeout=10)
+                
+                if div_response.status_code == 200:
+                    div_df = pd.read_csv(StringIO(div_response.text))
+                    
+                    # 檢查必要欄位
+                    if '除息日' in div_df.columns and '股利' in div_df.columns:
+                        for _, row in div_df.iterrows():
+                            try:
+                                dividend_data.append({
+                                    'date': str(row['除息日']),
+                                    'dividend': float(row['股利'])
+                                })
+                            except (ValueError, KeyError):
+                                continue
+                        print(f"  成功載入 {len(dividend_data)} 筆配息資料")
+                    else:
+                        print(f"  配息檔案欄位不符（需要：除息日、股利）")
+                else:
+                    print(f"  配息檔案不存在 (HTTP {div_response.status_code})")
+            
+            except Exception as e:
+                print(f"  配息資料下載失敗: {str(e)}")
+            
+            print(f"  ✓ GitHub 成功載入 {len(price_data)} 筆股價資料")
+            
+            return {
+                'ticker': ticker,
+                'price_data': price_data,
+                'dividend_data': dividend_data if dividend_data else None,
+                'source': 'GitHub'
+            }
+            
+        except Exception as e:
+            print(f"  GitHub 錯誤: {str(e)}")
+            return None
     
     def _fetch_from_yfinance(self, ticker):
         """從 yfinance 爬取資料"""
