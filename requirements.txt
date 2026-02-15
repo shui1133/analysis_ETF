@@ -1,17 +1,10 @@
 Flask==3.0.0
-<<<<<<< HEAD
-pandas>=2.1
-numpy==1.26.2
-yfinance==0.2.33
-requests==2.31.0
-beautifulsoup4==4.12.2
-lxml==5.1.0
-=======
 pandas==2.1.4
-numpy==1.26.2
-yfinance==0.2.35
 requests==2.31.0
 beautifulsoup4==4.12.2
 lxml==5.1.0
-gunicorn==21.2.0
->>>>>>> 51e8d2486879622f739f89269375720d35f76d04
+python-dateutil==2.8.2
+pytz==2023.3
+numpy==1.26.3
+openpyxl==3.1.2
+Werkzeug==3.0.1
