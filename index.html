@@ -41,141 +41,238 @@
         .legend-dot { width:12px; height:12px; border-radius:50%; display:inline-block; }
         
         /* ETF明細表動畫 */
-        #etfDetailsSection {
+        #etfDetailsSection, #etfStatsSection {
             transition: all 0.3s ease-in-out;
             overflow: hidden;
         }
-        #etfDetailsSection.collapsed {
+        #etfDetailsSection.collapsed, #etfStatsSection.collapsed {
             max-height: 0;
             padding: 0;
             margin: 0;
             border: none;
             opacity: 0;
         }
-        #etfDetailsSection.expanded {
+        #etfDetailsSection.expanded, #etfStatsSection.expanded {
             max-height: 5000px;
             opacity: 1;
         }
+    </style>
+</head>
+<body class="bg-slate-50 p-4 md:p-8">
+<div class="max-w-7xl mx-auto bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100">
+
+    <!-- Header -->
+    <div class="header-bg p-8 text-white text-center">
+        <h1 class="text-3xl font-black italic tracking-tighter">
+            台灣ETF投資回測分析系統
+            <span class="text-blue-400 text-sm font-normal not-italic ml-2">v2.0</span>
+        </h1>
+        <p class="text-blue-100 mt-2 text-sm">真實歷史回測 ▸ 歷史統計推估 ▸ 通膨修正分析</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 p-8">
+
+        <!-- ═══ 左欄：輸入 ═══ -->
+        <div class="space-y-6">
+            <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                <h2 class="font-bold mb-4 text-slate-700 flex items-center">
+                    <i class="fa-solid fa-calculator mr-2 text-blue-600"></i>輸入規劃參數
+                </h2>
+                <div class="space-y-4 text-sm">
+                    <div>
+                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">目前年齡</label>
+                        <input type="number" id="age" value="30"
+                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">啟動資金 (萬元)</label>
+                        <input type="number" id="start" value="100"
+                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">每月定期定額 (萬元)</label>
+                        <input type="number" id="monthly" value="3"
+                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-500 font-bold mb-1 text-xs uppercase">退休月支出目標 (萬元)</label>
+                        <input type="number" id="target" value="4"
+                               class="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
                 </div>
             </div>
 
-            <!-- 歷史統計卡（推估依據）-->
-            <div id="histStatsBox" class="bg-slate-50 p-5 rounded-2xl border border-slate-200 hidden">
-                <h2 class="font-bold mb-3 text-slate-700 text-sm flex items-center">
-                    <i class="fa-solid fa-magnifying-glass-chart mr-2 text-indigo-500"></i>推估依據（歷史統計）
+            <!-- 退休領取資金比例選擇 -->
+            <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+                <h2 class="font-bold mb-4 text-slate-700 flex items-center">
+                    <i class="fa-solid fa-chart-pie mr-2 text-blue-600"></i>退休領取資金比例
                 </h2>
-                <div id="histStatsContent" class="space-y-3 text-xs"></div>
+                <div class="space-y-3" id="strategyButtons">
+                    <div class="strategy-btn active-btn" onclick="selectStrategy('conservative')">
+                        <div class="text-base font-bold">保守型投資者 4%</div>
+                        <div class="text-xs opacity-80 mt-1">00878+00713+00679B</div>
+                    </div>
+                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('balanced')">
+                        <div class="text-base font-bold">穩健型投資者 6%</div>
+                        <div class="text-xs opacity-80 mt-1">00919+00929+0056</div>
+                    </div>
+                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('aggressive')">
+                        <div class="text-base font-bold">積極型投資者 8%</div>
+                        <div class="text-xs opacity-80 mt-1">006208+00929+00915</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作按鈕 -->
+            <div class="space-y-3">
+                <button onclick="fetchData()"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
+                    <i class="fa-solid fa-download mr-2"></i>
+                    爬取股價資料
+                    <span class="loading ml-2">
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                    </span>
+                </button>
+                <button onclick="runBacktest()"
+                        class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
+                    <i class="fa-solid fa-chart-line mr-2"></i>
+                    執行回測+推估
+                    <span class="loading ml-2">
+                        <i class="fa-solid fa-spinner fa-spin"></i>
+                    </span>
+                </button>
+                <button onclick="downloadCSV()"
+                        class="w-full bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
+                    <i class="fa-solid fa-file-csv mr-2"></i>
+                    下載CSV報表
+                </button>
             </div>
         </div>
 
-        <!-- ═══ 右欄：結果 ═══ -->
+        <!-- ═══ 右欄：結果顯示 ═══ -->
         <div class="lg:col-span-3 space-y-6">
 
-            <!-- 摘要卡 -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-blue-50 p-6 rounded-2xl border border-blue-100 text-center">
-                    <p class="text-blue-500 text-[10px] font-bold uppercase tracking-widest">推估最終資產</p>
-                    <h3 id="resFinalAssets" class="text-2xl font-black text-slate-800">--</h3>
-                    <p class="text-[10px] text-slate-400 mt-1">推估期末</p>
+            <!-- ETF組合配置 -->
+            <div class="header-bg p-6 rounded-2xl text-white">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="font-bold text-lg flex items-center">
+                        <i class="fa-solid fa-layer-group mr-2"></i>投資組合配置
+                    </h2>
+                    <div class="text-sm" id="portfolioName">保守型投資者</div>
                 </div>
-                <div class="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 text-center">
-                    <p class="text-indigo-500 text-[10px] font-bold uppercase tracking-widest">達成所需年分</p>
-                    <h3 id="resYears" class="text-2xl font-black text-slate-800">--</h3>
-                    <p class="text-[10px] text-slate-400 mt-1" id="resYearsNote">含推估</p>
-                </div>
-                <div class="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 text-center">
-                    <p class="text-emerald-500 text-[10px] font-bold uppercase tracking-widest">退休執行年齡</p>
-                    <h3 id="resAge" class="text-2xl font-black text-slate-800">--</h3>
-                </div>
+                <div class="grid grid-cols-3 gap-4" id="etfCards"></div>
             </div>
 
-            <!-- 圖表 -->
-            <div class="bg-white p-6 rounded-3xl border border-slate-200">
-                <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
-                    <h3 class="text-lg font-bold text-slate-700">資產累積趨勢圖</h3>
-                    <div class="flex flex-wrap gap-3 text-xs text-slate-600">
-                        <span><span class="legend-dot mr-1" style="background:#10b981;"></span>實際資產（歷史）</span>
-                        <span><span class="legend-dot mr-1" style="background:#6366f1;"></span>推估資產（歷史統計）</span>
-                        <span><span class="legend-dot mr-1" style="background:#f59e0b;"></span>8%年化報酬</span>
-                        <span><span class="legend-dot mr-1" style="background:#ef4444;"></span>通膨門檻（3%）</span>
-                    </div>
-                </div>
-                <div style="height:350px; position:relative;">
-                    <canvas id="fireChart"></canvas>
-                </div>
-            </div>
-
-            <!-- 投資組合配置 -->
-            <div class="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                    <div>
-                        <h3 class="font-black text-xl flex items-center text-blue-400">
-                            <i class="fa-solid fa-layer-group mr-3"></i>投資組合配置
-                        </h3>
-                        <p class="text-slate-400 text-xs mt-1" id="strategyTitle">保守型投資者</p>
-                    </div>
-                    <div class="text-xs bg-white/10 px-4 py-2 rounded-xl text-blue-200 border border-white/10">
-                        <span id="totalInvested">累計投入（含推估）: --</span>
-                    </div>
-                </div>
-
-                <div id="etfBoxes" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                    <!-- 動態生成 -->
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- 歷史實際統計 -->
-                    <div class="bg-white/5 rounded-2xl p-5 border border-white/5">
-                        <h4 class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-3 flex items-center">
-                            <i class="fa-solid fa-clock-rotate-left mr-2"></i>歷史實際回測
-                        </h4>
-                        <div id="actualStats" class="text-sm text-slate-300 space-y-2">
-                            <div>累計投入: <span class="text-blue-300 font-bold">--</span></div>
-                            <div>累計股利: <span class="text-green-300 font-bold">--</span></div>
-                            <div>投資報酬: <span class="text-yellow-300 font-bold">--</span></div>
+            <!-- 回測結果摘要 -->
+            <div class="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-2xl text-white">
+                <div class="grid grid-cols-2 gap-6">
+                    <!-- 歷史實際回測 -->
+                    <div class="space-y-4">
+                        <div class="flex items-center text-emerald-400 mb-2">
+                            <i class="fa-solid fa-history mr-2"></i>
+                            <h3 class="font-bold">歷史實際回測</h3>
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">累計投入</div>
+                            <div class="text-2xl font-black" id="actualInvested">--</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">累計股利</div>
+                            <div class="text-2xl font-black" id="actualDividend">--</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">投資報酬</div>
+                            <div class="text-2xl font-black" id="actualReturn">--</div>
                         </div>
                     </div>
-                    <!-- 推估最終統計 -->
-                    <div class="bg-white/5 rounded-2xl p-5 border border-white/5">
-                        <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3 flex items-center">
-                            <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>推估預測（歷史統計）
-                        </h4>
-                        <div id="forecastStats" class="text-sm text-slate-300 space-y-2">
-                            <div>推估末期資產: <span class="text-indigo-300 font-bold">--</span></div>
-                            <div>推估累計投入: <span class="text-blue-300 font-bold">--</span></div>
-                            <div>推估累計股利: <span class="text-green-300 font-bold">--</span></div>
+
+                    <!-- 推估預測（歷史統計） -->
+                    <div class="space-y-4">
+                        <div class="flex items-center text-blue-400 mb-2">
+                            <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>
+                            <h3 class="font-bold">推估預測（歷史統計）</h3>
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">推估末期資產</div>
+                            <div class="text-2xl font-black" id="forecastAssets">--</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">推估累計投入</div>
+                            <div class="text-2xl font-black" id="forecastInvested">--</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-slate-400 mb-1">推估累計股利</div>
+                            <div class="text-2xl font-black" id="forecastDividend">--</div>
                         </div>
                     </div>
                 </div>
+
+                <!-- 達成資訊 -->
+                <div class="mt-6 pt-6 border-t border-slate-700 text-center">
+                    <div class="text-sm text-slate-400 mb-2">預計達成時間</div>
+                    <div class="text-3xl font-black" id="finishInfo">請執行回測分析</div>
+                </div>
             </div>
 
-            <!-- 年度報表 -->
-            <div class="bg-white p-6 rounded-3xl border border-slate-200">
-                <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
-                    <h3 class="text-lg font-bold text-slate-700 flex items-center">
+            <!-- 資產成長圖表 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="font-bold text-lg text-slate-800 flex items-center">
+                        <i class="fa-solid fa-chart-area mr-2 text-blue-600"></i>資產成長趨勢圖
+                    </h2>
+                    <div class="flex gap-4 text-xs">
+                        <div class="flex items-center gap-1">
+                            <span class="legend-dot" style="background:#10b981;"></span>
+                            <span class="text-slate-600">歷史實際</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="legend-dot" style="background:#3b82f6;"></span>
+                            <span class="text-slate-600">推估預測</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="legend-dot" style="background:#ef4444;"></span>
+                            <span class="text-slate-600">通膨門檻</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="legend-dot" style="background:#f59e0b;"></span>
+                            <span class="text-slate-600">8%報酬</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="position:relative; height:420px;">
+                    <canvas id="chart"></canvas>
+                </div>
+            </div>
+
+            <!-- 年度投資報表 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="font-bold text-lg text-slate-800 flex items-center">
                         <i class="fa-solid fa-table mr-2 text-blue-600"></i>年度投資報表
-                    </h3>
-                    <div class="flex gap-3 text-xs">
-                        <span class="badge-actual">&#9632; 實際歷史</span>
-                        <span class="badge-forecast">&#9632; 推估預測</span>
+                    </h2>
+                    <div class="flex gap-2">
+                        <span class="badge-actual">實際歷史</span>
+                        <span class="badge-forecast">推估預測</span>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
-                        <thead class="bg-slate-100 border-b-2 border-slate-300">
+                        <thead class="bg-slate-100 text-slate-700">
                             <tr>
-                                <th class="p-3 text-left">年份</th>
-                                <th class="p-3 text-center">資料類型</th>
-                                <th class="p-3 text-right">年度投入</th>
-                                <th class="p-3 text-right">年度股利</th>
-                                <th class="p-3 text-right">年度報酬</th>
-                                <th class="p-3 text-right">年末資產</th>
-                                <th class="p-3 text-right">通膨門檻</th>
+                                <th class="p-3 text-left font-bold">年份</th>
+                                <th class="p-3 text-center font-bold">資料類型</th>
+                                <th class="p-3 text-right font-bold">年度投入</th>
+                                <th class="p-3 text-right font-bold">年度股利</th>
+                                <th class="p-3 text-right font-bold">年度報酬</th>
+                                <th class="p-3 text-right font-bold">年末資產</th>
+                                <th class="p-3 text-right font-bold">通膨門檻</th>
                             </tr>
                         </thead>
                         <tbody id="tableBody">
                             <tr>
-                                <td colspan="7" class="p-6 text-center text-slate-400">請執行回測分析</td>
+                                <td colspan="7" class="p-8 text-center text-slate-400">
+                                    請執行回測分析
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -183,190 +280,410 @@
             </div>
 
             <!-- ETF持倉明細表 -->
-            <div id="etfDetailsSection" class="bg-white p-6 rounded-3xl border border-slate-200 collapsed">
-                <div class="flex flex-wrap items-center justify-between mb-4 gap-2">
-                    <h3 class="text-lg font-bold text-slate-700 flex items-center">
-                        <i class="fa-solid fa-chart-pie mr-2 text-purple-600"></i>ETF持倉明細
-                    </h3>
-                    <div class="flex gap-3 text-xs">
-                        <span class="badge-actual">&#9632; 實際歷史</span>
-                        <span class="badge-forecast">&#9632; 推估預測</span>
-                    </div>
-                </div>
+            <div class="text-center mb-4">
+                <button id="btnToggleETFDetails" 
+                        onclick="toggleETFDetails()"
+                        style="display:none;"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
+                    <i class="fa-solid fa-eye mr-2"></i>
+                    <span id="btnETFDetailsText">顯示ETF持倉明細</span>
+                </button>
+            </div>
+
+            <div id="etfDetailsSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed">
+                <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
+                    <i class="fa-solid fa-coins mr-2 text-blue-600"></i>各年度ETF持倉明細
+                </h2>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
-                        <thead class="bg-slate-100 border-b-2 border-slate-300">
+                        <thead class="bg-slate-100 text-slate-700">
                             <tr>
-                                <th class="p-3 text-left">年份</th>
-                                <th class="p-3 text-center">類型</th>
-                                <th class="p-3 text-left">ETF代碼</th>
-                                <th class="p-3 text-right">持股數</th>
-                                <th class="p-3 text-right">股價</th>
-                                <th class="p-3 text-right">市值</th>
-                                <th class="p-3 text-center">權重</th>
+                                <th class="p-3 text-left font-bold">年份</th>
+                                <th class="p-3 text-center font-bold">類型</th>
+                                <th class="p-3 text-left font-bold">ETF代碼</th>
+                                <th class="p-3 text-right font-bold">持股數</th>
+                                <th class="p-3 text-right font-bold">股價</th>
+                                <th class="p-3 text-right font-bold">市值</th>
+                                <th class="p-3 text-center font-bold">配置權重</th>
                             </tr>
                         </thead>
-                        <tbody id="etfDetailsBody">
-                            <tr>
-                                <td colspan="7" class="p-6 text-center text-slate-400">請執行回測分析</td>
-                            </tr>
-                        </tbody>
+                        <tbody id="etfDetailsBody"></tbody>
                     </table>
                 </div>
             </div>
 
+            <!-- ETF年度統計表按鈕 -->
+            <div class="text-center mb-4">
+                <button id="btnToggleETFStats" 
+                        onclick="toggleETFStats()"
+                        style="display:none;"
+                        class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
+                    <i class="fa-solid fa-chart-bar mr-2"></i>
+                    <span id="btnETFStatsText">顯示ETF年度統計</span>
+                </button>
+            </div>
+
+            <!-- ETF年度統計表 -->
+            <div id="etfStatsSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed">
+                <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
+                    <i class="fa-solid fa-chart-bar mr-2 text-purple-600"></i>各年度ETF累計統計
+                </h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-100 text-slate-700">
+                            <tr>
+                                <th class="p-3 text-left font-bold">年份</th>
+                                <th class="p-3 text-center font-bold">類型</th>
+                                <th class="p-3 text-left font-bold">ETF代碼</th>
+                                <th class="p-3 text-right font-bold">持股數</th>
+                                <th class="p-3 text-right font-bold">平均股價</th>
+                                <th class="p-3 text-right font-bold">市值</th>
+                                <th class="p-3 text-right font-bold">配息次數</th>
+                                <th class="p-3 text-right font-bold">年度總資產</th>
+                            </tr>
+                        </thead>
+                        <tbody id="etfStatsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentStrategy = 'conservative';
+    let backtestResult = null;
+    let myChart = null;
+
+    const portfolioConfigs = {
+        conservative: {
+            name: '保守型投資者',
+            etfs: { '00878': 0.40, '00713': 0.30, '00679B': 0.30 },
+            rate: '4%'
+        },
+        balanced: {
+            name: '穩健型投資者',
+            etfs: { '00919': 0.35, '00929': 0.40, '0056': 0.25 },
+            rate: '6%'
+        },
+        aggressive: {
+            name: '積極型投資者',
+            etfs: { '006208': 0.30, '00929': 0.50, '00915': 0.20 },
+            rate: '8%'
+        }
+    };
+
+    // ── 選擇投資策略 ─────────────────────────────────────────────
+    function selectStrategy(strategy) {
+        currentStrategy = strategy;
+        const btns = document.querySelectorAll('.strategy-btn');
+        btns.forEach(btn => {
+            btn.classList.remove('active-btn');
+            btn.classList.add('inactive-btn');
+        });
+        event.currentTarget.classList.remove('inactive-btn');
+        event.currentTarget.classList.add('active-btn');
+        updateETFCards();
     }
 
-    // ── 歷史統計卡 ───────────────────────────────────────────────
-    function renderHistStats(stats) {
-        const box = document.getElementById('histStatsBox');
-        box.classList.remove('hidden');
+    // ── 更新ETF卡片 ───────────────────────────────────────────────
+    function updateETFCards() {
+        const config = portfolioConfigs[currentStrategy];
+        document.getElementById('portfolioName').textContent = 
+            `${config.name} : --`;
+
         let html = '';
-        for (const [ticker, s] of Object.entries(stats)) {
+        for (const [ticker, weight] of Object.entries(config.etfs)) {
+            const pct = (weight * 100).toFixed(0);
             html += `
-            <div class="bg-white rounded-xl p-3 border border-slate-200 shadow-sm">
-                <div class="font-bold text-slate-700 mb-1">${ticker}</div>
-                <div class="text-slate-500 space-y-0.5">
-                    <div>股價年化成長 (CAGR): <span class="font-bold text-blue-600">${s.cagr}%</span></div>
-                    <div>平均每股股利: <span class="font-bold text-green-600">${s.avg_div_per_share} 元</span></div>
-                    <div>年均配息次數: <span class="font-bold text-slate-700">${s.avg_div_times} 次</span></div>
-                    <div>末日收盤價: <span class="font-bold text-slate-700">${s.last_price} 元</span></div>
+            <div class="etf-card p-4 rounded-xl">
+                <div class="text-xs text-slate-300 mb-1">ETF代碼</div>
+                <div class="text-2xl font-black mb-2">${ticker}</div>
+                <div class="amount-tag-blue inline-block px-3 py-1 rounded-full text-xs font-bold">
+                    權重 ${pct}%
                 </div>
             </div>`;
         }
-        document.getElementById('histStatsContent').innerHTML = html;
+        document.getElementById('etfCards').innerHTML = html;
     }
 
-    // ── 圖表 ─────────────────────────────────────────────────────
-    function renderChart(cd) {
-        const ctx = document.getElementById('fireChart');
-        if (fireChart) fireChart.destroy();
+    // ── 爬取資料 ─────────────────────────────────────────────────
+    async function fetchData() {
+        const btn = event.currentTarget;
+        const spinner = btn.querySelector('.loading');
+        btn.disabled = true;
+        spinner.classList.add('active');
 
-        fireChart = new Chart(ctx, {
+        try {
+            const response = await fetch('/api/fetch_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ portfolio_type: currentStrategy })
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                alert('✓ ' + data.message);
+            } else {
+                alert('✗ 錯誤: ' + data.message);
+            }
+        } catch (error) {
+            alert('✗ 網路錯誤: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            spinner.classList.remove('active');
+        }
+    }
+
+    // ── 執行回測 ─────────────────────────────────────────────────
+    async function runBacktest() {
+        const btn = event.currentTarget;
+        const spinner = btn.querySelector('.loading');
+        btn.disabled = true;
+        spinner.classList.add('active');
+
+        const params = {
+            portfolio_type: currentStrategy,
+            initial_capital: document.getElementById('start').value,
+            monthly_investment: document.getElementById('monthly').value,
+            current_age: document.getElementById('age').value,
+            target_monthly_spend: document.getElementById('target').value
+        };
+
+        try {
+            const response = await fetch('/api/backtest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                backtestResult = data.result;
+                updateResults(data.result);
+                alert('✓ 回測分析完成！');
+            } else {
+                alert('✗ 錯誤: ' + data.message);
+            }
+        } catch (error) {
+            alert('✗ 網路錯誤: ' + error.message);
+        } finally {
+            btn.disabled = false;
+            spinner.classList.remove('active');
+        }
+    }
+
+    // ── 更新結果顯示 ─────────────────────────────────────────────
+    function updateResults(result) {
+        // 更新組合名稱
+        document.getElementById('portfolioName').textContent = 
+            `${result.portfolio_name} : --`;
+
+        // 更新歷史實際數據
+        document.getElementById('actualInvested').textContent = 
+            `${(result.actual_invested / 10000).toFixed(0)} 萬`;
+        document.getElementById('actualDividend').textContent = 
+            `${(result.actual_dividend / 10000).toFixed(0)} 萬`;
+        const actualReturn = result.final_assets - result.actual_invested;
+        document.getElementById('actualReturn').textContent = 
+            `${(actualReturn / 10000).toFixed(0)} 萬`;
+
+        // 更新推估數據
+        document.getElementById('forecastAssets').textContent = 
+            `${(result.forecast_assets / 10000).toFixed(0)} 萬`;
+        document.getElementById('forecastInvested').textContent = 
+            `${(result.total_invested / 10000).toFixed(0)} 萬`;
+        document.getElementById('forecastDividend').textContent = 
+            `${(result.total_dividend / 10000).toFixed(0)} 萬`;
+
+        // 更新達成資訊
+        if (result.finish_year !== null) {
+            document.getElementById('finishInfo').textContent = 
+                `第 ${result.finish_year} 年 (${result.finish_age} 歲)`;
+        } else {
+            document.getElementById('finishInfo').textContent = 
+                '30年內未達成';
+        }
+
+        // 更新圖表
+        updateChart(result.chart_data);
+
+        // 更新表格
+        updateTable(result.table_data);
+
+        // 更新ETF持倉明細
+        if (result.etf_details && result.etf_details.length > 0) {
+            renderETFDetails(result.etf_details);
+            renderETFStats(result.etf_details);
+        }
+    }
+
+    // ── 更新圖表 ─────────────────────────────────────────────────
+    function updateChart(chartData) {
+        const ctx = document.getElementById('chart').getContext('2d');
+        if (myChart) myChart.destroy();
+
+        // 後端已回傳年度資料（labels 為年份字串陣列，各 dataset 長度與 labels 一致）
+        const labels  = chartData.labels         || [];
+        const actual  = chartData.actual_assets  || [];
+        const forecast= chartData.forecast_assets|| [];
+        const inflRaw = chartData.inflation_threshold || [];
+        const ret8    = chartData.return_8_assets|| [];
+
+        // ── Y 軸：以資產線最大值決定，排除通膨門檻 ──────────────────
+        const assetVals = [...actual, ...forecast, ...ret8]
+            .filter(v => v !== null && v !== undefined && !isNaN(v));
+        const rawMax = assetVals.length > 0 ? Math.max(...assetVals) : 1000000;
+        // 頂部留 10% 空白，Y 軸上限取好看的整數
+        const yMax = rawMax * 1.1;
+        // 計算漂亮的刻度步距：目標 6～8 格
+        function niceStep(range, targetTicks) {
+            const raw = range / targetTicks;
+            const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+            const norm = raw / mag;
+            let nice;
+            if (norm < 1.5) nice = 1;
+            else if (norm < 3.5) nice = 2;
+            else if (norm < 7.5) nice = 5;
+            else nice = 10;
+            return nice * mag;
+        }
+        const step = niceStep(yMax, 7);
+        const yMaxNice = Math.ceil(yMax / step) * step;
+
+        // 通膨門檻截斷，超出 yMaxNice 改為顯示 yMaxNice（tooltip 仍顯示原始值）
+        const inflClamped = inflRaw.map(v =>
+            (v !== null && v !== undefined && !isNaN(v)) ? Math.min(v, yMaxNice) : null
+        );
+
+        myChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: cd.labels,
+                labels: labels,
                 datasets: [
                     {
-                        label: '實際資產（歷史）',
-                        data:  cd.actual_assets,
+                        label: '歷史實際',
+                        data: actual,
                         borderColor: '#10b981',
-                        backgroundColor: 'rgba(16,185,129,0.08)',
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 3,
-                        spanGaps: false,
-                        pointRadius: 4,
-                        pointBackgroundColor: '#10b981',
-                        pointHoverRadius: 6
-                    },
-                    {
-                        label: '推估資產（歷史統計）',
-                        data:  cd.forecast_assets,
-                        borderColor: '#6366f1',
-                        backgroundColor: 'rgba(99,102,241,0.07)',
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 2.5,
-                        borderDash: [7, 4],
-                        spanGaps: false,
-                        pointRadius: 4,
-                        pointBackgroundColor: '#6366f1',
-                        pointHoverRadius: 6
-                    },
-                    {
-                        label: '8%年化報酬（理論值）',
-                        data:  cd.return_8_assets,
-                        borderColor: 'rgba(245,158,11,0.35)',
                         backgroundColor: 'transparent',
-                        fill: false,
+                        borderWidth: 2.5,
                         tension: 0.3,
-                        borderWidth: 1.5,
-                        borderDash: [3, 5],
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                        pointHoverBackgroundColor: '#f59e0b'
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#10b981',
+                        fill: false,
+                        spanGaps: false
                     },
                     {
-                        label: '通膨門檻（3%）',
-                        data:  cd.inflation_threshold,
+                        label: '推估預測',
+                        data: forecast,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2.5,
+                        borderDash: [6, 3],
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#3b82f6',
+                        fill: false,
+                        spanGaps: false
+                    },
+                    {
+                        label: '通膨門檻',
+                        data: inflClamped,
                         borderColor: '#ef4444',
                         backgroundColor: 'transparent',
-                        fill: false,
-                        tension: 0,
-                        borderWidth: 2,
-                        borderDash: [5, 5],
+                        borderWidth: 1.5,
+                        borderDash: [4, 3],
                         pointRadius: 0,
-                        pointHoverRadius: 5,
-                        pointHoverBackgroundColor: '#ef4444'
+                        fill: false,
+                        spanGaps: true
+                    },
+                    {
+                        label: '8%年化報酬',
+                        data: ret8,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'transparent',
+                        borderWidth: 1.5,
+                        borderDash: [2, 4],
+                        pointRadius: 0,
+                        fill: false,
+                        spanGaps: false
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
+                animation: { duration: 400 },
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: function(ctx) {
-                                if (ctx.parsed.y === null) return null;
-                                return ctx.dataset.label + ': ' +
-                                       Math.round(ctx.parsed.y).toLocaleString() + ' 元';
+                            label: function(context) {
+                                if (context.parsed.y === null) return null;
+                                // 通膨門檻顯示原始未截斷值
+                                if (context.datasetIndex === 2) {
+                                    const orig = inflRaw[context.dataIndex];
+                                    if (orig == null) return null;
+                                    return context.dataset.label + ': ' + (orig / 10000).toFixed(0) + ' 萬';
+                                }
+                                return context.dataset.label + ': ' +
+                                       (context.parsed.y / 10000).toFixed(0) + ' 萬';
                             }
                         }
                     }
                 },
                 scales: {
-                    y: {
-                        grid: { color: 'rgba(0,0,0,0.05)' },
-                        ticks: {
-                            font: { size: 10 },
-                            callback: v => (v / 10000).toFixed(0) + '萬'
-                        },
-                        max: (function() {
-                            // Y 軸上限：取推估資產、通膨門檻的最大值 × 1.3
-                            // 排除 8% 線，避免它把 Y 軸撐爆
-                            const validSeries = [
-                                ...cd.actual_assets.filter(v => v !== null),
-                                ...cd.forecast_assets.filter(v => v !== null),
-                                ...cd.inflation_threshold.filter(v => v !== null)
-                            ];
-                            if (validSeries.length === 0) return undefined;
-                            return Math.ceil(Math.max(...validSeries) * 1.3 / 1000000) * 1000000;
-                        })()
-                    },
                     x: {
-                        grid: { display: false },
-                        ticks: { font: { size: 10 } }
+                        grid: { color: 'rgba(0,0,0,0.04)' },
+                        ticks: {
+                            color: '#64748b',
+                            font: { size: 11 },
+                            maxRotation: 0,
+                            autoSkip: true,
+                            maxTicksLimit: 15
+                        }
+                    },
+                    y: {
+                        min: 0,
+                        max: yMaxNice,
+                        ticks: {
+                            stepSize: step,
+                            color: '#64748b',
+                            font: { size: 11 },
+                            callback: function(value) {
+                                return (value / 10000).toFixed(0) + '萬';
+                            }
+                        },
+                        grid: { color: 'rgba(0,0,0,0.06)' }
                     }
                 }
             }
         });
     }
-    // ── 年度報表 ─────────────────────────────────────────────────
-    function renderTable(tableData) {
+
+        // ── 更新表格 ─────────────────────────────────────────────────
+    function updateTable(tableData) {
         let html = '';
         for (const row of tableData) {
-            const isActual   = row.data_type === 'actual';
-            const rowClass   = isActual ? 'row-actual' : 'row-forecast';
-            const badge      = isActual
+            const isActual = row.data_type === 'actual';
+            const rowClass = isActual ? 'row-actual' : 'row-forecast';
+            const badge = isActual 
                 ? '<span class="badge-actual">實際</span>'
                 : '<span class="badge-forecast">推估</span>';
-            const returnVal  = row.year_return_raw;
-            const returnColor = returnVal >= 0 ? 'text-blue-600' : 'text-red-500';
-
+            
+            const returnColor = row.year_return_raw >= 0 ? 'text-green-600' : 'text-red-600';
+            
             html += `
             <tr class="${rowClass} border-b">
                 <td class="p-3 font-medium">${row.year}</td>
                 <td class="p-3 text-center">${badge}</td>
                 <td class="p-3 text-right">${row.year_invested}</td>
                 <td class="p-3 text-right text-green-600">${row.year_dividend}</td>
-                <td class="p-3 text-right ${returnColor}">${row.year_return}</td>
+                <td class="p-3 text-right ${returnColor} font-bold">${row.year_return}</td>
                 <td class="p-3 text-right font-bold">${row.year_end_assets}</td>
                 <td class="p-3 text-right text-red-600">${row.inflation_threshold}</td>
             </tr>`;
@@ -376,7 +693,6 @@
 
     // ── ETF持倉明細表 ─────────────────────────────────────────────
     function renderETFDetails(etfDetails) {
-        // 渲染表格內容但不自動展開
         let html = '';
         for (const yearData of etfDetails) {
             const year = yearData['年份'];
@@ -462,6 +778,96 @@
             section.classList.remove('expanded');
             section.classList.add('collapsed');
             btnText.textContent = '顯示ETF持倉明細';
+        }
+    }
+
+    // ── ETF年度統計表 ─────────────────────────────────────────────
+    function renderETFStats(etfDetails) {
+        let html = '';
+        
+        for (const yearData of etfDetails) {
+            const year = yearData['年份'];
+            const dataType = yearData['資料類型'];
+            const isActual = dataType === 'actual';
+            const rowClass = isActual ? 'row-actual' : 'row-forecast';
+            const badge = isActual
+                ? '<span class="badge-actual">實際</span>'
+                : '<span class="badge-forecast">推估</span>';
+            
+            // 計算年度總資產
+            let totalYearAssets = 0;
+            for (const [ticker, detail] of Object.entries(yearData['etfs'])) {
+                totalYearAssets += detail['市值'];
+            }
+            
+            // 每支ETF一行
+            let firstRow = true;
+            for (const [ticker, detail] of Object.entries(yearData['etfs'])) {
+                const shares = detail['持股數'];
+                const price = detail['股價'];
+                const marketValue = detail['市值'];
+                
+                // 計算平均股價（簡化：使用當前股價作為示例）
+                // 實際應用中可能需要從後端提供實際的年度平均價格
+                const avgPrice = price;
+                
+                // 配息次數（從 hist_stats 獲取，或使用預設值）
+                // 這裡簡化處理，實際應從後端數據獲取
+                const divTimes = isActual ? '實際記錄' : '推估';
+                
+                // 第一行顯示年份、類型和年度總資產，後續行留空
+                if (firstRow) {
+                    html += `
+                    <tr class="${rowClass} border-b">
+                        <td class="p-3 font-medium" rowspan="${Object.keys(yearData['etfs']).length}">${year}</td>
+                        <td class="p-3 text-center" rowspan="${Object.keys(yearData['etfs']).length}">${badge}</td>
+                        <td class="p-3 font-medium">${ticker}</td>
+                        <td class="p-3 text-right">${shares.toLocaleString()}</td>
+                        <td class="p-3 text-right">${avgPrice.toFixed(2)}</td>
+                        <td class="p-3 text-right font-bold">${marketValue.toLocaleString()}</td>
+                        <td class="p-3 text-center text-blue-600">${divTimes}</td>
+                        <td class="p-3 text-right font-black text-green-700" rowspan="${Object.keys(yearData['etfs']).length}">${totalYearAssets.toLocaleString()}</td>
+                    </tr>`;
+                    firstRow = false;
+                } else {
+                    html += `
+                    <tr class="${rowClass} border-b">
+                        <td class="p-3 font-medium">${ticker}</td>
+                        <td class="p-3 text-right">${shares.toLocaleString()}</td>
+                        <td class="p-3 text-right">${avgPrice.toFixed(2)}</td>
+                        <td class="p-3 text-right font-bold">${marketValue.toLocaleString()}</td>
+                        <td class="p-3 text-center text-blue-600">${divTimes}</td>
+                    </tr>`;
+                }
+            }
+        }
+        
+        document.getElementById('etfStatsBody').innerHTML = html;
+        
+        // 顯示切換按鈕
+        document.getElementById('btnToggleETFStats').style.display = 'block';
+    }
+
+    // ── 切換ETF年度統計表顯示 ──────────────────────────────────────
+    function toggleETFStats() {
+        const section = document.getElementById('etfStatsSection');
+        const btnText = document.getElementById('btnETFStatsText');
+        
+        if (section.classList.contains('collapsed')) {
+            // 展開
+            section.classList.remove('collapsed');
+            section.classList.add('expanded');
+            btnText.textContent = '隱藏ETF年度統計';
+            
+            // 平滑捲動到表格位置
+            setTimeout(() => {
+                section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        } else {
+            // 收合
+            section.classList.remove('expanded');
+            section.classList.add('collapsed');
+            btnText.textContent = '顯示ETF年度統計';
         }
     }
 
