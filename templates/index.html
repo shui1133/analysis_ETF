@@ -239,7 +239,9 @@
                         </div>
                     </div>
                 </div>
-                <canvas id="chart" height="120"></canvas>
+                <div style="position:relative; height:420px;">
+                    <canvas id="chart"></canvas>
+                </div>
             </div>
 
             <!-- 年度投資報表 -->
@@ -533,12 +535,26 @@
         const assetVals = [...actual, ...forecast, ...ret8]
             .filter(v => v !== null && v !== undefined && !isNaN(v));
         const rawMax = assetVals.length > 0 ? Math.max(...assetVals) : 1000000;
-        const yMax   = Math.ceil(rawMax * 1.15 / 500000) * 500000 || 1000000;
-        const step   = Math.ceil(yMax / 8 / 100000) * 100000;
+        // 頂部留 10% 空白，Y 軸上限取好看的整數
+        const yMax = rawMax * 1.1;
+        // 計算漂亮的刻度步距：目標 6～8 格
+        function niceStep(range, targetTicks) {
+            const raw = range / targetTicks;
+            const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+            const norm = raw / mag;
+            let nice;
+            if (norm < 1.5) nice = 1;
+            else if (norm < 3.5) nice = 2;
+            else if (norm < 7.5) nice = 5;
+            else nice = 10;
+            return nice * mag;
+        }
+        const step = niceStep(yMax, 7);
+        const yMaxNice = Math.ceil(yMax / step) * step;
 
-        // 通膨門檻截斷，超出 yMax 改為顯示 yMax（tooltip 仍顯示原始值）
+        // 通膨門檻截斷，超出 yMaxNice 改為顯示 yMaxNice（tooltip 仍顯示原始值）
         const inflClamped = inflRaw.map(v =>
-            (v !== null && v !== undefined && !isNaN(v)) ? Math.min(v, yMax) : null
+            (v !== null && v !== undefined && !isNaN(v)) ? Math.min(v, yMaxNice) : null
         );
 
         myChart = new Chart(ctx, {
@@ -633,7 +649,7 @@
                     },
                     y: {
                         min: 0,
-                        max: yMax,
+                        max: yMaxNice,
                         ticks: {
                             stepSize: step,
                             color: '#64748b',
