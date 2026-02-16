@@ -307,14 +307,26 @@ class PortfolioBacktest:
 
             # 6) 年度摘要
             if current_date.year != last_year:
-                year_return = total_assets - year_start - year_inv
+                # ✅ 用年末（last_year 12月）各ETF股價重算年末資產
+                year_end_assets = cash
+                for ticker in etfs:
+                    price_df = etf_data[ticker]['price']
+                    row_ye = price_df[price_df['日期'].dt.year == last_year]
+                    if not row_ye.empty:
+                        year_end_assets += holdings[ticker] * float(row_ye.iloc[-1]['收盤價'])
+                    else:
+                        year_end_assets += holdings[ticker] * float(
+                            price_df[price_df['日期'].dt.year < last_year].iloc[-1]['收盤價']
+                        ) if not price_df[price_df['日期'].dt.year < last_year].empty else 0
+
+                year_return = year_end_assets - year_start - year_inv
                 results['annual_summary'].append({
                     '年份':    last_year,
                     '年初資產': round(year_start),
                     '年度投入': round(year_inv),
                     '年度股利': round(year_div),
                     '年度報酬': round(year_return),
-                    '年末資產': round(total_assets),
+                    '年末資產': round(year_end_assets),
                     '通膨門檻': round(inf_target),
                     '資料類型': 'actual'
                 })
@@ -383,7 +395,7 @@ class PortfolioBacktest:
                     etf_year_shares_bought[ticker] = 0
                     etf_year_cost[ticker] = 0.0
                 
-                year_start = total_assets
+                year_start = year_end_assets
                 year_inv   = 0.0
                 year_div   = 0.0
                 year_count += 1
@@ -404,14 +416,26 @@ class PortfolioBacktest:
 
         # 歷史回測最後一年（若不完整）
         if year_inv > 0:
-            year_return = total_assets - year_start - year_inv
+            # ✅ 用期末各ETF股價重算年末資產
+            last_year_end_assets = cash
+            for ticker in etfs:
+                price_df = etf_data[ticker]['price']
+                row_ye = price_df[price_df['日期'].dt.year == last_year]
+                if not row_ye.empty:
+                    last_year_end_assets += holdings[ticker] * float(row_ye.iloc[-1]['收盤價'])
+                else:
+                    last_year_end_assets += holdings[ticker] * float(
+                        price_df.iloc[-1]['收盤價']
+                    ) if not price_df.empty else 0
+
+            year_return = last_year_end_assets - year_start - year_inv
             results['annual_summary'].append({
                 '年份':    last_year,
                 '年初資產': round(year_start),
                 '年度投入': round(year_inv),
                 '年度股利': round(year_div),
                 '年度報酬': round(year_return),
-                '年末資產': round(total_assets),
+                '年末資產': round(last_year_end_assets),
                 '通膨門檻': round(inf_target),
                 '資料類型': 'actual'
             })
@@ -554,11 +578,14 @@ class PortfolioBacktest:
                                 fc_etf_year_cost[ticker] += cost  # 記錄購買成本
                     fc_cash -= used_cash  # 只扣除實際使用的現金，剩餘保留
 
+                # 股價月成長前先記錄當月末股價（用於年度結算時重算年末資產）
+                price_snapshot = dict(forecast_price)
+
                 # 股價月成長
                 for ticker in etfs:
                     forecast_price[ticker] *= (1 + monthly_growth[ticker])
 
-                # 總資產
+                # 總資產（月末持股市值 + 剩餘現金）
                 fc_assets = sum(fc_holdings[t] * forecast_price[t] for t in etfs) + fc_cash
 
                 # 通膨門檻（從投資起點算）
@@ -574,14 +601,18 @@ class PortfolioBacktest:
 
                 # 年度摘要
                 if current_date.year != fc_last_year:
-                    yr_return = fc_assets - fc_year_start - fc_year_inv
+                    # ✅ 用年末（fc_last_year 12月）的快照股價重算年末資產
+                    fc_year_end_assets = sum(
+                        fc_holdings[t] * price_snapshot[t] for t in etfs
+                    ) + fc_cash
+                    yr_return = fc_year_end_assets - fc_year_start - fc_year_inv
                     results['annual_summary'].append({
                         '年份':    fc_last_year,
                         '年初資產': round(fc_year_start),
                         '年度投入': round(fc_year_inv),
                         '年度股利': round(fc_year_div),
                         '年度報酬': round(yr_return),
-                        '年末資產': round(fc_assets),
+                        '年末資產': round(fc_year_end_assets),
                         '通膨門檻': round(inf_target),
                         '資料類型': 'forecast'
                     })
@@ -640,7 +671,7 @@ class PortfolioBacktest:
                         fc_etf_year_shares_bought[ticker] = 0
                         fc_etf_year_cost[ticker] = 0.0
                     
-                    fc_year_start = fc_assets
+                    fc_year_start = fc_year_end_assets
                     fc_year_inv   = 0.0
                     fc_year_div   = 0.0
                     fc_year_count += 1
@@ -664,14 +695,18 @@ class PortfolioBacktest:
             if fc_year_inv > 0:
                 total_months = actual_months + fc_offset + 1
                 inf_target   = target_base * (1 + r_inf) ** (total_months / 12)
-                yr_return    = fc_assets - fc_year_start - fc_year_inv
+                # ✅ 用期末股價快照（月成長前）×持股數 + 剩餘現金
+                fc_last_year_end_assets = sum(
+                    fc_holdings[t] * price_snapshot[t] for t in etfs
+                ) + fc_cash
+                yr_return = fc_last_year_end_assets - fc_year_start - fc_year_inv
                 results['annual_summary'].append({
                     '年份':    fc_last_year,
                     '年初資產': round(fc_year_start),
                     '年度投入': round(fc_year_inv),
                     '年度股利': round(fc_year_div),
                     '年度報酬': round(yr_return),
-                    '年末資產': round(fc_assets),
+                    '年末資產': round(fc_last_year_end_assets),
                     '通膨門檻': round(inf_target),
                     '資料類型': 'forecast'
                 })
