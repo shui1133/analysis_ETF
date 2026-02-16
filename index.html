@@ -172,10 +172,9 @@
             </div>
 
             <!-- 現金流分析按鈕 -->
-            <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border-2 border-purple-200">
+            <div id="cashflowBtnWrapper" class="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border-2 border-purple-200" style="display:none;">
                 <button id="btnCashflowAnalysis" 
                         onclick="toggleCashflowAnalysis()"
-                        style="display:none;"
                         class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
                     <i class="fa-solid fa-money-bill-trend-up mr-2"></i>
                     完整現金流分析
@@ -383,7 +382,7 @@
             </div>
 
             <!-- 完整現金流分析報表 -->
-            <div id="cashflowSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed" style="display:none;">
+            <div id="cashflowSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed">
                 <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
                     <i class="fa-solid fa-money-bill-trend-up mr-2 text-purple-600"></i>
                     <span>完整現金流分析報表</span>
@@ -1057,23 +1056,18 @@
     function toggleCashflowAnalysis() {
         const section = document.getElementById('cashflowSection');
         
-        if (section.style.display === 'none') {
-            // 顯示
-            section.style.display = 'block';
+        if (section.classList.contains('collapsed')) {
+            // 展開
             section.classList.remove('collapsed');
             section.classList.add('expanded');
-            
             // 平滑捲動到section位置
             setTimeout(() => {
                 section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }, 100);
         } else {
-            // 隱藏
+            // 收合
             section.classList.remove('expanded');
             section.classList.add('collapsed');
-            setTimeout(() => {
-                section.style.display = 'none';
-            }, 300);
         }
     }
 
@@ -1089,7 +1083,6 @@
         
         if (!backtestResult.results.etf_tracking) {
             console.log('沒有現金流追蹤資料');
-            // 即使沒有資料，也不顯示按鈕
             return;
         }
 
@@ -1099,8 +1092,9 @@
         console.log('etf_tracking:', tracking);
         console.log('config:', config);
         
-        // ✅ 立即顯示按鈕（在檢查資料之前）
-        document.getElementById('btnCashflowAnalysis').style.display = 'block';
+        // ✅ 顯示按鈕容器與按鈕
+        const btnWrapper = document.getElementById('cashflowBtnWrapper');
+        if (btnWrapper) btnWrapper.style.display = 'block';
         
         // 建立ETF選擇器
         let selectorHTML = '';
