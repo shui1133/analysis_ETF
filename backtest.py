@@ -535,7 +535,7 @@ class PortfolioBacktest:
                     fc_total_dividend += monthly_div
                     fc_year_div       += monthly_div
                     fc_etf_year_dividend[ticker] += monthly_div  # 記錄該ETF的股利
-                    fc_etf_year_invested[ticker] += monthly_div * weight  # 股利再投入
+                    fc_etf_year_invested[ticker] += monthly_div * etfs[ticker]  # 股利再投入（使用正確的權重）
 
                 # 買股（以當月預估股價）
                 # 改為累積現金模式：只扣除實際購買金額，剩餘現金保留到下個月
