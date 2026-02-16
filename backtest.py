@@ -490,6 +490,15 @@ class PortfolioBacktest:
             fc_year_count = year_count
             fc_last_year  = current_date.year
 
+            # 初始化推估階段的ETF追蹤變數
+            fc_etf_year_invested = {t: 0.0 for t in etfs}
+            fc_etf_year_dividend = {t: 0.0 for t in etfs}
+            fc_etf_year_shares_bought = {t: 0 for t in etfs}
+            fc_etf_year_cost = {t: 0.0 for t in etfs}
+            fc_etf_prev_year_cash = {t: cash * etfs[t] for t in etfs}  # 從實際階段繼承剩餘現金
+            fc_etf_year_start_value = {t: fc_holdings[t] * forecast_price[t] for t in etfs}
+            fc_etf_year_start_holdings = {t: fc_holdings[t] for t in etfs}
+
             max_fc_months = 30 * 12
             fc_offset     = 0
             fc_assets     = actual_final_assets
@@ -501,6 +510,9 @@ class PortfolioBacktest:
                 fc_cash           += monthly_investment
                 fc_total_invested += monthly_investment
                 fc_year_inv       += monthly_investment
+                # 記錄各ETF分配的投入金額
+                for ticker, weight in etfs.items():
+                    fc_etf_year_invested[ticker] += monthly_investment * weight
 
                 # 💡 每月重新計算配息（反映持股數量和資產價值的變化）
                 # 配息計算公式：
@@ -522,6 +534,8 @@ class PortfolioBacktest:
                     fc_cash           += monthly_div
                     fc_total_dividend += monthly_div
                     fc_year_div       += monthly_div
+                    fc_etf_year_dividend[ticker] += monthly_div  # 記錄該ETF的股利
+                    fc_etf_year_invested[ticker] += monthly_div * weight  # 股利再投入
 
                 # 買股（以當月預估股價）
                 # 改為累積現金模式：只扣除實際購買金額，剩餘現金保留到下個月
@@ -536,6 +550,8 @@ class PortfolioBacktest:
                                 cost = shares * price
                                 fc_holdings[ticker] += shares
                                 used_cash += cost
+                                fc_etf_year_shares_bought[ticker] += shares  # 記錄購買股數
+                                fc_etf_year_cost[ticker] += cost  # 記錄購買成本
                     fc_cash -= used_cash  # 只扣除實際使用的現金，剩餘保留
 
                 # 股價月成長
@@ -573,13 +589,56 @@ class PortfolioBacktest:
                     # 收集各ETF年末持倉明細（推估）
                     etf_detail = {'年份': fc_last_year, '資料類型': 'forecast', 'etfs': {}}
                     for ticker in etfs:
+                        year_end_price = forecast_price[ticker]
+                        year_end_value = fc_holdings[ticker] * year_end_price
+                        year_start_value = fc_etf_year_start_value[ticker]
+                        year_invested = fc_etf_year_invested[ticker]
+                        year_dividend = fc_etf_year_dividend[ticker]
+                        
                         etf_detail['etfs'][ticker] = {
                             '持股數': fc_holdings[ticker],
-                            '股價': round(forecast_price[ticker], 2),
-                            '市值': round(fc_holdings[ticker] * forecast_price[ticker]),
+                            '股價': round(year_end_price, 2),
+                            '市值': round(year_end_value),
                             '權重': etfs[ticker]
                         }
+                        
+                        # 計算年度報酬
+                        year_return = year_end_value - year_start_value - year_invested + year_dividend
+                        
+                        # 計算平均買入價
+                        if fc_etf_year_shares_bought[ticker] > 0:
+                            avg_buy_price = fc_etf_year_cost[ticker] / fc_etf_year_shares_bought[ticker]
+                        else:
+                            avg_buy_price = 0.0
+                        
+                        results['etf_tracking'][ticker].append({
+                            '年份': fc_last_year,
+                            '資料類型': 'forecast',
+                            '年初持股數': fc_etf_year_start_holdings[ticker],
+                            '年初市值': round(year_start_value),
+                            '上期剩餘現金': round(fc_etf_prev_year_cash[ticker]),
+                            '年度投入': round(year_invested),
+                            '年度股利': round(year_dividend),
+                            '當年購買股數': fc_etf_year_shares_bought[ticker],
+                            '平均買入價': round(avg_buy_price, 2),
+                            '購買成本': round(fc_etf_year_cost[ticker]),
+                            '累計持股數': fc_holdings[ticker],
+                            '年末股價': round(year_end_price, 2),
+                            '年末市值': round(year_end_value),
+                            '期末剩餘現金': round(fc_cash * etfs[ticker]),
+                            '年度報酬': round(year_return)
+                        })
                     results['etf_details'].append(etf_detail)
+                    
+                    # 重置年度追蹤變數
+                    for ticker in etfs:
+                        fc_etf_prev_year_cash[ticker] = fc_cash * etfs[ticker]
+                        fc_etf_year_start_value[ticker] = fc_holdings[ticker] * forecast_price[ticker]
+                        fc_etf_year_start_holdings[ticker] = fc_holdings[ticker]
+                        fc_etf_year_invested[ticker] = 0.0
+                        fc_etf_year_dividend[ticker] = 0.0
+                        fc_etf_year_shares_bought[ticker] = 0
+                        fc_etf_year_cost[ticker] = 0.0
                     
                     fc_year_start = fc_assets
                     fc_year_inv   = 0.0
@@ -620,12 +679,45 @@ class PortfolioBacktest:
                 # 收集最後一年的ETF明細
                 etf_detail = {'年份': fc_last_year, '資料類型': 'forecast', 'etfs': {}}
                 for ticker in etfs:
+                    year_end_price = forecast_price[ticker]
+                    year_end_value = fc_holdings[ticker] * year_end_price
+                    
                     etf_detail['etfs'][ticker] = {
                         '持股數': fc_holdings[ticker],
-                        '股價': round(forecast_price[ticker], 2),
-                        '市值': round(fc_holdings[ticker] * forecast_price[ticker]),
+                        '股價': round(year_end_price, 2),
+                        '市值': round(year_end_value),
                         '權重': etfs[ticker]
                     }
+                    
+                    # 計算年度報酬
+                    year_start_value = fc_etf_year_start_value[ticker]
+                    year_invested = fc_etf_year_invested[ticker]
+                    year_dividend = fc_etf_year_dividend[ticker]
+                    year_return = year_end_value - year_start_value - year_invested + year_dividend
+                    
+                    # 計算平均買入價
+                    if fc_etf_year_shares_bought[ticker] > 0:
+                        avg_buy_price = fc_etf_year_cost[ticker] / fc_etf_year_shares_bought[ticker]
+                    else:
+                        avg_buy_price = 0.0
+                    
+                    results['etf_tracking'][ticker].append({
+                        '年份': fc_last_year,
+                        '資料類型': 'forecast',
+                        '年初持股數': fc_etf_year_start_holdings[ticker],
+                        '年初市值': round(year_start_value),
+                        '上期剩餘現金': round(fc_etf_prev_year_cash[ticker]),
+                        '年度投入': round(year_invested),
+                        '年度股利': round(year_dividend),
+                        '當年購買股數': fc_etf_year_shares_bought[ticker],
+                        '平均買入價': round(avg_buy_price, 2),
+                        '購買成本': round(fc_etf_year_cost[ticker]),
+                        '累計持股數': fc_holdings[ticker],
+                        '年末股價': round(year_end_price, 2),
+                        '年末市值': round(year_end_value),
+                        '期末剩餘現金': round(fc_cash * etfs[ticker]),
+                        '年度報酬': round(year_return)
+                    })
                 results['etf_details'].append(etf_detail)
 
             if finish_year is None:
