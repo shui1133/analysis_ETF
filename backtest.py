@@ -199,6 +199,10 @@ class PortfolioBacktest:
         etf_year_dividend = {t: 0.0 for t in etfs}  # 當年獲得股利
         etf_year_shares_bought = {t: 0 for t in etfs}  # 當年購買股數
         etf_prev_year_cash = {t: 0.0 for t in etfs}  # 上期剩餘現金（新增）
+        
+        # ✅ 記錄初始資金到各ETF
+        for ticker, weight in etfs.items():
+            etf_year_invested[ticker] = initial_capital * weight
 
         # ================================================================
         # 第一段：歷史真實回測

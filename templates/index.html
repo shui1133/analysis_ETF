@@ -1070,13 +1070,28 @@
 
     // 更新現金流分析報表
     function updateCashflowAnalysis() {
-        if (!backtestResult || !backtestResult.results || !backtestResult.results.etf_tracking) {
+        console.log('開始更新現金流分析...');
+        console.log('backtestResult:', backtestResult);
+        
+        if (!backtestResult || !backtestResult.results) {
+            console.log('沒有回測結果');
+            return;
+        }
+        
+        if (!backtestResult.results.etf_tracking) {
             console.log('沒有現金流追蹤資料');
+            // 即使沒有資料，也不顯示按鈕
             return;
         }
 
         const tracking = backtestResult.results.etf_tracking;
         const config = portfolioConfigs[currentStrategy];
+        
+        console.log('etf_tracking:', tracking);
+        console.log('config:', config);
+        
+        // ✅ 立即顯示按鈕（在檢查資料之前）
+        document.getElementById('btnCashflowAnalysis').style.display = 'block';
         
         // 建立ETF選擇器
         let selectorHTML = '';
@@ -1094,20 +1109,29 @@
         // 如果還沒選擇ETF，預設選擇第一個
         if (!currentCashflowETF) {
             currentCashflowETF = Object.keys(config.etfs)[0];
+            console.log('預設選擇ETF:', currentCashflowETF);
             updateCashflowAnalysis(); // 重新渲染
             return;
         }
 
         // 顯示選中ETF的數據
         const etfData = tracking[currentCashflowETF] || [];
+        console.log(`${currentCashflowETF} 的資料:`, etfData);
+        
         if (etfData.length === 0) {
             document.getElementById('cashflowTableBody').innerHTML = `
                 <tr>
                     <td colspan="9" class="p-8 text-center text-slate-400">
-                        此ETF沒有詳細追蹤資料
+                        此ETF沒有詳細追蹤資料<br>
+                        <small class="text-xs">請確認已執行回測並且 backtest.py 包含 etf_tracking 功能</small>
                     </td>
                 </tr>
             `;
+            // 清空統計摘要
+            document.getElementById('cfTotalInvested').textContent = '--';
+            document.getElementById('cfTotalDividend').textContent = '--';
+            document.getElementById('cfFinalShares').textContent = '--';
+            document.getElementById('cfFinalValue').textContent = '--';
             return;
         }
 
@@ -1147,9 +1171,8 @@
         document.getElementById('cfTotalDividend').textContent = totalDividend.toLocaleString();
         document.getElementById('cfFinalShares').textContent = (lastRow['累計持股數'] || 0).toLocaleString() + ' 股';
         document.getElementById('cfFinalValue').textContent = (lastRow['年末市值'] || 0).toLocaleString() + ' 元';
-
-        // 顯示按鈕
-        document.getElementById('btnCashflowAnalysis').style.display = 'block';
+        
+        console.log('現金流分析更新完成');
     }
 
     // 選擇要查看的ETF
