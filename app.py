@@ -322,9 +322,10 @@ def prepare_table_data(result):
             'data_type': row['資料類型'],
             'year_invested': f"{row['年度投入']:,}",
             'year_dividend': f"{row['年度股利']:,}",
-            'year_end_assets': f"{row['年末資產']:,}",
-            'inflation_threshold': f"{row['通膨門檻']:,}",
             'year_return': f"{year_return_val:,}",
+            'year_end_assets': f"{row['年末資產']:,}",
+            'remaining_cash': f"{row.get('剩餘現金', 0):,}",
+            'inflation_threshold': f"{row['通膨門檻']:,}",
             'year_return_raw': year_return_val
         })
     return table_data

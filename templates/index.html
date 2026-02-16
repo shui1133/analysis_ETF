@@ -290,12 +290,13 @@
                                 <th class="p-3 text-right font-bold">年度股利</th>
                                 <th class="p-3 text-right font-bold">年度報酬</th>
                                 <th class="p-3 text-right font-bold">年末資產</th>
+                                <th class="p-3 text-right font-bold">剩餘現金</th>
                                 <th class="p-3 text-right font-bold">通膨門檻</th>
                             </tr>
                         </thead>
                         <tbody id="tableBody">
                             <tr>
-                                <td colspan="7" class="p-8 text-center text-slate-400">
+                                <td colspan="8" class="p-8 text-center text-slate-400">
                                     請執行回測分析
                                 </td>
                             </tr>
@@ -353,7 +354,7 @@
                 <button id="btnCashflowAnalysis"
                         onclick="toggleCashflowAnalysis()"
                         class="bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
-                    <i class="fa-solid fa-money-bill-trend-up mr-2"></i>
+                    <i class="fa-solid fa-money-bill-wave mr-2"></i>
                     完整現金流分析
                 </button>
             </div>
@@ -862,6 +863,7 @@
                 <td class="p-3 text-right text-green-600">${row.year_dividend}</td>
                 <td class="p-3 text-right ${returnColor} font-bold">${row.year_return}</td>
                 <td class="p-3 text-right font-bold">${row.year_end_assets}</td>
+                <td class="p-3 text-right text-slate-500">${row.remaining_cash ?? '--'}</td>
                 <td class="p-3 text-right text-red-600">${row.inflation_threshold}</td>
             </tr>`;
         }

@@ -327,6 +327,7 @@ class PortfolioBacktest:
                     '年度股利': round(year_div),
                     '年度報酬': round(year_return),
                     '年末資產': round(year_end_assets),
+                    '剩餘現金': round(cash),
                     '通膨門檻': round(inf_target),
                     '資料類型': 'actual'
                 })
@@ -436,6 +437,7 @@ class PortfolioBacktest:
                 '年度股利': round(year_div),
                 '年度報酬': round(year_return),
                 '年末資產': round(last_year_end_assets),
+                '剩餘現金': round(cash),
                 '通膨門檻': round(inf_target),
                 '資料類型': 'actual'
             })
@@ -613,6 +615,7 @@ class PortfolioBacktest:
                         '年度股利': round(fc_year_div),
                         '年度報酬': round(yr_return),
                         '年末資產': round(fc_year_end_assets),
+                        '剩餘現金': round(fc_cash),
                         '通膨門檻': round(inf_target),
                         '資料類型': 'forecast'
                     })
@@ -707,6 +710,7 @@ class PortfolioBacktest:
                     '年度股利': round(fc_year_div),
                     '年度報酬': round(yr_return),
                     '年末資產': round(fc_last_year_end_assets),
+                    '剩餘現金': round(fc_cash),
                     '通膨門檻': round(inf_target),
                     '資料類型': 'forecast'
                 })
