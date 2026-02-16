@@ -198,7 +198,10 @@ class PortfolioBacktest:
         etf_year_invested = {t: 0.0 for t in etfs}  # 當年投入金額
         etf_year_dividend = {t: 0.0 for t in etfs}  # 當年獲得股利
         etf_year_shares_bought = {t: 0 for t in etfs}  # 當年購買股數
-        etf_prev_year_cash = {t: 0.0 for t in etfs}  # 上期剩餘現金（新增）
+        etf_year_cost = {t: 0.0 for t in etfs}  # 當年購買總成本
+        etf_prev_year_cash = {t: 0.0 for t in etfs}  # 上期剩餘現金
+        etf_year_start_value = {t: 0.0 for t in etfs}  # 年初市值
+        etf_year_start_holdings = {t: 0 for t in etfs}  # 年初持股數
         
         # ✅ 記錄初始資金到各ETF
         for ticker, weight in etfs.items():
@@ -276,6 +279,7 @@ class PortfolioBacktest:
                                 holdings[ticker] += shares
                                 used_cash += cost
                                 etf_year_shares_bought[ticker] += shares  # 記錄購買股數
+                                etf_year_cost[ticker] += cost  # 記錄購買成本
                 cash -= used_cash  # 只扣除實際使用的現金，剩餘保留
 
             # 4) 總資產（月末市值）
@@ -329,25 +333,55 @@ class PortfolioBacktest:
                             '權重': etfs[ticker]
                         }
                         # 新增：保存ETF詳細追蹤資訊
+                        year_end_value = holdings[ticker] * year_end_price
+                        year_start_value = etf_year_start_value[ticker]
+                        year_invested = etf_year_invested[ticker]
+                        year_dividend = etf_year_dividend[ticker]
+                        
+                        # 計算年度報酬 = 年末市值 - 年初市值 - 年度投入 + 年度股利
+                        year_return = year_end_value - year_start_value - year_invested + year_dividend
+                        
+                        # 計算平均買入價
+                        if etf_year_shares_bought[ticker] > 0:
+                            avg_buy_price = etf_year_cost[ticker] / etf_year_shares_bought[ticker]
+                        else:
+                            avg_buy_price = 0.0
+                        
                         results['etf_tracking'][ticker].append({
                             '年份': last_year,
                             '資料類型': 'actual',
+                            '年初持股數': etf_year_start_holdings[ticker],
+                            '年初市值': round(year_start_value),
                             '上期剩餘現金': round(etf_prev_year_cash[ticker]),
-                            '年度投入': round(etf_year_invested[ticker]),
-                            '年度股利': round(etf_year_dividend[ticker]),
+                            '年度投入': round(year_invested),
+                            '年度股利': round(year_dividend),
                             '當年購買股數': etf_year_shares_bought[ticker],
+                            '平均買入價': round(avg_buy_price, 2),
+                            '購買成本': round(etf_year_cost[ticker]),
                             '累計持股數': holdings[ticker],
                             '年末股價': round(year_end_price, 2),
-                            '年末市值': round(holdings[ticker] * year_end_price)
+                            '年末市值': round(year_end_value),
+                            '期末剩餘現金': round(cash * etfs[ticker]),
+                            '年度報酬': round(year_return)
                         })
                 results['etf_details'].append(etf_detail)
                 
                 # 重置年度追蹤變數
                 for ticker in etfs:
                     etf_prev_year_cash[ticker] = cash * etfs[ticker]  # 按權重分配剩餘現金到下期
+                    
+                    # 記錄下一年的年初值
+                    price_df = etf_data[ticker]['price']
+                    row = price_df[price_df['日期'].dt.year == last_year]
+                    if not row.empty:
+                        price_at_year_end = float(row.iloc[-1]['收盤價'])
+                        etf_year_start_value[ticker] = holdings[ticker] * price_at_year_end
+                        etf_year_start_holdings[ticker] = holdings[ticker]
+                    
                     etf_year_invested[ticker] = 0.0
                     etf_year_dividend[ticker] = 0.0
                     etf_year_shares_bought[ticker] = 0
+                    etf_year_cost[ticker] = 0.0
                 
                 year_start = total_assets
                 year_inv   = 0.0
@@ -396,16 +430,36 @@ class PortfolioBacktest:
                         '權重': etfs[ticker]
                     }
                     # 新增：保存最後一年的ETF詳細追蹤資訊
+                    year_end_value = holdings[ticker] * year_end_price
+                    year_start_value = etf_year_start_value[ticker]
+                    year_invested = etf_year_invested[ticker]
+                    year_dividend = etf_year_dividend[ticker]
+                    
+                    # 計算年度報酬
+                    year_return = year_end_value - year_start_value - year_invested + year_dividend
+                    
+                    # 計算平均買入價
+                    if etf_year_shares_bought[ticker] > 0:
+                        avg_buy_price = etf_year_cost[ticker] / etf_year_shares_bought[ticker]
+                    else:
+                        avg_buy_price = 0.0
+                    
                     results['etf_tracking'][ticker].append({
                         '年份': last_year,
                         '資料類型': 'actual',
+                        '年初持股數': etf_year_start_holdings[ticker],
+                        '年初市值': round(year_start_value),
                         '上期剩餘現金': round(etf_prev_year_cash[ticker]),
-                        '年度投入': round(etf_year_invested[ticker]),
-                        '年度股利': round(etf_year_dividend[ticker]),
+                        '年度投入': round(year_invested),
+                        '年度股利': round(year_dividend),
                         '當年購買股數': etf_year_shares_bought[ticker],
+                        '平均買入價': round(avg_buy_price, 2),
+                        '購買成本': round(etf_year_cost[ticker]),
                         '累計持股數': holdings[ticker],
                         '年末股價': round(year_end_price, 2),
-                        '年末市值': round(holdings[ticker] * year_end_price)
+                        '年末市值': round(year_end_value),
+                        '期末剩餘現金': round(cash * etfs[ticker]),
+                        '年度報酬': round(year_return)
                     })
             results['etf_details'].append(etf_detail)
 

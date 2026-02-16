@@ -402,18 +402,23 @@
                             <tr>
                                 <th class="p-3 text-left font-bold">年份</th>
                                 <th class="p-3 text-center font-bold">類型</th>
-                                <th class="p-3 text-right font-bold">上期剩餘現金</th>
+                                <th class="p-3 text-right font-bold">年初持股</th>
+                                <th class="p-3 text-right font-bold">年初市值</th>
+                                <th class="p-3 text-right font-bold">剩餘現金</th>
                                 <th class="p-3 text-right font-bold">年度投入</th>
                                 <th class="p-3 text-right font-bold">年度股利</th>
-                                <th class="p-3 text-right font-bold">當年購買股數</th>
-                                <th class="p-3 text-right font-bold">累計持股數</th>
+                                <th class="p-3 text-right font-bold">購買股數</th>
+                                <th class="p-3 text-right font-bold">平均買價</th>
+                                <th class="p-3 text-right font-bold">購買成本</th>
+                                <th class="p-3 text-right font-bold">累計持股</th>
                                 <th class="p-3 text-right font-bold">年末股價</th>
                                 <th class="p-3 text-right font-bold">年末市值</th>
+                                <th class="p-3 text-right font-bold">年度報酬</th>
                             </tr>
                         </thead>
                         <tbody id="cashflowTableBody">
                             <tr>
-                                <td colspan="9" class="p-8 text-center text-slate-400">
+                                <td colspan="14" class="p-8 text-center text-slate-400">
                                     請先執行回測分析
                                 </td>
                             </tr>
@@ -423,7 +428,7 @@
 
                 <!-- 統計摘要 -->
                 <div class="mt-6 pt-6 border-t border-slate-200">
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
                         <div class="bg-blue-50 p-4 rounded-xl">
                             <div class="text-xs text-blue-600 font-bold mb-1">累計投入</div>
                             <div class="text-xl font-black text-blue-700" id="cfTotalInvested">--</div>
@@ -431,6 +436,10 @@
                         <div class="bg-green-50 p-4 rounded-xl">
                             <div class="text-xs text-green-600 font-bold mb-1">累計股利</div>
                             <div class="text-xl font-black text-green-700" id="cfTotalDividend">--</div>
+                        </div>
+                        <div class="bg-orange-50 p-4 rounded-xl">
+                            <div class="text-xs text-orange-600 font-bold mb-1">總報酬</div>
+                            <div class="text-xl font-black text-orange-700" id="cfTotalReturn">--</div>
                         </div>
                         <div class="bg-purple-50 p-4 rounded-xl">
                             <div class="text-xs text-purple-600 font-bold mb-1">最終持股</div>
@@ -1139,6 +1148,7 @@
         let html = '';
         let totalInvested = 0;
         let totalDividend = 0;
+        let totalReturn = 0;
 
         for (const row of etfData) {
             const rowClass = row['資料類型'] === 'actual' ? 'row-actual' : 'row-forecast';
@@ -1147,18 +1157,28 @@
 
             totalInvested += row['年度投入'] || 0;
             totalDividend += row['年度股利'] || 0;
+            totalReturn += row['年度報酬'] || 0;
+
+            // 年度報酬顏色
+            const returnValue = row['年度報酬'] || 0;
+            const returnClass = returnValue >= 0 ? 'text-green-600' : 'text-red-600';
 
             html += `
                 <tr class="${rowClass}">
                     <td class="p-3">${row['年份']}</td>
                     <td class="p-3 text-center"><span class="${badge}">${badgeText}</span></td>
-                    <td class="p-3 text-right">${(row['上期剩餘現金'] || 0).toLocaleString()}</td>
-                    <td class="p-3 text-right">${(row['年度投入'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right text-slate-600">${(row['年初持股數'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${(row['年初市值'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right text-blue-600">${(row['上期剩餘現金'] || row['期末剩餘現金'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right font-bold">${(row['年度投入'] || 0).toLocaleString()}</td>
                     <td class="p-3 text-right text-green-600 font-bold">${(row['年度股利'] || 0).toLocaleString()}</td>
-                    <td class="p-3 text-right text-blue-600 font-bold">${(row['當年購買股數'] || 0).toLocaleString()}</td>
-                    <td class="p-3 text-right font-bold">${(row['累計持股數'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right text-blue-700 font-bold">${(row['當年購買股數'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right">${(row['平均買入價'] || 0).toFixed(2)}</td>
+                    <td class="p-3 text-right text-orange-600">${(row['購買成本'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right font-black">${(row['累計持股數'] || 0).toLocaleString()}</td>
                     <td class="p-3 text-right">${(row['年末股價'] || 0).toFixed(2)}</td>
                     <td class="p-3 text-right font-black text-purple-600">${(row['年末市值'] || 0).toLocaleString()}</td>
+                    <td class="p-3 text-right font-bold ${returnClass}">${returnValue.toLocaleString()}</td>
                 </tr>
             `;
         }
@@ -1169,6 +1189,7 @@
         const lastRow = etfData[etfData.length - 1];
         document.getElementById('cfTotalInvested').textContent = totalInvested.toLocaleString();
         document.getElementById('cfTotalDividend').textContent = totalDividend.toLocaleString();
+        document.getElementById('cfTotalReturn').textContent = totalReturn.toLocaleString();
         document.getElementById('cfFinalShares').textContent = (lastRow['累計持股數'] || 0).toLocaleString() + ' 股';
         document.getElementById('cfFinalValue').textContent = (lastRow['年末市值'] || 0).toLocaleString() + ' 元';
         
@@ -1198,8 +1219,8 @@
 
         // 建立CSV內容
         const headers = [
-            '年份', '資料類型', '上期剩餘現金', '年度投入', '年度股利',
-            '當年購買股數', '累計持股數', '年末股價', '年末市值'
+            '年份', '資料類型', '年初持股數', '年初市值', '剩餘現金', '年度投入', '年度股利',
+            '購買股數', '平均買價', '購買成本', '累計持股', '年末股價', '年末市值', '年度報酬'
         ];
         
         let csv = '\ufeff' + headers.join(',') + '\n'; // 添加BOM以支援中文
@@ -1208,13 +1229,18 @@
             const line = [
                 row['年份'],
                 row['資料類型'],
-                row['上期剩餘現金'] || 0,
+                row['年初持股數'] || 0,
+                row['年初市值'] || 0,
+                row['上期剩餘現金'] || row['期末剩餘現金'] || 0,
                 row['年度投入'] || 0,
                 row['年度股利'] || 0,
                 row['當年購買股數'] || 0,
+                row['平均買入價'] || 0,
+                row['購買成本'] || 0,
                 row['累計持股數'] || 0,
                 row['年末股價'] || 0,
-                row['年末市值'] || 0
+                row['年末市值'] || 0,
+                row['年度報酬'] || 0
             ];
             csv += line.join(',') + '\n';
         }
