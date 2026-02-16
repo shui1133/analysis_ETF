@@ -216,8 +216,8 @@ class PortfolioBacktest:
 
         total_invested = float(initial_capital)
         total_dividend = 0.0
-        year_start     = float(initial_capital)
-        year_inv       = float(initial_capital)
+        year_start     = 0.0               # ✅ 修正：第一年年初尚無持股，起始資產為0
+        year_inv       = float(initial_capital)  # 啟動資金算作第一年投入
         year_div       = 0.0
         year_count     = 0
         last_year      = earliest_date.year
