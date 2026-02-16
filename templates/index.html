@@ -171,15 +171,6 @@
                 </button>
             </div>
 
-            <!-- 現金流分析按鈕 -->
-            <div id="cashflowBtnWrapper" class="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border-2 border-purple-200" style="display:none;">
-                <button id="btnCashflowAnalysis" 
-                        onclick="toggleCashflowAnalysis()"
-                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
-                    <i class="fa-solid fa-money-bill-trend-up mr-2"></i>
-                    完整現金流分析
-                </button>
-            </div>
         </div>
 
         <!-- ═══ 右欄：結果顯示 ═══ -->
@@ -354,6 +345,16 @@
                         class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
                     <i class="fa-solid fa-chart-bar mr-2"></i>
                     <span id="btnETFStatsText">顯示ETF年度統計</span>
+                </button>
+            </div>
+
+            <!-- 完整現金流分析按鈕 -->
+            <div id="cashflowBtnWrapper" class="text-center mb-4" style="display:none;">
+                <button id="btnCashflowAnalysis"
+                        onclick="toggleCashflowAnalysis()"
+                        class="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
+                    <i class="fa-solid fa-money-bill-trend-up mr-2"></i>
+                    完整現金流分析
                 </button>
             </div>
 
