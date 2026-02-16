@@ -196,6 +196,7 @@ def run_backtest():
                 'table_data': table_data,
                 'etf_weights': result['etf_weights'],
                 'etf_details': result['results']['etf_details'],
+                'etf_tracking': result['results']['etf_tracking'],
                 'hist_stats': {
                     t: {
                         'cagr': round(v['cagr'] * 100, 2),

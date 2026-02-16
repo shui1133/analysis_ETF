@@ -687,6 +687,10 @@
             renderETFStats(result.etf_details);
         }
 
+        // ✅ 回測完成後，無條件顯示現金流按鈕
+        const btnWrapper = document.getElementById('cashflowBtnWrapper');
+        if (btnWrapper) btnWrapper.style.display = 'block';
+
         // 更新現金流分析
         updateCashflowAnalysis();
     }
@@ -1074,25 +1078,27 @@
     // 更新現金流分析報表
     function updateCashflowAnalysis() {
         console.log('開始更新現金流分析...');
-        console.log('backtestResult:', backtestResult);
         
-        if (!backtestResult || !backtestResult.results) {
+        if (!backtestResult) {
             console.log('沒有回測結果');
             return;
         }
         
-        if (!backtestResult.results.etf_tracking) {
-            console.log('沒有現金流追蹤資料');
+        // ✅ 正確路徑：app.py 把 etf_tracking 放在頂層 result 裡
+        const tracking = backtestResult.etf_tracking;
+        
+        if (!tracking) {
+            console.log('沒有現金流追蹤資料，keys:', Object.keys(backtestResult));
+            document.getElementById('cashflowTableBody').innerHTML = `
+                <tr><td colspan="14" class="p-8 text-center text-slate-400">
+                    ⚠️ 後端未回傳 etf_tracking，請確認 app.py 已加入此欄位
+                </td></tr>`;
             return;
         }
 
-        const tracking = backtestResult.results.etf_tracking;
         const config = portfolioConfigs[currentStrategy];
         
-        console.log('etf_tracking:', tracking);
-        console.log('config:', config);
-        
-        // ✅ 顯示按鈕容器與按鈕
+        // ✅ 按鈕已由 updateResults 顯示，這裡再補一次保險
         const btnWrapper = document.getElementById('cashflowBtnWrapper');
         if (btnWrapper) btnWrapper.style.display = 'block';
         
@@ -1112,21 +1118,19 @@
         // 如果還沒選擇ETF，預設選擇第一個
         if (!currentCashflowETF) {
             currentCashflowETF = Object.keys(config.etfs)[0];
-            console.log('預設選擇ETF:', currentCashflowETF);
-            updateCashflowAnalysis(); // 重新渲染
+            updateCashflowAnalysis();
             return;
         }
 
         // 顯示選中ETF的數據
         const etfData = tracking[currentCashflowETF] || [];
-        console.log(`${currentCashflowETF} 的資料:`, etfData);
+        console.log(`${currentCashflowETF} 的資料筆數:`, etfData.length);
         
         if (etfData.length === 0) {
             document.getElementById('cashflowTableBody').innerHTML = `
                 <tr>
-                    <td colspan="9" class="p-8 text-center text-slate-400">
-                        此ETF沒有詳細追蹤資料<br>
-                        <small class="text-xs">請確認已執行回測並且 backtest.py 包含 etf_tracking 功能</small>
+                    <td colspan="14" class="p-8 text-center text-slate-400">
+                        此ETF沒有詳細追蹤資料
                     </td>
                 </tr>
             `;
@@ -1203,8 +1207,8 @@
             return;
         }
 
-        const tracking = backtestResult.results.etf_tracking;
-        const etfData = tracking[currentCashflowETF] || [];
+        const tracking = backtestResult.etf_tracking;
+        const etfData = tracking ? (tracking[currentCashflowETF] || []) : [];
 
         if (etfData.length === 0) {
             alert('此ETF沒有詳細追蹤資料');
