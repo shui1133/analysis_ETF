@@ -1,3 +1,4 @@
+setuptools>=65
 Flask==3.0.0
 pandas==2.0.3
 yfinance==0.2.33
