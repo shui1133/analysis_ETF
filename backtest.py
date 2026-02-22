@@ -452,58 +452,78 @@ class PortfolioBacktestV3:
     # ─────────────────────────────────────────────────────────
     # 情境分析：牛市 / 基準 / 熊市 / 盤整
     # ─────────────────────────────────────────────────────────
-    def _scenarios(self, fp, initial_assets, monthly_investment,
-                   inflation_target, current_age, actual_count, n_years=30):
-
-        dv = fp['div_yield']
+    def _scenarios(self, fp, initial_capital, monthly_investment,
+                   inflation_target, current_age, n_years=30):
+        """
+        情境分析：從使用者輸入的「初始資本」出發，計算完整投資期。
+        - 與主回測邏輯一致：股利單獨計算再投入，股價報酬只含資本增值
+        - 末期資產統一顯示第 n_years 年（預設30年），方便橫向比較
+        - 達成判斷延伸至 50 年，確保熊市 / 盤整有足夠時間搜尋
+        """
+        dv         = fp['div_yield']
+        base_price = fp['price_cagr']   # 純股價年化成長（不含股利）
 
         scenario_defs = {
-            'bull':     {'adj':  0.04, 'name': '🐂 牛市情境', 'desc': f'年化+4%（預期報酬 {fp["total_return"]*100+4:.1f}%）', 'color': '#10b981'},
-            'base':     {'adj':  0.00, 'name': '📊 基準情境', 'desc': f'均值回歸調整後 {fp["total_return"]*100:.1f}%',          'color': '#3b82f6'},
-            'bear':     {'adj': -0.05, 'name': '🐻 熊市情境', 'desc': f'年化-5%（預期報酬 {fp["total_return"]*100-5:.1f}%）', 'color': '#f59e0b'},
-            'sideways': {'adj': None,  'name': '↔️ 盤整情境', 'desc': f'股息再投入，股價零成長',                               'color': '#ef4444'},
+            'bull':     {'price_ret':  base_price + 0.04,
+                         'name': '🐂 牛市情境',
+                         'desc': f'年化+4%（總報酬 {(base_price+0.04+dv)*100:.1f}%）',
+                         'color': '#10b981'},
+            'base':     {'price_ret':  base_price,
+                         'name': '📊 基準情境',
+                         'desc': f'均值回歸調整後（總報酬 {fp["total_return"]*100:.1f}%）',
+                         'color': '#3b82f6'},
+            'bear':     {'price_ret':  base_price - 0.05,
+                         'name': '🐻 熊市情境',
+                         'desc': f'年化-5%（總報酬 {(base_price-0.05+dv)*100:.1f}%）',
+                         'color': '#f59e0b'},
+            'sideways': {'price_ret':  0.0,
+                         'name': '↔️ 盤整情境',
+                         'desc': '股息再投入，股價零成長',
+                         'color': '#ef4444'},
         }
 
         out = {}
         for key, cfg in scenario_defs.items():
-            if cfg['adj'] is None:
-                annual_ret = dv  # 盤整：只有股息
-            else:
-                annual_ret = fp['total_return'] + cfg['adj']
+            price_ret          = cfg['price_ret']
+            annual_ret_display = price_ret + dv   # 總報酬率（顯示用）
 
-            assets        = float(initial_assets)
+            assets        = float(initial_capital)
             annual_assets = []
             total_inv = total_div = 0.0
             finish_yr  = None
+            display_assets = None   # 固定記錄第 n_years 年的資產
 
-            for yr in range(n_years):
-                inv  = monthly_investment * 12
-                div  = assets * dv
+            for yr in range(50):              # 最多搜尋 50 年以找達成年份
+                inv = monthly_investment * 12
+                div = assets * dv             # 股利：以期初資產計算
                 total_inv += inv
                 total_div += div
 
-                if cfg['adj'] is None:
-                    assets = assets + inv + div  # 盤整：無資本增值
-                else:
-                    assets = (assets + inv) * (1 + annual_ret)
+                # 股利再投入 + 定期定額，再做資本增值
+                assets = (assets + inv + div) * (1 + price_ret)
 
-                thresh = inflation_target * (1 + INFLATION_RATE) ** (actual_count + yr)
-                annual_assets.append(round(assets))
+                thresh = inflation_target * (1 + INFLATION_RATE) ** yr
+
+                if yr < n_years:              # 前30年加入圖表資料
+                    annual_assets.append(round(assets))
+
+                if yr == n_years - 1:         # 第30年末資產（固定比較基準）
+                    display_assets = round(assets)
 
                 if finish_yr is None and assets >= thresh:
-                    finish_yr = actual_count + yr + 1
+                    finish_yr = yr + 1
 
             out[key] = {
-                'name':           cfg['name'],
-                'desc':           cfg['desc'],
-                'color':          cfg['color'],
-                'annual_ret_pct': round(annual_ret * 100, 1),
-                'finish_year':    finish_yr,
-                'finish_age':     (current_age + finish_yr) if finish_yr else None,
-                'forecast_assets':round(assets),
-                'total_invested': round(total_inv),
-                'total_dividend': round(total_div),
-                'annual_assets':  annual_assets,
+                'name':            cfg['name'],
+                'desc':            cfg['desc'],
+                'color':           cfg['color'],
+                'annual_ret_pct':  round(annual_ret_display * 100, 1),
+                'finish_year':     finish_yr,
+                'finish_age':      (current_age + finish_yr) if finish_yr else None,
+                'forecast_assets': display_assets,   # 統一第30年末資產
+                'total_invested':  round(total_inv),
+                'total_dividend':  round(total_div),
+                'annual_assets':   annual_assets,    # 圖表用（30年）
             }
         return out
 
@@ -594,9 +614,9 @@ class PortfolioBacktestV3:
         mc = self._monte_carlo(fp, last_assets, monthly_investment,
                                inflation_target, actual_count)
 
-        # ── 情境分析 ──────────────────────────────────────────
-        scenarios = self._scenarios(fp, last_assets, monthly_investment,
-                                    inflation_target, current_age, actual_count)
+        # ── 情境分析（從初始資本出發，計算整段投資期）──────────
+        scenarios = self._scenarios(fp, initial_capital, monthly_investment,
+                                    inflation_target, current_age)
 
         # ── 歷史統計輸出格式 ──────────────────────────────────
         hist_stats_out = {
