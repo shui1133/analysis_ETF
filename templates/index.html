@@ -143,15 +143,15 @@
                     <i class="fa-solid fa-chart-pie mr-2 text-blue-600"></i>退休領資金提領率
                 </h2>
                 <div class="space-y-3" id="strategyButtons">
-                    <div class="strategy-btn active-btn" onclick="selectStrategy('conservative')">
+                    <div class="strategy-btn active-btn" onclick="selectStrategy('conservative', this)">
                         <div class="text-base font-bold">保守型投資者 4%</div>
                         <div class="text-xs opacity-80 mt-1">(00679B、00713、00878)</div>
                     </div>
-                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('balanced')">
+                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('balanced', this)">
                         <div class="text-base font-bold">穩健型投資者 6%</div>
                         <div class="text-xs opacity-80 mt-1">(0056、00919、00929)</div>
                     </div>
-                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('aggressive')">
+                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('aggressive', this)">
                         <div class="text-base font-bold">積極型投資者 8%</div>
                         <div class="text-xs opacity-80 mt-1">(00915、00929、006208)</div>
                     </div>
@@ -160,7 +160,7 @@
 
             <!-- 操作按鈕 -->
             <div class="space-y-3">
-                <button onclick="fetchData()"
+                <button onclick="fetchData(this)"
                         class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
                     <i class="fa-solid fa-download mr-2"></i>
                     取得股價資料
@@ -168,7 +168,7 @@
                         <i class="fa-solid fa-spinner fa-spin"></i>
                     </span>
                 </button>
-                <button onclick="runBacktest()"
+                <button onclick="runBacktest(this)"
                         class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
                     <i class="fa-solid fa-chart-line mr-2"></i>
                     執行回測+推估
@@ -506,7 +506,7 @@
     };
 
     // ── 選擇投資策略 ─────────────────────────────────────────────
-    function selectStrategy(strategy) {
+    function selectStrategy(strategy, el) {
         currentStrategy = strategy;
         currentCashflowETF = null;
         const btns = document.querySelectorAll('.strategy-btn');
@@ -514,8 +514,8 @@
             btn.classList.remove('active-btn');
             btn.classList.add('inactive-btn');
         });
-        event.currentTarget.classList.remove('inactive-btn');
-        event.currentTarget.classList.add('active-btn');
+        el.classList.remove('inactive-btn');
+        el.classList.add('active-btn');
         updateETFCards();
     }
 
@@ -541,8 +541,7 @@
     }
 
     // ── 爬取資料 ─────────────────────────────────────────────────
-    async function fetchData() {
-        const btn = event.currentTarget;
+    async function fetchData(btn) {
         const spinner = btn.querySelector('.loading');
         btn.disabled = true;
         spinner.classList.add('active');
@@ -572,7 +571,7 @@
     // ── 自動執行回測（取得資料後直接呼叫，不觸發 event）────────────
     async function runBacktestAuto() {
         // 顯示回測中狀態
-        const backtestBtn = document.querySelector('button[onclick="runBacktest()"]');
+        const backtestBtn = document.querySelector('button[onclick="runBacktest(this)"]');
         const spinner = backtestBtn ? backtestBtn.querySelector('.loading') : null;
         if (backtestBtn) backtestBtn.disabled = true;
         if (spinner) spinner.classList.add('active');
@@ -608,8 +607,7 @@
     }
 
     // ── 執行回測（手動觸發）─────────────────────────────────────
-    async function runBacktest() {
-        const btn = event.currentTarget;
+    async function runBacktest(btn) {
         const spinner = btn.querySelector('.loading');
         btn.disabled = true;
         spinner.classList.add('active');
@@ -1049,34 +1047,18 @@
             const rateDisplay = row.year_return_rate !== undefined ? row.year_return_rate.toFixed(2) + '%' : '-';
             const yearNum = `第${idx}年`;
 
-            // 勾稽計算：年末資產 = 期初資產 + 年度投入 + 年度股利 + 年度報酬
-            const begAssets = row.beg_assets || '0';
-            const begNum    = parseInt((row.beg_assets||'0').replace(/,/g,''));
-            const endNum    = parseInt(row.year_end_assets.replace(/,/g,''));
-            const invNum    = parseInt(row.year_invested.replace(/,/g,''));
-            const divNum    = parseInt(row.year_dividend.replace(/,/g,''));
-            const retNum    = row.year_return_raw;
-            const calcEnd   = begNum + invNum + divNum + retNum;
-            const diffAmt   = endNum - calcEnd;
-            // 允許四捨五入誤差 ±1
-            const reconcileOk = Math.abs(diffAmt) <= 1;
-            const reconcileTip = reconcileOk
-                ? \`✅ 勾稽 ${begNum.toLocaleString()}+${invNum.toLocaleString()}+${divNum.toLocaleString()}+${retNum.toLocaleString()}=${calcEnd.toLocaleString()}\`
-                : \`⚠️ 差額${diffAmt.toLocaleString()} | ${begNum.toLocaleString()}+${invNum.toLocaleString()}+${divNum.toLocaleString()}+${retNum.toLocaleString()}=${calcEnd.toLocaleString()}\`;
-            const endStyle = reconcileOk ? '' : 'background:#fff3cd;';
-
-            html += \`
-            <tr class="\${rowClass} border-b">
-                <td class="p-3 text-center font-bold text-blue-700">\${yearNum}</td>
-                <td class="p-3 font-medium">\${row.year}</td>
-                <td class="p-3 text-center">\${badge}</td>
-                <td class="p-3 text-right">\${row.year_invested}</td>
-                <td class="p-3 text-right text-green-600">\${row.year_dividend}</td>
-                <td class="p-3 text-right \${returnColor} font-bold">\${row.year_return}</td>
-                <td class="p-3 text-right \${rateColor} font-bold">\${rateDisplay}</td>
-                <td class="p-3 text-right font-bold" style="\${endStyle}" title="\${reconcileTip}">\${row.year_end_assets}</td>
-                <td class="p-3 text-right text-red-600">\${row.inflation_threshold}</td>
-            </tr>\`;
+            html += `
+            <tr class="${rowClass} border-b">
+                <td class="p-3 text-center font-bold text-blue-700">${yearNum}</td>
+                <td class="p-3 font-medium">${row.year}</td>
+                <td class="p-3 text-center">${badge}</td>
+                <td class="p-3 text-right">${row.year_invested}</td>
+                <td class="p-3 text-right text-green-600">${row.year_dividend}</td>
+                <td class="p-3 text-right ${returnColor} font-bold">${row.year_return}</td>
+                <td class="p-3 text-right ${rateColor} font-bold">${rateDisplay}</td>
+                <td class="p-3 text-right font-bold">${row.year_end_assets}</td>
+                <td class="p-3 text-right text-red-600">${row.inflation_threshold}</td>
+            </tr>`;
         }
         document.getElementById('tableBody').innerHTML = html;
     }
@@ -1184,16 +1166,7 @@
                     <td class="p-3 text-right">${(row['當年度平均股價'] || 0).toFixed(2)}</td>
                     <td class="p-3 text-right text-orange-600">${(row['當年度剩餘現金'] || 0).toLocaleString()}</td>
                     <td class="p-3 text-right font-bold ${roiClass}">${roiValue.toFixed(2)}%</td>
-                    // 勾稽：個股資產 = 期末累計股數 × 平均股價
-                    const shares = row['當年度期末累計股數'] || 0;
-                    const price  = row['當年度平均股價'] || 0;
-                    const calcAsset = Math.round(shares * price);
-                    const assetDiff = Math.abs(Math.round(currentAsset) - calcAsset);
-                    const assetTip  = assetDiff <= 1
-                        ? `✅ ${shares.toLocaleString()}股 × ${price.toFixed(2)}元 = ${calcAsset.toLocaleString()}`
-                        : `⚠️ 差額${assetDiff.toLocaleString()} | ${shares.toLocaleString()}股 × ${price.toFixed(2)}元 = ${calcAsset.toLocaleString()}`;
-                    const assetBg = assetDiff <= 1 ? '' : 'background:#fff3cd;';
-                    html += `<td class="p-3 text-right font-black ${assetClass}" style="${assetBg}" title="${assetTip}">${Math.round(currentAsset).toLocaleString()}</td>
+                    <td class="p-3 text-right font-black ${assetClass}">${Math.round(currentAsset).toLocaleString()}</td>
                 </tr>`;
         }
 
