@@ -665,18 +665,18 @@
 
         // 歷史實際數據
         document.getElementById('actualInvested').textContent =
-            `${(result.actual_invested / 10000).toFixed(0)} 萬`;
+            `${Math.round(result.actual_invested / 10000).toLocaleString('zh-TW')} 萬`;
         document.getElementById('actualDividend').textContent =
             `${(result.actual_dividend / 10000).toFixed(0)} 萬`;
         const actualReturn = result.final_assets - result.actual_invested;
         document.getElementById('actualReturn').textContent =
-            `${(actualReturn / 10000).toFixed(0)} 萬`;
+            `${Math.round(actualReturn / 10000).toLocaleString('zh-TW')} 萬`;
 
         // 推估數據
         document.getElementById('forecastAssets').textContent =
-            `${(result.forecast_assets / 10000).toFixed(0)} 萬`;
+            `${Math.round(result.forecast_assets / 10000).toLocaleString('zh-TW')} 萬`;
         document.getElementById('forecastInvested').textContent =
-            `${(result.total_invested / 10000).toFixed(0)} 萬`;
+            `${Math.round(result.total_invested / 10000).toLocaleString('zh-TW')} 萬`;
         document.getElementById('forecastDividend').textContent =
             `${(result.total_dividend / 10000).toFixed(0)} 萬`;
 
@@ -685,7 +685,7 @@
             document.getElementById('finishInfo').textContent =
                 `第 ${result.finish_year} 年 (${result.finish_age} 歲)`;
         } else {
-            document.getElementById('finishInfo').textContent = '30年內未達成';
+            document.getElementById('finishInfo').textContent = '50年內未達成';
         }
 
         // 圖表
@@ -961,8 +961,8 @@
         for (const key of order) {
             const s = scenarios[key];
             if (!s) continue;
-            const finish = s.finish_year ? `第 ${s.finish_year} 年（${s.finish_age} 歲）` : '30年內未達成';
-            const assetM = (s.forecast_assets / 10000).toFixed(0);
+            const finish = s.finish_year ? `第 ${s.finish_year} 年（${s.finish_age} 歲）` : '50年內未達成';
+            const assetM = Math.round(s.forecast_assets / 10000).toLocaleString('zh-TW');
             html += `
             <div class="scenario-card" style="border-color:${s.color}22;">
                 <div class="text-lg font-black mb-1" style="color:${s.color}">${s.name}</div>
