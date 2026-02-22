@@ -249,13 +249,13 @@ class PortfolioBacktestV3:
                 # 可用現金 = 上期剩餘 + 投入 + 股息
                 avail = prev_cash + annual_dep + div_income
 
-                # 買入股數（採小數以簡化）
-                shares_bought = avail / avg_p if avg_p > 0 else 0
+                # 買入股數：無條件捨去至整數，剩餘現金留至下期
+                shares_bought = int(avail / avg_p) if avg_p > 0 else 0
                 new_shares    = prev_shares + shares_bought
                 etf_shares[t] = new_shares
-                etf_cash[t]   = 0.0
+                etf_cash[t]   = avail - shares_bought * avg_p  # 零股零頭留存
 
-                end_asset = new_shares * avg_p
+                end_asset = new_shares * avg_p + etf_cash[t]
 
                 # ROI
                 if yr_idx == 0 or (prev_asset + annual_dep) <= 0:
@@ -271,20 +271,20 @@ class PortfolioBacktestV3:
                     '當年度買入股數':     round(shares_bought, 2),
                     '當年度期末累計股數': round(new_shares, 2),
                     '當年度平均股價':     round(avg_p, 2),
-                    '當年度剩餘現金':     0,
+                    '當年度剩餘現金':     round(etf_cash[t]),
                     '當年度投資報酬率':   round(roi, 2),
                     '當年度個股資產':     round(end_asset),
                     '前一年度個股資產':   round(prev_asset),
                 })
 
-            # 年末總資產 = 各ETF (股數 × 平均股價)，與 tracking 個股資產一致
+            # 年末總資產 = 各ETF (股數 × 平均股價) + 剩餘現金
             etf_year_prices = {}
             for t in etf_weights:
                 yp, _, _ = self._year_data(etf_data[t][0], etf_data[t][1], year)
                 if yp <= 0:
                     yp = hist_stats.get(t, {}).get('last_price', 20.0)
                 etf_year_prices[t] = yp
-            total_end = sum(etf_shares[t] * etf_year_prices[t] for t in etf_weights)
+            total_end = sum(etf_shares[t] * etf_year_prices[t] + etf_cash[t] for t in etf_weights)
 
             yr_return = total_end - prev_portfolio - yr_invested  # 第0年：total_end - 0 - 投入 = 資本利得
             prev_portfolio = total_end
@@ -315,10 +315,11 @@ class PortfolioBacktestV3:
         # 以「股數」為核心單位追蹤，避免雙重計算股利
         etf_shares = {}
         etf_prices = {}
+        etf_cash   = {t: 0.0 for t in etf_weights}
         for t, w in etf_weights.items():
             lp = fp['etf_last_prices'].get(t, 20.0)
             etf_prices[t] = lp
-            etf_shares[t] = (last_assets * w) / lp if lp > 0 else 0.0
+            etf_shares[t] = int((last_assets * w) / lp) if lp > 0 else 0  # 整數股數
 
         results    = []
         tracking   = {t: [] for t in etf_weights}
@@ -348,13 +349,14 @@ class PortfolioBacktestV3:
                 # 本年度定期定額投入
                 annual_dep = monthly_investment * w * 12
 
-                # 可用現金 = 投入 + 股利
-                avail_cash = annual_dep + div_income
+                # 可用現金 = 上期剩餘 + 投入 + 股利
+                avail_cash = etf_cash.get(t, 0.0) + annual_dep + div_income
 
-                # 買入新股數
-                shares_bought = avail_cash / new_price if new_price > 0 else 0
+                # 買入新股數：無條件捨去至整數，剩餘現金留至下期
+                shares_bought = int(avail_cash / new_price) if new_price > 0 else 0
+                remaining_cash = avail_cash - shares_bought * new_price
                 new_shares    = prev_shares + shares_bought
-                new_asset     = new_shares * new_price
+                new_asset     = new_shares * new_price + remaining_cash
 
                 prev_asset = prev_shares * prev_price
 
@@ -362,6 +364,7 @@ class PortfolioBacktestV3:
                 yr_dividend   += div_income
                 etf_shares[t]  = new_shares
                 etf_prices[t]  = new_price
+                etf_cash[t]    = remaining_cash
 
                 # 報酬率：(期末資產 - 期初資產 - 投入) / (期初資產 + 投入)
                 base = prev_asset + annual_dep
@@ -375,13 +378,13 @@ class PortfolioBacktestV3:
                     '當年度買入股數':     round(shares_bought, 2),
                     '當年度期末累計股數': round(new_shares, 2),
                     '當年度平均股價':     round(new_price, 2),
-                    '當年度剩餘現金':     0,
+                    '當年度剩餘現金':     round(remaining_cash),
                     '當年度投資報酬率':   round(roi, 2),
                     '當年度個股資產':     round(new_asset),
                     '前一年度個股資產':   round(prev_asset),
                 })
 
-            total_end  = sum(etf_shares[t] * etf_prices[t] for t in etf_weights)
+            total_end  = sum(etf_shares[t] * etf_prices[t] + etf_cash[t] for t in etf_weights)
             yr_return  = total_end - prev_portfolio - yr_invested
             prev_portfolio = total_end
 
@@ -610,9 +613,21 @@ class PortfolioBacktestV3:
         actual_invested  = sum(r['年度投入'] for r in actual_rows)
         actual_dividend  = sum(r['年度股利'] for r in actual_rows)
         final_assets     = actual_rows[-1]['年末資產'] if actual_rows else initial_capital
-        total_invested   = sum(r['年度投入'] for r in all_rows)
-        total_dividend   = sum(r['年度股利'] for r in all_rows)
-        forecast_assets  = all_rows[-1]['年末資產'] if all_rows else initial_capital
+
+        # 推估累計投入/股利：只算到達成年份（含），未達成才算全部30年
+        if finish_year is not None:
+            forecast_rows_to_finish = forecast_rows[:finish_year - len(actual_rows)]
+        else:
+            forecast_rows_to_finish = forecast_rows
+        total_invested   = actual_invested + sum(r['年度投入'] for r in forecast_rows_to_finish)
+        total_dividend   = actual_dividend + sum(r['年度股利'] for r in forecast_rows_to_finish)
+
+        # 推估末期資產 = 達成當年的年末資產（非30年末）
+        if finish_year is not None:
+            finish_idx = finish_year - 1   # 0-based index in all_rows
+            forecast_assets = all_rows[finish_idx]['年末資產']
+        else:
+            forecast_assets = all_rows[-1]['年末資產'] if all_rows else initial_capital
 
         # ── 蒙地卡羅模擬 ──────────────────────────────────────
         mc = self._monte_carlo(fp, last_assets, monthly_investment,
