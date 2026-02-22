@@ -1049,18 +1049,34 @@
             const rateDisplay = row.year_return_rate !== undefined ? row.year_return_rate.toFixed(2) + '%' : '-';
             const yearNum = `第${idx}年`;
 
-            html += `
-            <tr class="${rowClass} border-b">
-                <td class="p-3 text-center font-bold text-blue-700">${yearNum}</td>
-                <td class="p-3 font-medium">${row.year}</td>
-                <td class="p-3 text-center">${badge}</td>
-                <td class="p-3 text-right">${row.year_invested}</td>
-                <td class="p-3 text-right text-green-600">${row.year_dividend}</td>
-                <td class="p-3 text-right ${returnColor} font-bold">${row.year_return}</td>
-                <td class="p-3 text-right ${rateColor} font-bold">${rateDisplay}</td>
-                <td class="p-3 text-right font-bold">${row.year_end_assets}</td>
-                <td class="p-3 text-right text-red-600">${row.inflation_threshold}</td>
-            </tr>`;
+            // 勾稽計算：年末資產 = 期初資產 + 年度投入 + 年度股利 + 年度報酬
+            const begAssets = row.beg_assets || '0';
+            const begNum    = parseInt((row.beg_assets||'0').replace(/,/g,''));
+            const endNum    = parseInt(row.year_end_assets.replace(/,/g,''));
+            const invNum    = parseInt(row.year_invested.replace(/,/g,''));
+            const divNum    = parseInt(row.year_dividend.replace(/,/g,''));
+            const retNum    = row.year_return_raw;
+            const calcEnd   = begNum + invNum + divNum + retNum;
+            const diffAmt   = endNum - calcEnd;
+            // 允許四捨五入誤差 ±1
+            const reconcileOk = Math.abs(diffAmt) <= 1;
+            const reconcileTip = reconcileOk
+                ? \`✅ 勾稽 ${begNum.toLocaleString()}+${invNum.toLocaleString()}+${divNum.toLocaleString()}+${retNum.toLocaleString()}=${calcEnd.toLocaleString()}\`
+                : \`⚠️ 差額${diffAmt.toLocaleString()} | ${begNum.toLocaleString()}+${invNum.toLocaleString()}+${divNum.toLocaleString()}+${retNum.toLocaleString()}=${calcEnd.toLocaleString()}\`;
+            const endStyle = reconcileOk ? '' : 'background:#fff3cd;';
+
+            html += \`
+            <tr class="\${rowClass} border-b">
+                <td class="p-3 text-center font-bold text-blue-700">\${yearNum}</td>
+                <td class="p-3 font-medium">\${row.year}</td>
+                <td class="p-3 text-center">\${badge}</td>
+                <td class="p-3 text-right">\${row.year_invested}</td>
+                <td class="p-3 text-right text-green-600">\${row.year_dividend}</td>
+                <td class="p-3 text-right \${returnColor} font-bold">\${row.year_return}</td>
+                <td class="p-3 text-right \${rateColor} font-bold">\${rateDisplay}</td>
+                <td class="p-3 text-right font-bold" style="\${endStyle}" title="\${reconcileTip}">\${row.year_end_assets}</td>
+                <td class="p-3 text-right text-red-600">\${row.inflation_threshold}</td>
+            </tr>\`;
         }
         document.getElementById('tableBody').innerHTML = html;
     }
@@ -1168,7 +1184,16 @@
                     <td class="p-3 text-right">${(row['當年度平均股價'] || 0).toFixed(2)}</td>
                     <td class="p-3 text-right text-orange-600">${(row['當年度剩餘現金'] || 0).toLocaleString()}</td>
                     <td class="p-3 text-right font-bold ${roiClass}">${roiValue.toFixed(2)}%</td>
-                    <td class="p-3 text-right font-black ${assetClass}">${Math.round(currentAsset).toLocaleString()}</td>
+                    // 勾稽：個股資產 = 期末累計股數 × 平均股價
+                    const shares = row['當年度期末累計股數'] || 0;
+                    const price  = row['當年度平均股價'] || 0;
+                    const calcAsset = Math.round(shares * price);
+                    const assetDiff = Math.abs(Math.round(currentAsset) - calcAsset);
+                    const assetTip  = assetDiff <= 1
+                        ? `✅ ${shares.toLocaleString()}股 × ${price.toFixed(2)}元 = ${calcAsset.toLocaleString()}`
+                        : `⚠️ 差額${assetDiff.toLocaleString()} | ${shares.toLocaleString()}股 × ${price.toFixed(2)}元 = ${calcAsset.toLocaleString()}`;
+                    const assetBg = assetDiff <= 1 ? '' : 'background:#fff3cd;';
+                    html += `<td class="p-3 text-right font-black ${assetClass}" style="${assetBg}" title="${assetTip}">${Math.round(currentAsset).toLocaleString()}</td>
                 </tr>`;
         }
 

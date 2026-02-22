@@ -277,14 +277,16 @@ class PortfolioBacktestV3:
                     '前一年度個股資產':   round(prev_asset),
                 })
 
-            # 年末總資產
-            total_end = sum(
-                etf_shares[t] * max(self._year_data(etf_data[t][0], etf_data[t][1], year)[0],
-                                    hist_stats.get(t, {}).get('last_price', 20.0))
-                for t in etf_weights
-            )
+            # 年末總資產 = 各ETF (股數 × 平均股價)，與 tracking 個股資產一致
+            etf_year_prices = {}
+            for t in etf_weights:
+                yp, _, _ = self._year_data(etf_data[t][0], etf_data[t][1], year)
+                if yp <= 0:
+                    yp = hist_stats.get(t, {}).get('last_price', 20.0)
+                etf_year_prices[t] = yp
+            total_end = sum(etf_shares[t] * etf_year_prices[t] for t in etf_weights)
 
-            yr_return = total_end - prev_portfolio - yr_invested if yr_idx > 0 else 0
+            yr_return = total_end - prev_portfolio - yr_invested  # 第0年：total_end - 0 - 投入 = 資本利得
             prev_portfolio = total_end
 
             infl_thresh = inflation_target * (INFLATION_RATE + 1) ** yr_idx
@@ -564,7 +566,10 @@ class PortfolioBacktestV3:
             return None
 
         actual_start = max(starts)
-        actual_end   = min(ends)
+        # 排除當年度（配息尚未全數發放，避免股利顯示為0）
+        import datetime
+        last_complete_year = datetime.date.today().year - 1
+        actual_end = min(min(ends), last_complete_year)
 
         # ── 實際回測 ─────────────────────────────────────────
         actual_rows, actual_track = self._run_actual(
@@ -593,12 +598,12 @@ class PortfolioBacktestV3:
         for t in etf_weights:
             combined_track[t] = actual_track.get(t, []) + forecast_track.get(t, [])
 
-        # ── 找達成年份 ────────────────────────────────────────
+        # ── 找達成年份（1-based，第幾年達成，與情境分析一致）──────
         finish_year = finish_age = None
         for i, row in enumerate(all_rows):
             if row['資料類型'] == 'forecast' and row['年末資產'] >= row['通膨門檻']:
-                finish_year = i
-                finish_age  = current_age + i
+                finish_year = i + 1        # 統一為 1-based：第1年=index0
+                finish_age  = current_age + finish_year
                 break
 
         # ── 統計摘要 ──────────────────────────────────────────

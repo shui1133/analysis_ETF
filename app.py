@@ -335,31 +335,40 @@ def prepare_chart_data_from_annual(result):
 
 
 def prepare_table_data(result):
-    """準備表格資料"""
+    """準備表格資料（與 backtest 計算邏輯完全一致）"""
     table_data = []
     annual_summary = result['results']['annual_summary']
     prev_end_assets = 0
     for i, row in enumerate(annual_summary):
         year_return_val = row['年度報酬']
-        year_invested = row['年度投入']
+        year_invested   = row['年度投入']
+        year_end        = row['年末資產']
+        year_dividend   = row['年度股利']
+
         # 年度投資報酬率 = 年度報酬 / (期初資產 + 年度投入)
+        # 勾稽：年度報酬 = 年末資產 - 期初資產 - 年度投入
         base = prev_end_assets + year_invested
         if base > 0:
             year_return_rate = round(year_return_val / base * 100, 2)
         else:
             year_return_rate = 0.0
-        prev_end_assets = row['年末資產']
+
+        # 前年末資產（期初資產），用於前端驗算勾稽
+        beg_assets      = prev_end_assets
+        prev_end_assets = year_end   # 更新為本年末，供下一年使用
+
         table_data.append({
             'year': row['年份'],
             'data_type': row['資料類型'],
-            'year_invested': f"{row['年度投入']:,}",
-            'year_dividend': f"{row['年度股利']:,}",
-            'year_return': f"{year_return_val:,}",
-            'year_return_rate': year_return_rate,
-            'year_end_assets': f"{row['年末資產']:,}",
-            'remaining_cash': f"{row.get('剩餘現金', 0):,}",
-            'inflation_threshold': f"{row['通膨門檻']:,}",
-            'year_return_raw': year_return_val
+            'year_invested':      f"{year_invested:,}",
+            'year_dividend':      f"{year_dividend:,}",
+            'year_return':        f"{year_return_val:,}",
+            'year_return_rate':   year_return_rate,
+            'year_end_assets':    f"{year_end:,}",
+            'remaining_cash':     f"{row.get('剩餘現金', 0):,}",
+            'inflation_threshold':f"{row['通膨門檻']:,}",
+            'year_return_raw':    year_return_val,
+            'beg_assets':         f"{beg_assets:,}",   # 期初資產，供勾稽用
         })
     return table_data
 
