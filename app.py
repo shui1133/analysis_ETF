@@ -4,15 +4,31 @@ Flask Web應用主程式 V3
 """
 
 from flask import Flask, render_template, request, jsonify, send_file
+from flask.json.provider import DefaultJSONProvider
 import pandas as pd
 import json
 import os
 import platform
+import numpy as np
 from data_fetcher import ETFDataFetcher, get_data_dir
 from backtest import PortfolioBacktestV3
 import io
 
 app = Flask(__name__)
+
+# 修復 numpy int32/float32/ndarray 無法 JSON 序列化的問題（Flask 3.x）
+class NumpyJSONProvider(DefaultJSONProvider):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+app.json_provider_class = NumpyJSONProvider
+app.json = NumpyJSONProvider(app)
 
 # 設定資料目錄
 DATA_DIR = get_data_dir()
@@ -251,64 +267,64 @@ def download_csv(portfolio_type):
 def prepare_chart_data_from_annual(result):
     """從年度摘要準備圖表資料"""
     annual_summary = result['results']['annual_summary']
-    
+
     # 每隔幾年取樣一次（避免圖表過於密集）
     total_years = len(annual_summary)
     sample_interval = max(1, total_years // 20)  # 最多顯示20個點
-    
+
     labels = []
     actual_series = []
     forecast_series = []
     threshold_series = []
-    
+
     last_actual_idx = -1
     for i, row in enumerate(annual_summary):
         if row['資料類型'] == 'actual':
             last_actual_idx = i
-    
+
     for i in range(0, len(annual_summary), sample_interval):
         row = annual_summary[i]
         year_offset = i
         labels.append(f"第{year_offset}年")
         threshold_series.append(round(row['通膨門檻']))
-        
+
         if i <= last_actual_idx:
             actual_series.append(round(row['年末資產']))
             forecast_series.append(None)
         else:
             actual_series.append(None)
             forecast_series.append(round(row['年末資產']))
-    
+
     # 確保最後一年也被包含
     if (len(annual_summary) - 1) % sample_interval != 0:
         last_row = annual_summary[-1]
         year_offset = len(annual_summary) - 1
         labels.append(f"第{year_offset}年")
         threshold_series.append(round(last_row['通膨門檻']))
-        
+
         if len(annual_summary) - 1 <= last_actual_idx:
             actual_series.append(round(last_row['年末資產']))
             forecast_series.append(None)
         else:
             actual_series.append(None)
             forecast_series.append(round(last_row['年末資產']))
-    
+
     # 8%報酬率參考線（簡化計算）
     initial_capital = result['initial_capital']
     monthly_investment = result['monthly_investment']
     r_monthly_8 = (1 + 0.08) ** (1 / 12) - 1
-    
+
     return_8_series = []
     for i, label in enumerate(labels):
         year_num = int(label.replace('第', '').replace('年', ''))
         months = year_num * 12
-        
+
         wealth = initial_capital
         for m in range(1, months + 1):
             wealth = (wealth + monthly_investment) * (1 + r_monthly_8)
-        
+
         return_8_series.append(round(wealth))
-    
+
     return {
         'labels': labels,
         'inflation_threshold': threshold_series,
