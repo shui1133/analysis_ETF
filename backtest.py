@@ -310,7 +310,14 @@ class PortfolioBacktestV3:
                       last_assets, monthly_investment, inflation_target,
                       actual_count):
 
-        etf_assets = {t: last_assets * w for t, w in etf_weights.items()}
+        # 以「股數」為核心單位追蹤，避免雙重計算股利
+        etf_shares = {}
+        etf_prices = {}
+        for t, w in etf_weights.items():
+            lp = fp['etf_last_prices'].get(t, 20.0)
+            etf_prices[t] = lp
+            etf_shares[t] = (last_assets * w) / lp if lp > 0 else 0.0
+
         results    = []
         tracking   = {t: [] for t in etf_weights}
 
@@ -321,42 +328,58 @@ class PortfolioBacktestV3:
             yr_invested = yr_dividend = 0.0
 
             for t, w in etf_weights.items():
-                prev = etf_assets[t]
-                dv   = fp['etf_div_yields'].get(t, fp['div_yield'])
-                pr   = fp['etf_cagrs'].get(t, fp['price_cagr'])
-                # 個股均值回歸
+                prev_shares = etf_shares[t]
+                prev_price  = etf_prices[t]
+
+                dv     = fp['etf_div_yields'].get(t, fp['div_yield'])
+                pr     = fp['etf_cagrs'].get(t, fp['price_cagr'])
+                # 個股均值回歸（僅價格成長部分）
                 pr_adj = pr * (1 - MEAN_REV_WEIGHT) + (LT_RETURN - dv) * MEAN_REV_WEIGHT
 
-                annual_dep  = monthly_investment * w * 12
-                div_income  = prev * dv
-                new_asset   = (prev + annual_dep + div_income) * (1 + pr_adj)
+                # 今年股價（純價格成長，不含股利）
+                new_price = prev_price * (1 + pr_adj)
 
-                yr_invested += annual_dep
-                yr_dividend += div_income
-                etf_assets[t] = new_asset
+                # 股利收入（以期初股數 × 每股股利）
+                avg_div_per_share = fp['etf_avg_divs'].get(t, dv * prev_price)
+                div_income = prev_shares * avg_div_per_share
 
-                # 估算股價與股數
-                lp     = fp['etf_last_prices'].get(t, 20.0)
-                ep     = lp * (1 + pr_adj) ** (yr_idx + 1)
-                shares = new_asset / ep if ep > 0 else 0
+                # 本年度定期定額投入
+                annual_dep = monthly_investment * w * 12
 
-                roi = pr_adj * 100
+                # 可用現金 = 投入 + 股利
+                avail_cash = annual_dep + div_income
+
+                # 買入新股數
+                shares_bought = avail_cash / new_price if new_price > 0 else 0
+                new_shares    = prev_shares + shares_bought
+                new_asset     = new_shares * new_price
+
+                prev_asset = prev_shares * prev_price
+
+                yr_invested   += annual_dep
+                yr_dividend   += div_income
+                etf_shares[t]  = new_shares
+                etf_prices[t]  = new_price
+
+                # 報酬率：(期末資產 - 期初資產 - 投入) / (期初資產 + 投入)
+                base = prev_asset + annual_dep
+                roi  = (new_asset - prev_asset - annual_dep) / base * 100 if base > 0 else 0.0
 
                 tracking[t].append({
                     '年份': year,
                     '資料類型': 'forecast',
                     '當年度提存金':       round(annual_dep),
                     '當年度配息':         round(div_income),
-                    '當年度買入股數':     round(annual_dep / ep if ep > 0 else 0, 2),
-                    '當年度期末累計股數': round(shares, 2),
-                    '當年度平均股價':     round(ep, 2),
+                    '當年度買入股數':     round(shares_bought, 2),
+                    '當年度期末累計股數': round(new_shares, 2),
+                    '當年度平均股價':     round(new_price, 2),
                     '當年度剩餘現金':     0,
                     '當年度投資報酬率':   round(roi, 2),
                     '當年度個股資產':     round(new_asset),
-                    '前一年度個股資產':   round(prev),
+                    '前一年度個股資產':   round(prev_asset),
                 })
 
-            total_end  = sum(etf_assets.values())
+            total_end  = sum(etf_shares[t] * etf_prices[t] for t in etf_weights)
             yr_return  = total_end - prev_portfolio - yr_invested
             prev_portfolio = total_end
 
