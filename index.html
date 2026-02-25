@@ -143,44 +143,25 @@
                     <i class="fa-solid fa-chart-pie mr-2 text-blue-600"></i>退休領資金提領率
                 </h2>
                 <div class="space-y-3" id="strategyButtons">
-                    <div class="strategy-btn active-btn" onclick="selectStrategy('conservative')">
+                    <div class="strategy-btn active-btn" onclick="selectStrategy('conservative', this)">
                         <div class="text-base font-bold">保守型投資者 4%</div>
                         <div class="text-xs opacity-80 mt-1">(00679B、00713、00878)</div>
                     </div>
-                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('balanced')">
+                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('balanced', this)">
                         <div class="text-base font-bold">穩健型投資者 6%</div>
                         <div class="text-xs opacity-80 mt-1">(0056、00919、00929)</div>
                     </div>
-                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('aggressive')">
+                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('aggressive', this)">
                         <div class="text-base font-bold">積極型投資者 8%</div>
                         <div class="text-xs opacity-80 mt-1">(00915、00929、006208)</div>
                     </div>
                 </div>
             </div>
 
-            <!-- 操作按鈕 -->
-            <div class="space-y-3">
-                <button onclick="fetchData()"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
-                    <i class="fa-solid fa-download mr-2"></i>
-                    取得股價資料
-                    <span class="loading ml-2">
-                        <i class="fa-solid fa-spinner fa-spin"></i>
-                    </span>
-                </button>
-                <button onclick="runBacktest()"
-                        class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
-                    <i class="fa-solid fa-chart-line mr-2"></i>
-                    執行回測+推估
-                    <span class="loading ml-2">
-                        <i class="fa-solid fa-spinner fa-spin"></i>
-                    </span>
-                </button>
-                <button onclick="downloadCSV()"
-                        class="w-full bg-slate-600 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center">
-                    <i class="fa-solid fa-file-csv mr-2"></i>
-                    下載CSV報表
-                </button>
+            <!-- 分析狀態顯示 -->
+            <div id="analysisStatus" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                <i class="fa-solid fa-spinner fa-spin text-blue-600 mr-2"></i>
+                <span id="analysisStatusText" class="text-blue-700 font-bold text-sm">正在分析中...</span>
             </div>
 
         </div>
@@ -384,6 +365,15 @@
                 </div>
             </div>
 
+            <!-- 下載回測及推估CSV報表按鈕 -->
+            <div id="downloadBacktestWrapper" class="mb-2 text-center hidden">
+                <button onclick="downloadCSV()"
+                        class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
+                    <i class="fa-solid fa-file-csv mr-2"></i>
+                    下載回測及推估CSV報表
+                </button>
+            </div>
+
             <!-- 完整現金流分析按鈕 -->
             <div id="cashflowBtnWrapper" class="mb-4" style="display:none;">
                 <button id="btnCashflowAnalysis"
@@ -506,7 +496,7 @@
     };
 
     // ── 選擇投資策略 ─────────────────────────────────────────────
-    function selectStrategy(strategy) {
+    function selectStrategy(strategy, el) {
         currentStrategy = strategy;
         currentCashflowETF = null;
         const btns = document.querySelectorAll('.strategy-btn');
@@ -514,9 +504,11 @@
             btn.classList.remove('active-btn');
             btn.classList.add('inactive-btn');
         });
-        event.currentTarget.classList.remove('inactive-btn');
-        event.currentTarget.classList.add('active-btn');
+        el.classList.remove('inactive-btn');
+        el.classList.add('active-btn');
         updateETFCards();
+        // 自動執行回測+推估
+        runAnalysis();
     }
 
     // ── 更新ETF卡片 ───────────────────────────────────────────────
@@ -540,109 +532,87 @@
         document.getElementById('etfCards').innerHTML = html;
     }
 
-    // ── 爬取資料 ─────────────────────────────────────────────────
-    async function fetchData() {
-        const btn = event.currentTarget;
-        const spinner = btn.querySelector('.loading');
-        btn.disabled = true;
-        spinner.classList.add('active');
+    // ── 統一分析流程：直接回測，若無資料則先取得再回測 ──────────
+    async function runAnalysis() {
+        const statusEl = document.getElementById('analysisStatus');
+        const statusText = document.getElementById('analysisStatusText');
 
+        function showStatus(msg) {
+            statusEl.classList.remove('hidden');
+            statusText.textContent = msg;
+        }
+        function hideStatus() {
+            statusEl.classList.add('hidden');
+        }
+
+        const params = {
+            portfolio_type: currentStrategy,
+            initial_capital: document.getElementById('start').value,
+            monthly_investment: document.getElementById('monthly').value,
+            current_age: document.getElementById('age').value,
+            target_monthly_spend: document.getElementById('target').value
+        };
+
+        // 第一步：嘗試執行回測
+        showStatus('正在執行回測+推估分析...');
         try {
-            const response = await fetch('/api/fetch_data', {
+            const res = await fetch('/api/backtest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                backtestResult = data.result;
+                updateResults(data.result);
+                hideStatus();
+                return;
+            }
+
+            // 若回測失敗（缺少資料），自動取得資料後再回測
+            showStatus('未找到股價資料，正在自動下載...');
+            const fetchRes = await fetch('/api/fetch_data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ portfolio_type: currentStrategy })
             });
-            const data = await response.json();
+            const fetchData = await fetchRes.json();
 
-            if (data.status === 'success') {
-                // 取得資料成功 → 直接自動執行回測，不需確認
-                await runBacktestAuto();
-            } else {
-                alert('✗ 取得資料失敗: ' + data.message);
+            if (fetchData.status !== 'success') {
+                alert('✗ 取得資料失敗: ' + fetchData.message);
+                hideStatus();
+                return;
             }
-        } catch (error) {
-            alert('✗ 網路錯誤: ' + error.message);
-        } finally {
-            btn.disabled = false;
-            spinner.classList.remove('active');
-        }
-    }
 
-    // ── 自動執行回測（取得資料後直接呼叫，不觸發 event）────────────
-    async function runBacktestAuto() {
-        // 顯示回測中狀態
-        const backtestBtn = document.querySelector('button[onclick="runBacktest()"]');
-        const spinner = backtestBtn ? backtestBtn.querySelector('.loading') : null;
-        if (backtestBtn) backtestBtn.disabled = true;
-        if (spinner) spinner.classList.add('active');
-
-        const params = {
-            portfolio_type: currentStrategy,
-            initial_capital: document.getElementById('start').value,
-            monthly_investment: document.getElementById('monthly').value,
-            current_age: document.getElementById('age').value,
-            target_monthly_spend: document.getElementById('target').value
-        };
-
-        try {
-            const response = await fetch('/api/backtest', {
+            // 取得資料後再執行回測
+            showStatus('資料下載完成，正在執行回測+推估分析...');
+            const res2 = await fetch('/api/backtest', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(params)
             });
-            const data = await response.json();
+            const data2 = await res2.json();
 
-            if (data.status === 'success') {
-                backtestResult = data.result;
-                updateResults(data.result);
+            if (data2.status === 'success') {
+                backtestResult = data2.result;
+                updateResults(data2.result);
             } else {
-                alert('✗ 回測錯誤: ' + data.message);
+                alert('✗ 回測錯誤: ' + data2.message);
             }
         } catch (error) {
             alert('✗ 網路錯誤: ' + error.message);
         } finally {
-            if (backtestBtn) backtestBtn.disabled = false;
-            if (spinner) spinner.classList.remove('active');
+            hideStatus();
         }
     }
 
-    // ── 執行回測（手動觸發）─────────────────────────────────────
-    async function runBacktest() {
-        const btn = event.currentTarget;
-        const spinner = btn.querySelector('.loading');
-        btn.disabled = true;
-        spinner.classList.add('active');
+    // ── 保留舊函式名稱（相容性）─────────────────────────────────
+    async function fetchData(btn) { await runAnalysis(); }
+    async function runBacktest(btn) { await runAnalysis(); }
+    async function runBacktestAuto() { await runAnalysis(); }
 
-        const params = {
-            portfolio_type: currentStrategy,
-            initial_capital: document.getElementById('start').value,
-            monthly_investment: document.getElementById('monthly').value,
-            current_age: document.getElementById('age').value,
-            target_monthly_spend: document.getElementById('target').value
-        };
 
-        try {
-            const response = await fetch('/api/backtest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(params)
-            });
-            const data = await response.json();
-
-            if (data.status === 'success') {
-                backtestResult = data.result;
-                updateResults(data.result);
-            } else {
-                alert('✗ 錯誤: ' + data.message);
-            }
-        } catch (error) {
-            alert('✗ 網路錯誤: ' + error.message);
-        } finally {
-            btn.disabled = false;
-            spinner.classList.remove('active');
-        }
-    }
 
     // ── 更新結果顯示（完整版）────────────────────────────────────
     function updateResults(result) {
@@ -665,18 +635,18 @@
 
         // 歷史實際數據
         document.getElementById('actualInvested').textContent =
-            `${(result.actual_invested / 10000).toFixed(0)} 萬`;
+            `${Math.round(result.actual_invested / 10000).toLocaleString('zh-TW')} 萬`;
         document.getElementById('actualDividend').textContent =
             `${(result.actual_dividend / 10000).toFixed(0)} 萬`;
         const actualReturn = result.final_assets - result.actual_invested;
         document.getElementById('actualReturn').textContent =
-            `${(actualReturn / 10000).toFixed(0)} 萬`;
+            `${Math.round(actualReturn / 10000).toLocaleString('zh-TW')} 萬`;
 
         // 推估數據
         document.getElementById('forecastAssets').textContent =
-            `${(result.forecast_assets / 10000).toFixed(0)} 萬`;
+            `${Math.round(result.forecast_assets / 10000).toLocaleString('zh-TW')} 萬`;
         document.getElementById('forecastInvested').textContent =
-            `${(result.total_invested / 10000).toFixed(0)} 萬`;
+            `${Math.round(result.total_invested / 10000).toLocaleString('zh-TW')} 萬`;
         document.getElementById('forecastDividend').textContent =
             `${(result.total_dividend / 10000).toFixed(0)} 萬`;
 
@@ -685,7 +655,7 @@
             document.getElementById('finishInfo').textContent =
                 `第 ${result.finish_year} 年 (${result.finish_age} 歲)`;
         } else {
-            document.getElementById('finishInfo').textContent = '30年內未達成';
+            document.getElementById('finishInfo').textContent = '50年內未達成';
         }
 
         // 圖表
@@ -709,6 +679,10 @@
         // 現金流按鈕顯示
         const btnWrapper = document.getElementById('cashflowBtnWrapper');
         if (btnWrapper) btnWrapper.style.display = 'block';
+
+        // 顯示下載回測CSV按鈕
+        const dlWrapper = document.getElementById('downloadBacktestWrapper');
+        if (dlWrapper) dlWrapper.classList.remove('hidden');
 
         // 重設並更新現金流分析
         currentCashflowETF = null;
@@ -961,8 +935,8 @@
         for (const key of order) {
             const s = scenarios[key];
             if (!s) continue;
-            const finish = s.finish_year ? `第 ${s.finish_year} 年（${s.finish_age} 歲）` : '30年內未達成';
-            const assetM = (s.forecast_assets / 10000).toFixed(0);
+            const finish = s.finish_year ? `第 ${s.finish_year} 年（${s.finish_age} 歲）` : '50年內未達成';
+            const assetM = Math.round(s.forecast_assets / 10000).toLocaleString('zh-TW');
             html += `
             <div class="scenario-card" style="border-color:${s.color}22;">
                 <div class="text-lg font-black mb-1" style="color:${s.color}">${s.name}</div>
@@ -1242,7 +1216,10 @@
     }
 
     // ── 初始化 ───────────────────────────────────────────────────
-    window.addEventListener('load', updateETFCards);
+    window.addEventListener('load', () => {
+        updateETFCards();
+        runAnalysis();
+    });
 </script>
 </body>
 </html>
