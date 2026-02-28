@@ -242,9 +242,12 @@ class PortfolioBacktestV3:
                 yr_dividend += div_income
 
                 # 本年度投入
-                annual_dep = monthly_investment * w * 12
+                # 第0年：只投入啟動資金，不計定期定額（視為年初一次性部署）
+                # 第1年起：每年投入定期定額
                 if is_first:
-                    annual_dep += initial_capital * w  # 第0年部署啟動資金
+                    annual_dep = initial_capital * w  # 只有啟動資金
+                else:
+                    annual_dep = monthly_investment * w * 12  # 定期定額
 
                 yr_invested += annual_dep
 
