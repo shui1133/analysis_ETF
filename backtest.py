@@ -415,9 +415,14 @@ class PortfolioBacktestV3:
         rng   = np.random.default_rng(seed=42)
         paths = np.zeros((MC_SIMULATIONS, n_years))
 
+        # 對年報酬截斷在 ±3σ 範圍內，避免極端離群值扭曲 P90
+        clip_lo = mu - 3 * sigma
+        clip_hi = mu + 3 * sigma
+
         for sim in range(MC_SIMULATIONS):
             assets = float(initial_assets)
             annual_rets = rng.normal(mu, sigma, n_years)
+            annual_rets = np.clip(annual_rets, clip_lo, clip_hi)
             for yr in range(n_years):
                 assets = max((assets + monthly_investment * 12) * (1 + annual_rets[yr]), 0)
                 paths[sim, yr] = assets
