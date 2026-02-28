@@ -32,7 +32,7 @@ PORTFOLIO_CONFIGS = {
 
 MC_SIMULATIONS = 1000   # 蒙地卡羅模擬次數
 INFLATION_RATE  = 0.03  # 通膨率假設
-MEAN_REV_WEIGHT = 0.35  # 均值回歸權重 (35% 往長期均值靠近)
+MEAN_REV_WEIGHT = 0.50  # 均值回歸權重 (50% 往長期均值靠近)
 LT_RETURN       = 0.10  # 台灣市場長期年化報酬率假設
 
 
@@ -185,11 +185,13 @@ class PortfolioBacktestV3:
             etf_avg_divs[t]    = s['avg_div_per_share']
             etf_last_prices[t] = s['last_price']
 
-        # 均值回歸：近期高報酬往長期均值修正
+        # 均值回歸：對「總報酬」做均值回歸，往長期均值LT_RETURN靠攏
+        # raw_total = 歷史股價CAGR + 配息率（歷史總報酬）
         raw_total   = w_cagr + w_div
-        # 若近期報酬遠高於歷史，進一步折扣
-        blended_cagr = w_cagr * (1 - MEAN_REV_WEIGHT) + (LT_RETURN - w_div) * MEAN_REV_WEIGHT
-        adj_total   = blended_cagr + w_div
+        # 均值回歸後總報酬：50%歷史 + 50%長期均值，並設上限14%防止過度樂觀
+        adj_total   = min(raw_total * (1 - MEAN_REV_WEIGHT) + LT_RETURN * MEAN_REV_WEIGHT, 0.14)
+        # 純股價報酬 = 調整後總報酬 - 配息率
+        blended_cagr = adj_total - w_div
 
         return {
             'price_cagr':    blended_cagr,
@@ -415,13 +417,14 @@ class PortfolioBacktestV3:
         rng   = np.random.default_rng(seed=42)
         paths = np.zeros((MC_SIMULATIONS, n_years))
 
-        # 對年報酬截斷在 ±3σ 範圍內，避免極端離群值扭曲 P90
-        clip_lo = mu - 3 * sigma
-        clip_hi = mu + 3 * sigma
+        # 對年報酬截斷在 ±2.5σ 範圍內，避免極端離群值扭曲 P90
+        effective_sigma = min(sigma, 0.15)  # sigma上限15%，避免過度波動
+        clip_lo = mu - 2.5 * effective_sigma
+        clip_hi = mu + 2.5 * effective_sigma
 
         for sim in range(MC_SIMULATIONS):
             assets = float(initial_assets)
-            annual_rets = rng.normal(mu, sigma, n_years)
+            annual_rets = rng.normal(mu, effective_sigma, n_years)
             annual_rets = np.clip(annual_rets, clip_lo, clip_hi)
             for yr in range(n_years):
                 assets = max((assets + monthly_investment * 12) * (1 + annual_rets[yr]), 0)
