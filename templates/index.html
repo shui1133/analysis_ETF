@@ -912,15 +912,40 @@
                     legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
                     tooltip: {
                         callbacks: {
-                            label: ctx => ctx.dataset.label + ': ' + (ctx.parsed.y / 10000).toFixed(0) + ' 萬'
+                            label: function(ctx) {
+                                const v = ctx.parsed.y;
+                                const allVals = [...(mc.p90||[]), ...(mc.p50||[]), ...(mc.p10||[])].filter(x => x != null);
+                                const maxVal = allVals.length ? Math.max(...allVals) : v;
+                                let formatted;
+                                if (maxVal >= 1e8) {
+                                    formatted = (v / 1e8).toFixed(2) + ' 億';
+                                } else {
+                                    formatted = (v / 10000).toFixed(0) + ' 萬';
+                                }
+                                return ctx.dataset.label + ': ' + formatted;
+                            }
                         }
                     }
                 },
                 scales: {
                     x: { ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: 12 },
                          grid: { color: 'rgba(255,255,255,.04)' } },
-                    y: { ticks: { color: '#64748b', callback: v => (v/10000).toFixed(0)+'萬' },
-                         grid: { color: 'rgba(255,255,255,.06)' } }
+                    y: {
+                        ticks: {
+                            color: '#64748b',
+                            callback: function(v) {
+                                const allVals = [...(mc.p90||[]), ...(mc.p50||[]), ...(mc.p10||[])].filter(x => x != null);
+                                const maxVal = allVals.length ? Math.max(...allVals) : v;
+                                if (maxVal >= 1e8) {
+                                    // 超過1億，用億為單位
+                                    return (v / 1e8).toFixed(v % 1e8 === 0 ? 0 : 1) + '億';
+                                } else {
+                                    return (v / 10000).toFixed(0) + '萬';
+                                }
+                            }
+                        },
+                        grid: { color: 'rgba(255,255,255,.06)' }
+                    }
                 }
             }
         });
