@@ -143,11 +143,11 @@
                     <i class="fa-solid fa-chart-pie mr-2 text-blue-600"></i>退休領資金提領率
                 </h2>
                 <div class="space-y-3" id="strategyButtons">
-                    <div class="strategy-btn active-btn" onclick="selectStrategy('conservative', this)">
+                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('conservative', this)">
                         <div class="text-base font-bold">保守型投資者 4%</div>
                         <div class="text-xs opacity-80 mt-1">(00679B、00713、00878)</div>
                     </div>
-                    <div class="strategy-btn inactive-btn" onclick="selectStrategy('balanced', this)">
+                    <div class="strategy-btn active-btn" onclick="selectStrategy('balanced', this)">
                         <div class="text-base font-bold">穩健型投資者 6%</div>
                         <div class="text-xs opacity-80 mt-1">(0056、00919、00929)</div>
                     </div>
@@ -471,7 +471,7 @@
     // ══════════════════════════════════════════════════════════════
     // 全域變數
     // ══════════════════════════════════════════════════════════════
-    let currentStrategy = 'conservative';
+    let currentStrategy = 'balanced';
     let backtestResult = null;
     let myChart = null;
     let mcChart = null;
