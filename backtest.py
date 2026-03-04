@@ -228,6 +228,7 @@ class PortfolioBacktestV3:
         for yr_idx, year in enumerate(range(start_year, end_year + 1)):
             yr_invested = yr_dividend = 0.0
             is_first = (yr_idx == 0)
+            etf_year_avg = {}   # 本年各ETF均價，供第0年 total_end 計算用
 
             for t, w in etf_weights.items():
                 price_df, div_df = etf_data[t]
@@ -238,6 +239,7 @@ class PortfolioBacktestV3:
                     avg_p = hist_stats.get(t, {}).get('last_price', 20.0)
                 if year_end_p <= 0:
                     year_end_p = avg_p
+                etf_year_avg[t] = avg_p   # 記錄本年均價，供第0年 total_end 使用
 
                 prev_shares = etf_shares[t]
                 prev_cash   = etf_cash[t]
@@ -270,8 +272,11 @@ class PortfolioBacktestV3:
                 etf_shares[t] = new_shares
                 etf_cash[t]   = avail - shares_bought * avg_p
 
-                # 期末資產：用「年底收盤價」反映真實持倉市值
-                end_asset = new_shares * year_end_p + etf_cash[t]
+                # 期末資產：
+                # 第0年（建倉年）：用均價（= 買入成本），確保「個股資產 = 提存金」
+                # 第1年起：用年底收盤價，反映真實持倉市值
+                val_price = avg_p if is_first else year_end_p
+                end_asset = new_shares * val_price + etf_cash[t]
 
                 # ROI = (期末資產 - 期初資產 - 投入) / (期初資產 + 投入)
                 base = prev_asset + annual_dep
@@ -298,13 +303,15 @@ class PortfolioBacktestV3:
                     '前一年度個股資產':   round(prev_asset),
                 })
 
-            # 年末總資產 = 各ETF (股數 × 年底收盤價) + 剩餘現金
-            # etf_end_price 已在內層 loop 更新為本年底收盤價
-            total_end = sum(etf_shares[t] * etf_end_price[t] + etf_cash[t] for t in etf_weights)
+            # 年末總資產：
+            # 第0年（建倉年）：用均價估值（= 買入成本，年末資產 ≈ 總投入）
+            # 第1年起：用年底收盤價，反映真實持倉市值
+            if is_first:
+                total_end = sum(etf_shares[t] * etf_year_avg[t] + etf_cash[t] for t in etf_weights)
+            else:
+                total_end = sum(etf_shares[t] * etf_end_price[t] + etf_cash[t] for t in etf_weights)
 
-            # 第0年為「建倉年」，買入成本即 yr_invested，不計算帳面資本利得
-            # prev_portfolio 仍用年底收盤估值，確保第1年起的期初基準正確
-            yr_return = 0 if is_first else (total_end - prev_portfolio - yr_invested)
+            yr_return = total_end - prev_portfolio - yr_invested  # 第0年：total_end - 0 - 投入 = 資本利得
             prev_portfolio = total_end
 
             infl_thresh = inflation_target * (INFLATION_RATE + 1) ** yr_idx
@@ -337,10 +344,7 @@ class PortfolioBacktestV3:
         for t, w in etf_weights.items():
             lp = fp['etf_last_prices'].get(t, 20.0)
             etf_prices[t] = lp
-            alloc = last_assets * w
-            shares_init = int(alloc / lp) if lp > 0 else 0
-            etf_shares[t] = shares_init
-            etf_cash[t]   = alloc - shares_init * lp  # 整數股買入後的零頭現金
+            etf_shares[t] = int((last_assets * w) / lp) if lp > 0 else 0  # 整數股數
 
         results    = []
         tracking   = {t: [] for t in etf_weights}
