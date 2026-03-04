@@ -304,9 +304,17 @@ def prepare_chart_data_from_annual(result):
     # finish_year 是 1-based；對應 index = finish_year - 1
     finish_idx = (finish_year - 1) if finish_year is not None else None
 
+    start_year = annual_summary[0]['年份'] if annual_summary else 2026
+    year_series = []
+
     for i in indices:
         labels.append(f"第{i}年")
         threshold_series.append(get_thresh(i))
+        # 實際年份：有資料時從 annual_summary 取，超出範圍則推算
+        if i < n_all:
+            year_series.append(annual_summary[i]['年份'])
+        else:
+            year_series.append(start_year + i)
 
         # ── 歷史實際 / 推估預測 ──────────────────────────
         if i < n_all:
@@ -361,6 +369,7 @@ def prepare_chart_data_from_annual(result):
 
     return {
         'labels':                labels,
+        'years':                 year_series,
         'inflation_threshold':   threshold_series,
         'actual_assets':         actual_series,
         'forecast_assets':       forecast_series,

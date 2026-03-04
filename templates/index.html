@@ -238,24 +238,7 @@
                         <i class="fa-solid fa-chart-area mr-2 text-blue-600"></i>
                         <span id="chartTitle">資產成長趨勢圖</span>
                     </h2>
-                    <div class="flex gap-4 text-xs">
-                        <div class="flex items-center gap-1">
-                            <span class="legend-dot" style="background:#10b981;"></span>
-                            <span class="text-slate-600">歷史實際</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span class="legend-dot" style="background:#3b82f6;"></span>
-                            <span class="text-slate-600">推估預測</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span class="legend-dot" style="background:#ef4444;"></span>
-                            <span class="text-slate-600">通膨門檻</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span class="legend-dot" style="background:#f59e0b;"></span>
-                            <span class="text-slate-600">8%報酬</span>
-                        </div>
-                    </div>
+
                 </div>
                 <div style="position:relative; height:420px;">
                     <canvas id="chart"></canvas>
@@ -658,7 +641,7 @@
             document.getElementById('finishInfo').textContent = '50年內未達成';
         }
 
-        // 圖表
+        // 圖表（傳入 chart_data 內建的實際年份陣列）
         updateChart(result.chart_data);
 
         // 年度報表表格
@@ -703,6 +686,8 @@
         const retireCont  = chartData.retirement_cont_assets || [];
         const finishYear  = chartData.finish_year;
         const startYear   = chartData.start_year || new Date().getFullYear();
+        // 後端直接提供的實際年份陣列（與取樣點一一對應）
+        const yearArr     = chartData.years || null;
 
         // 計算 Y 軸上限（包含退休兩條曲線）
         const assetVals = [...actual, ...forecast, ...ret8, ...retireStop, ...retireCont]
@@ -840,11 +825,12 @@
                     tooltip: {
                         callbacks: {
                             title: function(items) {
-                                const label = items[0]?.label || '';
+                                const index = items[0]?.dataIndex ?? 0;
+                                const label = labels[index] || '';
                                 const match = label.match(/第(\d+)年/);
                                 if (match) {
                                     const yr = parseInt(match[1]);
-                                    const calYear = startYear + yr;
+                                    const calYear = yearArr ? (yearArr[index] ?? startYear + yr) : startYear + yr;
                                     const retireNote = (finishYear !== null && finishYear !== undefined && yr === finishYear)
                                         ? ' 🎯 達到退休門檻' : '';
                                     return `${label}（${calYear} 年）${retireNote}`;
@@ -880,7 +866,7 @@
                                 const match = label.match(/第(\d+)年/);
                                 if (match) {
                                     const yearNum = parseInt(match[1]);
-                                    const calYear = startYear + yearNum;
+                                    const calYear = yearArr ? (yearArr[index] ?? startYear + yearNum) : startYear + yearNum;
                                     return [label, String(calYear)];
                                 }
                                 return label;
