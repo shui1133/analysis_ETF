@@ -302,7 +302,9 @@ class PortfolioBacktestV3:
             # etf_end_price 已在內層 loop 更新為本年底收盤價
             total_end = sum(etf_shares[t] * etf_end_price[t] + etf_cash[t] for t in etf_weights)
 
-            yr_return = total_end - prev_portfolio - yr_invested  # 第0年：total_end - 0 - 投入 = 資本利得
+            # 第0年為「建倉年」，買入成本即 yr_invested，不計算帳面資本利得
+            # prev_portfolio 仍用年底收盤估值，確保第1年起的期初基準正確
+            yr_return = 0 if is_first else (total_end - prev_portfolio - yr_invested)
             prev_portfolio = total_end
 
             infl_thresh = inflation_target * (INFLATION_RATE + 1) ** yr_idx
@@ -335,7 +337,10 @@ class PortfolioBacktestV3:
         for t, w in etf_weights.items():
             lp = fp['etf_last_prices'].get(t, 20.0)
             etf_prices[t] = lp
-            etf_shares[t] = int((last_assets * w) / lp) if lp > 0 else 0  # 整數股數
+            alloc = last_assets * w
+            shares_init = int(alloc / lp) if lp > 0 else 0
+            etf_shares[t] = shares_init
+            etf_cash[t]   = alloc - shares_init * lp  # 整數股買入後的零頭現金
 
         results    = []
         tracking   = {t: [] for t in etf_weights}
