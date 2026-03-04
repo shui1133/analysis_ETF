@@ -214,8 +214,10 @@ class PortfolioBacktestV3:
                     start_year, end_year,
                     initial_capital, monthly_investment, inflation_target, current_age):
 
-        etf_shares = {t: 0.0 for t in etf_weights}
-        etf_cash   = {t: 0.0 for t in etf_weights}
+        etf_shares     = {t: 0.0 for t in etf_weights}
+        etf_cash       = {t: 0.0 for t in etf_weights}
+        # ★ 修正：記錄每檔ETF「上一年底股價」，用於正確計算ROI分母
+        etf_prev_price = {t: 0.0 for t in etf_weights}
         results    = []
         tracking   = {t: [] for t in etf_weights}
 
@@ -235,7 +237,11 @@ class PortfolioBacktestV3:
 
                 prev_shares = etf_shares[t]
                 prev_cash   = etf_cash[t]
-                prev_asset  = prev_shares * avg_p + prev_cash
+
+                # ★ 修正：prev_asset 使用「上一年底股價」而非當年均價
+                # 第0年沒有上一年底股價，用當年均價（此年ROI固定為0，不影響結果）
+                prev_price_for_roi = etf_prev_price[t] if not is_first else avg_p
+                prev_asset = prev_shares * prev_price_for_roi + prev_cash
 
                 # 股息收入
                 div_income = prev_shares * div_sum
@@ -262,11 +268,15 @@ class PortfolioBacktestV3:
 
                 end_asset = new_shares * avg_p + etf_cash[t]
 
-                # ROI
+                # ★ 修正後ROI：分子 = 期末資產 - 期初資產(以上年底價計) - 新投入
+                #              分母 = 期初資產(以上年底價計) + 新投入
                 if yr_idx == 0 or (prev_asset + annual_dep) <= 0:
                     roi = 0.0
                 else:
                     roi = (end_asset - prev_asset - annual_dep) / (prev_asset + annual_dep) * 100
+
+                # ★ 記錄本年底股價，供下一年度計算 prev_asset 使用
+                etf_prev_price[t] = avg_p
 
                 tracking[t].append({
                     '年份': year,
@@ -279,7 +289,7 @@ class PortfolioBacktestV3:
                     '當年度剩餘現金':     round(etf_cash[t]),
                     '當年度投資報酬率':   round(roi, 2),
                     '當年度個股資產':     round(end_asset),
-                    '前一年度個股資產':   round(prev_asset),
+                    '前一年度個股資產':   round(prev_asset),  # 現在正確反映上年底估值
                 })
 
             # 年末總資產 = 各ETF (股數 × 平均股價) + 剩餘現金
@@ -543,6 +553,66 @@ class PortfolioBacktestV3:
         return out
 
     # ─────────────────────────────────────────────────────────
+    # 退休提領曲線（兩條：停止投入 / 繼續定期定額）
+    # ─────────────────────────────────────────────────────────
+    def _calc_retirement_series(self, all_rows, fp, finish_year,
+                                withdrawal_rate, inflation_target,
+                                monthly_investment, post_retire_years=30):
+        """
+        計算退休後兩條曲線：
+        - 達到退休門檻前：與主推估一致（持續投入）
+        - 達到退休門檻後：
+          曲線A（停止投入）：停止定期定額，每年按提領率提領生活費，
+                            剩餘資產繼續以 total_return 成長
+          曲線B（繼續投入）：維持定期定額，同時每年按提領率提領生活費，
+                            剩餘資產繼續以 total_return 成長
+
+        提領金額 = 退休當年通膨門檻 × withdrawal_rate（= target_monthly_spend × 12）
+        每年隨通膨率調升。
+        """
+        total_ret = fp['total_return']   # 年化報酬（含股利）
+
+        # 未達成退休門檻：全部回傳 None，圖表不顯示
+        if finish_year is None:
+            empty = [None] * len(all_rows)
+            return empty, empty
+
+        finish_idx = finish_year - 1   # 0-based
+
+        # ── 達成前：兩條線均沿用 all_rows 的年末資產 ──────
+        pre_series = [round(all_rows[i]['年末資產']) for i in range(finish_idx + 1)]
+
+        # 退休當年資產與初始提領金額
+        retire_assets = all_rows[finish_idx]['年末資產']
+        retire_thresh = all_rows[finish_idx]['通膨門檻']
+        # 年提領金額 = 退休門檻 × 提領率（例：4% SWR → target_monthly_spend×12）
+        annual_withdraw_base = retire_thresh * withdrawal_rate
+
+        # ── 曲線A：停止定期定額，每年提領 ──────────────────
+        series_stop = list(pre_series)
+        assets_a = float(retire_assets)
+        withdraw_a = annual_withdraw_base
+        for _ in range(post_retire_years):
+            assets_a = max(assets_a - withdraw_a, 0)   # 年初提領
+            assets_a = assets_a * (1 + total_ret)       # 剩餘繼續成長
+            withdraw_a *= (1 + INFLATION_RATE)           # 提領金額隨通膨調升
+            series_stop.append(round(assets_a) if assets_a > 0 else 0)
+
+        # ── 曲線B：繼續定期定額，同時每年提領 ───────────────
+        series_cont = list(pre_series)
+        assets_b = float(retire_assets)
+        withdraw_b = annual_withdraw_base
+        annual_invest = monthly_investment * 12
+        for _ in range(post_retire_years):
+            # 年初：先扣提領，再加入定期定額，剩餘成長
+            assets_b = max(assets_b - withdraw_b, 0)
+            assets_b = (assets_b + annual_invest) * (1 + total_ret)
+            withdraw_b *= (1 + INFLATION_RATE)
+            series_cont.append(round(assets_b) if assets_b > 0 else 0)
+
+        return series_stop, series_cont
+
+    # ─────────────────────────────────────────────────────────
     # 主入口
     # ─────────────────────────────────────────────────────────
     def backtest_portfolio(self, portfolio_type='conservative',
@@ -640,6 +710,15 @@ class PortfolioBacktestV3:
         else:
             forecast_assets = all_rows[-1]['年末資產'] if all_rows else initial_capital
 
+        # ── 退休提領曲線（兩條）────────────────────────────────
+        # 達到退休門檻後：
+        #   A. 停止定期定額，每年按提領率提領生活費
+        #   B. 繼續定期定額，同時每年按提領率提領生活費
+        retirement_series_stop, retirement_series_cont = self._calc_retirement_series(
+            all_rows, fp, finish_year, withdrawal_rate,
+            inflation_target, monthly_investment
+        )
+
         # ── 蒙地卡羅模擬 ──────────────────────────────────────
         mc = self._monte_carlo(fp, last_assets, monthly_investment,
                                inflation_target, actual_count)
@@ -680,6 +759,8 @@ class PortfolioBacktestV3:
             # 新增功能
             'monte_carlo':      mc,
             'scenarios':        scenarios,
+            'retirement_series_stop': retirement_series_stop,
+            'retirement_series_cont': retirement_series_cont,
             'forecast_params':  {
                 'adj_total_return': round(fp['total_return'] * 100, 2),
                 'raw_total_return': round(fp['raw_total'] * 100, 2),

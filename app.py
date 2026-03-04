@@ -265,72 +265,109 @@ def download_csv(portfolio_type):
 
 
 def prepare_chart_data_from_annual(result):
-    """從年度摘要準備圖表資料"""
-    annual_summary = result['results']['annual_summary']
+    """從年度摘要準備圖表資料（含退休提領兩條曲線）"""
+    from backtest import INFLATION_RATE
+    annual_summary      = result['results']['annual_summary']
+    retirement_stop     = result.get('retirement_series_stop', [])
+    retirement_cont     = result.get('retirement_series_cont', [])
+    finish_year         = result.get('finish_year')
 
-    # 每隔幾年取樣一次（避免圖表過於密集）
-    total_years = len(annual_summary)
-    sample_interval = max(1, total_years // 20)  # 最多顯示20個點
-
-    labels = []
-    actual_series = []
-    forecast_series = []
-    threshold_series = []
+    n_all        = len(annual_summary)
+    full_len     = max(len(retirement_stop), len(retirement_cont), n_all)
+    total_years  = full_len
+    sample_interval = max(1, total_years // 25)
 
     last_actual_idx = -1
     for i, row in enumerate(annual_summary):
         if row['資料類型'] == 'actual':
             last_actual_idx = i
 
-    for i in range(0, len(annual_summary), sample_interval):
-        row = annual_summary[i]
-        year_offset = i
-        labels.append(f"第{year_offset}年")
-        threshold_series.append(round(row['通膨門檻']))
+    last_thresh = annual_summary[-1]['通膨門檻'] if annual_summary else 0
 
-        if i <= last_actual_idx:
-            actual_series.append(round(row['年末資產']))
-            forecast_series.append(None)
+    def get_thresh(idx):
+        if idx < n_all:
+            return round(annual_summary[idx]['通膨門檻'])
+        extra = idx - n_all + 1
+        return round(last_thresh * (1 + INFLATION_RATE) ** extra)
+
+    labels               = []
+    actual_series        = []
+    forecast_series      = []
+    threshold_series     = []
+    retire_stop_series   = []
+    retire_cont_series   = []
+
+    indices = list(range(0, total_years, sample_interval))
+    if (total_years - 1) not in indices:
+        indices.append(total_years - 1)
+
+    # finish_year 是 1-based；對應 index = finish_year - 1
+    finish_idx = (finish_year - 1) if finish_year is not None else None
+
+    for i in indices:
+        labels.append(f"第{i}年")
+        threshold_series.append(get_thresh(i))
+
+        # ── 歷史實際 / 推估預測 ──────────────────────────
+        if i < n_all:
+            row = annual_summary[i]
+            if i <= last_actual_idx:
+                actual_series.append(round(row['年末資產']))
+                forecast_series.append(None)
+            else:
+                actual_series.append(None)
+                forecast_series.append(round(row['年末資產']))
         else:
             actual_series.append(None)
-            forecast_series.append(round(row['年末資產']))
-
-    # 確保最後一年也被包含
-    if (len(annual_summary) - 1) % sample_interval != 0:
-        last_row = annual_summary[-1]
-        year_offset = len(annual_summary) - 1
-        labels.append(f"第{year_offset}年")
-        threshold_series.append(round(last_row['通膨門檻']))
-
-        if len(annual_summary) - 1 <= last_actual_idx:
-            actual_series.append(round(last_row['年末資產']))
             forecast_series.append(None)
-        else:
-            actual_series.append(None)
-            forecast_series.append(round(last_row['年末資產']))
 
-    # 8%報酬率參考線（簡化計算）
-    initial_capital = result['initial_capital']
+        # ── 退休曲線A（停止投入）────────────────────────
+        if retirement_stop and i < len(retirement_stop):
+            val = retirement_stop[i]
+            # 只在達到退休門檻之後才顯示（含達成當年）
+            if finish_idx is not None and i >= finish_idx:
+                retire_stop_series.append(val if val is not None else None)
+            else:
+                retire_stop_series.append(None)
+        else:
+            retire_stop_series.append(None)
+
+        # ── 退休曲線B（繼續投入）────────────────────────
+        if retirement_cont and i < len(retirement_cont):
+            val = retirement_cont[i]
+            if finish_idx is not None and i >= finish_idx:
+                retire_cont_series.append(val if val is not None else None)
+            else:
+                retire_cont_series.append(None)
+        else:
+            retire_cont_series.append(None)
+
+    # 8%報酬率參考線（僅顯示到 n_all 範圍，避免過長）
+    initial_capital    = result['initial_capital']
     monthly_investment = result['monthly_investment']
     r_monthly_8 = (1 + 0.08) ** (1 / 12) - 1
 
     return_8_series = []
-    for i, label in enumerate(labels):
+    for label in labels:
         year_num = int(label.replace('第', '').replace('年', ''))
+        if year_num > n_all + 5:
+            return_8_series.append(None)
+            continue
         months = year_num * 12
-
         wealth = initial_capital
         for m in range(1, months + 1):
             wealth = (wealth + monthly_investment) * (1 + r_monthly_8)
-
         return_8_series.append(round(wealth))
 
     return {
-        'labels': labels,
-        'inflation_threshold': threshold_series,
-        'actual_assets': actual_series,
-        'forecast_assets': forecast_series,
-        'return_8_assets': return_8_series
+        'labels':                labels,
+        'inflation_threshold':   threshold_series,
+        'actual_assets':         actual_series,
+        'forecast_assets':       forecast_series,
+        'return_8_assets':       return_8_series,
+        'retirement_stop_assets': retire_stop_series,
+        'retirement_cont_assets': retire_cont_series,
+        'finish_year':           finish_year,
     }
 
 
@@ -373,14 +410,43 @@ def prepare_table_data(result):
     return table_data
 
 
+def open_browser_delayed(port=5000):
+    """延遲開啟瀏覽器（僅本機執行時使用）"""
+    import threading
+    import time
+    import webbrowser
+
+    def _open():
+        time.sleep(1.5)
+        webbrowser.open(f'http://127.0.0.1:{port}')
+
+    t = threading.Thread(target=_open, daemon=True)
+    t.start()
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    is_render  = bool(os.environ.get('RENDER'))
+    is_windows = platform.system() == 'Windows'
 
-    print("="*60)
-    print("台灣ETF投資分析系統啟動 (V3 - 個股效益分析版 / backtest.py)")
-    print(f"執行環境: {'Render (Production)' if os.environ.get('RENDER') else 'Local Development'}")
-    print(f"Port: {port}")
-    print("="*60)
+    print("=" * 60)
+    print("台灣ETF投資分析系統啟動 (V3 - 個股效益分析版)")
+    if is_render:
+        print("執行環境: Render (Production)")
+    elif is_windows:
+        print("執行環境: Windows 本機")
+    else:
+        print("執行環境: Linux/Mac 本機")
+    print(f"資料目錄: {DATA_DIR}")
+    print(f"Port    : {port}")
+    print(f"網址    : http://127.0.0.1:{port}")
+    print("=" * 60)
 
-    host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
+    if is_render:
+        host = '0.0.0.0'
+    else:
+        host = '127.0.0.1'
+        # 本機執行時自動開啟瀏覽器
+        open_browser_delayed(port)
+
     app.run(debug=False, host=host, port=port)

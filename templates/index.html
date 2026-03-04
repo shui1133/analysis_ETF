@@ -694,14 +694,18 @@
         const ctx = document.getElementById('chart').getContext('2d');
         if (myChart) myChart.destroy();
 
-        const labels   = chartData.labels          || [];
-        const actual   = chartData.actual_assets   || [];
-        const forecast = chartData.forecast_assets || [];
-        const inflRaw  = chartData.inflation_threshold || [];
-        const ret8     = chartData.return_8_assets || [];
-        const startYear = chartData.start_year || new Date().getFullYear();
+        const labels      = chartData.labels          || [];
+        const actual      = chartData.actual_assets   || [];
+        const forecast    = chartData.forecast_assets || [];
+        const inflRaw     = chartData.inflation_threshold || [];
+        const ret8        = chartData.return_8_assets || [];
+        const retireStop  = chartData.retirement_stop_assets || [];
+        const retireCont  = chartData.retirement_cont_assets || [];
+        const finishYear  = chartData.finish_year;
+        const startYear   = chartData.start_year || new Date().getFullYear();
 
-        const assetVals = [...actual, ...forecast, ...ret8]
+        // 計算 Y 軸上限（包含退休兩條曲線）
+        const assetVals = [...actual, ...forecast, ...ret8, ...retireStop, ...retireCont]
             .filter(v => v !== null && v !== undefined && !isNaN(v));
         const rawMax = assetVals.length > 0 ? Math.max(...assetVals) : 1000000;
         const yMax = rawMax * 1.1;
@@ -724,6 +728,9 @@
             (v !== null && v !== undefined && !isNaN(v)) ? Math.min(v, yMaxNice) : null
         );
 
+        // 判斷是否有退休曲線資料
+        const hasRetire = retireStop.some(v => v !== null) || retireCont.some(v => v !== null);
+
         myChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -743,7 +750,7 @@
                         spanGaps: false
                     },
                     {
-                        label: '推估預測',
+                        label: '推估預測（持續投入）',
                         data: forecast,
                         borderColor: '#3b82f6',
                         backgroundColor: 'transparent',
@@ -755,6 +762,36 @@
                         pointBackgroundColor: '#3b82f6',
                         fill: false,
                         spanGaps: false
+                    },
+                    {
+                        label: '退休後－停止投入',
+                        data: retireStop,
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249,115,22,0.07)',
+                        borderWidth: 2.5,
+                        borderDash: [8, 3],
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#f97316',
+                        fill: false,
+                        spanGaps: false,
+                        hidden: !hasRetire
+                    },
+                    {
+                        label: '退休後－繼續定期定額',
+                        data: retireCont,
+                        borderColor: '#a855f7',
+                        backgroundColor: 'rgba(168,85,247,0.07)',
+                        borderWidth: 2.5,
+                        borderDash: [4, 2],
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#a855f7',
+                        fill: false,
+                        spanGaps: false,
+                        hidden: !hasRetire
                     },
                     {
                         label: '通膨門檻',
@@ -786,12 +823,39 @@
                 animation: { duration: 400 },
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { display: false },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: '#475569',
+                            font: { size: 12 },
+                            padding: 16,
+                            usePointStyle: true,
+                            filter: function(item) {
+                                // 隱藏 hidden 的 dataset 標籤
+                                return !myChart.data.datasets[item.datasetIndex].hidden;
+                            }
+                        }
+                    },
                     tooltip: {
                         callbacks: {
+                            title: function(items) {
+                                const label = items[0]?.label || '';
+                                const match = label.match(/第(\d+)年/);
+                                if (match) {
+                                    const yr = parseInt(match[1]);
+                                    const calYear = startYear + yr;
+                                    const retireNote = (finishYear !== null && finishYear !== undefined && yr === finishYear)
+                                        ? ' 🎯 達到退休門檻' : '';
+                                    return `${label}（${calYear} 年）${retireNote}`;
+                                }
+                                return label;
+                            },
                             label: function(context) {
                                 if (context.parsed.y === null) return null;
-                                if (context.datasetIndex === 2) {
+                                const idx = context.datasetIndex;
+                                // 通膨門檻顯示原始值
+                                if (idx === 4) {
                                     const orig = inflRaw[context.dataIndex];
                                     if (orig == null) return null;
                                     return context.dataset.label + ': ' + (orig / 10000).toFixed(0) + ' 萬';
