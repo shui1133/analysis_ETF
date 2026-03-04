@@ -150,16 +150,18 @@ class PortfolioBacktestV3:
     # ─────────────────────────────────────────────────────────
     def _year_data(self, price_df, div_df, year):
         avg_p = div_sum = div_cnt = 0.0
+        year_end_p = 0.0   # 年底最後收盤價，用於期末資產估值
         if price_df is not None:
             yp = price_df[price_df['日期'].dt.year == year]['收盤價']
             if not yp.empty:
                 avg_p = float(yp.mean())
+                year_end_p = float(yp.iloc[-1])   # 年底最後一筆收盤價
         if div_df is not None:
             yd = div_df[div_df['除息日'].dt.year == year]['股利']
             if not yd.empty:
                 div_sum = float(yd.sum())
                 div_cnt = len(yd)
-        return avg_p, div_sum, div_cnt
+        return avg_p, div_sum, div_cnt, year_end_p
 
     # ─────────────────────────────────────────────────────────
     # 均值回歸調整後預測參數
@@ -214,10 +216,10 @@ class PortfolioBacktestV3:
                     start_year, end_year,
                     initial_capital, monthly_investment, inflation_target, current_age):
 
-        etf_shares     = {t: 0.0 for t in etf_weights}
-        etf_cash       = {t: 0.0 for t in etf_weights}
-        # ★ 修正：記錄每檔ETF「上一年底股價」，用於正確計算ROI分母
-        etf_prev_price = {t: 0.0 for t in etf_weights}
+        etf_shares    = {t: 0.0 for t in etf_weights}
+        etf_cash      = {t: 0.0 for t in etf_weights}
+        # 記錄每檔ETF「年底收盤價」，用於正確估算期末市值與下年期初資產
+        etf_end_price = {t: 0.0 for t in etf_weights}
         results    = []
         tracking   = {t: [] for t in etf_weights}
 
@@ -229,54 +231,57 @@ class PortfolioBacktestV3:
 
             for t, w in etf_weights.items():
                 price_df, div_df = etf_data[t]
-                avg_p, div_sum, _ = self._year_data(price_df, div_df, year)
+                avg_p, div_sum, _, year_end_p = self._year_data(price_df, div_df, year)
 
-                # 價格fallback
+                # 價格 fallback
                 if avg_p <= 0:
                     avg_p = hist_stats.get(t, {}).get('last_price', 20.0)
+                if year_end_p <= 0:
+                    year_end_p = avg_p
 
                 prev_shares = etf_shares[t]
                 prev_cash   = etf_cash[t]
 
-                # ★ 修正：prev_asset 使用「上一年底股價」而非當年均價
-                # 第0年沒有上一年底股價，用當年均價（此年ROI固定為0，不影響結果）
-                prev_price_for_roi = etf_prev_price[t] if not is_first else avg_p
-                prev_asset = prev_shares * prev_price_for_roi + prev_cash
+                # 期初資產：以「上年底收盤價」估值（第0年期初視為0）
+                prev_end_p = etf_end_price[t]
+                if is_first or prev_end_p <= 0:
+                    prev_asset = 0.0
+                else:
+                    prev_asset = prev_shares * prev_end_p + prev_cash
 
-                # 股息收入
+                # 股息收入（以期初持股數 × 本年每股股利）
                 div_income = prev_shares * div_sum
                 yr_dividend += div_income
 
                 # 本年度投入
-                # 第0年：只投入啟動資金，不計定期定額（視為年初一次性部署）
-                # 第1年起：每年投入定期定額
                 if is_first:
-                    annual_dep = initial_capital * w  # 只有啟動資金
+                    annual_dep = initial_capital * w
                 else:
-                    annual_dep = monthly_investment * w * 12  # 定期定額
+                    annual_dep = monthly_investment * w * 12
 
                 yr_invested += annual_dep
 
                 # 可用現金 = 上期剩餘 + 投入 + 股息
                 avail = prev_cash + annual_dep + div_income
 
-                # 買入股數：無條件捨去至整數，剩餘現金留至下期
+                # 買入股數：用「年均價」模擬定期定額分批買入的平均成本
                 shares_bought = int(avail / avg_p) if avg_p > 0 else 0
                 new_shares    = prev_shares + shares_bought
                 etf_shares[t] = new_shares
-                etf_cash[t]   = avail - shares_bought * avg_p  # 零股零頭留存
+                etf_cash[t]   = avail - shares_bought * avg_p
 
-                end_asset = new_shares * avg_p + etf_cash[t]
+                # 期末資產：用「年底收盤價」反映真實持倉市值
+                end_asset = new_shares * year_end_p + etf_cash[t]
 
-                # ★ 修正後ROI：分子 = 期末資產 - 期初資產(以上年底價計) - 新投入
-                #              分母 = 期初資產(以上年底價計) + 新投入
-                if yr_idx == 0 or (prev_asset + annual_dep) <= 0:
+                # ROI = (期末資產 - 期初資產 - 投入) / (期初資產 + 投入)
+                base = prev_asset + annual_dep
+                if is_first or base <= 0:
                     roi = 0.0
                 else:
-                    roi = (end_asset - prev_asset - annual_dep) / (prev_asset + annual_dep) * 100
+                    roi = (end_asset - prev_asset - annual_dep) / base * 100
 
-                # ★ 記錄本年底股價，供下一年度計算 prev_asset 使用
-                etf_prev_price[t] = avg_p
+                # 記錄年底收盤價，供下一年度計算期初資產使用
+                etf_end_price[t] = year_end_p
 
                 tracking[t].append({
                     '年份': year,
@@ -286,20 +291,16 @@ class PortfolioBacktestV3:
                     '當年度買入股數':     round(shares_bought, 2),
                     '當年度期末累計股數': round(new_shares, 2),
                     '當年度平均股價':     round(avg_p, 2),
+                    '當年度年底股價':     round(year_end_p, 2),
                     '當年度剩餘現金':     round(etf_cash[t]),
                     '當年度投資報酬率':   round(roi, 2),
                     '當年度個股資產':     round(end_asset),
-                    '前一年度個股資產':   round(prev_asset),  # 現在正確反映上年底估值
+                    '前一年度個股資產':   round(prev_asset),
                 })
 
-            # 年末總資產 = 各ETF (股數 × 平均股價) + 剩餘現金
-            etf_year_prices = {}
-            for t in etf_weights:
-                yp, _, _ = self._year_data(etf_data[t][0], etf_data[t][1], year)
-                if yp <= 0:
-                    yp = hist_stats.get(t, {}).get('last_price', 20.0)
-                etf_year_prices[t] = yp
-            total_end = sum(etf_shares[t] * etf_year_prices[t] + etf_cash[t] for t in etf_weights)
+            # 年末總資產 = 各ETF (股數 × 年底收盤價) + 剩餘現金
+            # etf_end_price 已在內層 loop 更新為本年底收盤價
+            total_end = sum(etf_shares[t] * etf_end_price[t] + etf_cash[t] for t in etf_weights)
 
             yr_return = total_end - prev_portfolio - yr_invested  # 第0年：total_end - 0 - 投入 = 資本利得
             prev_portfolio = total_end
