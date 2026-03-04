@@ -272,11 +272,10 @@ class PortfolioBacktestV3:
                 etf_shares[t] = new_shares
                 etf_cash[t]   = avail - shares_bought * avg_p
 
-                # 期末資產：
-                # 第0年（建倉年）：用均價（= 買入成本），確保「個股資產 = 提存金」
-                # 第1年起：用年底收盤價，反映真實持倉市值
-                val_price = avg_p if is_first else year_end_p
-                end_asset = new_shares * val_price + etf_cash[t]
+                # 期末資產：統一用「年底收盤價」反映真實持倉市值
+                # 第0年個股追蹤顯示用均價（= 提存金），但內部估值統一用年底收盤價
+                end_asset_display = new_shares * avg_p + etf_cash[t]  # 顯示用（≈提存金）
+                end_asset = new_shares * year_end_p + etf_cash[t]     # 內部估值（年底收盤）
 
                 # ROI = (期末資產 - 期初資產 - 投入) / (期初資產 + 投入)
                 base = prev_asset + annual_dep
@@ -299,30 +298,28 @@ class PortfolioBacktestV3:
                     '當年度年底股價':     round(year_end_p, 2),
                     '當年度剩餘現金':     round(etf_cash[t]),
                     '當年度投資報酬率':   round(roi, 2),
-                    '當年度個股資產':     round(end_asset),
+                    '當年度個股資產':     round(end_asset_display if is_first else end_asset),
                     '前一年度個股資產':   round(prev_asset),
                 })
 
-            # 年末總資產：
-            # 第0年（建倉年）：用均價估值（= 買入成本，年末資產 ≈ 總投入）
-            # 第1年起：用年底收盤價，反映真實持倉市值
-            if is_first:
-                total_end = sum(etf_shares[t] * etf_year_avg[t] + etf_cash[t] for t in etf_weights)
-            else:
-                total_end = sum(etf_shares[t] * etf_end_price[t] + etf_cash[t] for t in etf_weights)
+            # 年末總資產：統一用年底收盤價（etf_end_price 在內層 loop 已更新）
+            total_end = sum(etf_shares[t] * etf_end_price[t] + etf_cash[t] for t in etf_weights)
 
-            yr_return = total_end - prev_portfolio - yr_invested  # 第0年：total_end - 0 - 投入 = 資本利得
+            # 第0年為建倉年，不計年度報酬；年末資產在 results 輸出時顯示為投入金額
+            yr_return = 0 if is_first else (total_end - prev_portfolio - yr_invested)
             prev_portfolio = total_end
 
             infl_thresh = inflation_target * (INFLATION_RATE + 1) ** yr_idx
 
+            # 第0年表格顯示：年末資產 = 投入金額（建倉成本），年度報酬 = 0
+            display_end = round(yr_invested) if is_first else round(total_end)
             results.append({
                 '年份':     year,
                 '資料類型': 'actual',
                 '年度投入': round(yr_invested),
                 '年度股利': round(yr_dividend),
                 '年度報酬': round(yr_return),
-                '年末資產': round(total_end),
+                '年末資產': display_end,
                 '通膨門檻': round(infl_thresh),
                 '剩餘現金': 0,
             })
