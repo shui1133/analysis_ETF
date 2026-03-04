@@ -831,9 +831,10 @@
                             font: { size: 12 },
                             padding: 16,
                             usePointStyle: true,
-                            filter: function(item) {
-                                // 隱藏 hidden 的 dataset 標籤
-                                return !myChart.data.datasets[item.datasetIndex].hidden;
+                            filter: function(item, chart) {
+                                // 用 chart 參數取得 dataset，避免 myChart 建立期間為 null 的問題
+                                const ds = chart.data.datasets[item.datasetIndex];
+                                return ds && !ds.hidden;
                             }
                         }
                     },
