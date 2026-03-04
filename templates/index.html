@@ -764,7 +764,7 @@
                         spanGaps: false
                     },
                     {
-                        label: '退休後－停止投入',
+                        label: hasRetire ? '退休後－停止投入' : '',
                         data: retireStop,
                         borderColor: '#f97316',
                         backgroundColor: 'rgba(249,115,22,0.07)',
@@ -779,7 +779,7 @@
                         hidden: !hasRetire
                     },
                     {
-                        label: '退休後－繼續定期定額',
+                        label: hasRetire ? '退休後－繼續定期定額' : '',
                         data: retireCont,
                         borderColor: '#a855f7',
                         backgroundColor: 'rgba(168,85,247,0.07)',
@@ -831,10 +831,9 @@
                             font: { size: 12 },
                             padding: 16,
                             usePointStyle: true,
-                            filter: function(item, chart) {
-                                // 用 chart 參數取得 dataset，避免 myChart 建立期間為 null 的問題
-                                const ds = chart.data.datasets[item.datasetIndex];
-                                return ds && !ds.hidden;
+                            filter: function(item) {
+                                // label 為空字串時不顯示圖例（最相容寫法，不依賴 chart 參數）
+                                return item.text !== '';
                             }
                         }
                     },
