@@ -140,7 +140,7 @@
             <!-- 退休領取資金比例選擇 -->
             <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200">
                 <h2 class="font-bold mb-4 text-slate-700 flex items-center">
-                    <i class="fa-solid fa-chart-pie mr-2 text-blue-600"></i>退休領資金提領率
+                    <i class="fa-solid fa-chart-pie mr-2 text-blue-600"></i>退休後資金提領率
                 </h2>
                 <div class="space-y-3" id="strategyButtons">
                     <div class="strategy-btn active-btn" onclick="selectStrategy('conservative', this)">
@@ -1355,12 +1355,17 @@
             }
 
             // 參考年度提領欄：退休達成當年顯示—，退休後第1年起才提領
+            // 提領基準必須用「退休後停止投入情境」的年初資產（即上一年末資產），
+            // 不可用持續投入推估的年末資產。
             let refWithdrawalCell = '<td class="p-3 text-right text-slate-300">—</td>';
             if (retireYrIdx >= 0 && idx > retireYrIdx) {
-                // idx > retireYrIdx：退休後第1年起，prevEndAssets 即為退休年末資產（第1年）
-                // 或各年末資產（第2年以後），以此計算年初提領
-                const postYr      = idx - retireYrIdx; // 1=退休後第1年, 2=退休後第2年...
-                const refWithdraw = Math.round(prevEndAssets * withdrawalRate);
+                const postYr = idx - retireYrIdx; // 1=退休後第1年, 2=退休後第2年...
+                // 第1年：年初資產 = 退休年末資產（retireStop[0]['年初資產']）
+                // 第N年：年初資產 = 停止投入情境第N年的年初資產 = retireStopYE[postYr-1]（上一年末）
+                const baseAssets = postYr === 1
+                    ? (retireStop[0] ? retireStop[0]['年初資產'] : 0)
+                    : (retireStopYE[postYr - 1] || 0);
+                const refWithdraw = Math.round(baseAssets * withdrawalRate);
                 const stopYE      = retireStopYE[postYr] || 0;
                 refWithdrawalCell = `<td class="p-3 text-right font-bold" style="color:#c2410c;">
                     ${refWithdraw.toLocaleString()}
