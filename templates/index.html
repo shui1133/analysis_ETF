@@ -361,9 +361,13 @@
 
                 <!-- Tab 0：持續投入推估（原有） -->
                 <div id="reportTab0">
-                    <div class="flex gap-2 mb-3">
+                    <div class="flex gap-2 mb-3 flex-wrap items-center">
                         <span class="badge-actual">實際歷史</span>
                         <span class="badge-forecast">推估預測</span>
+                        <span id="retireMarkerLegend" class="hidden ml-2 px-3 py-1 rounded-full text-xs font-bold"
+                              style="background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;">
+                            🏖️ 退休達成年份已標記
+                        </span>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
@@ -378,10 +382,11 @@
                                     <th class="p-3 text-right font-bold">年度投資報酬率(%)</th>
                                     <th class="p-3 text-right font-bold">年末資產</th>
                                     <th class="p-3 text-right font-bold">通膨門檻</th>
+                                    <th class="p-3 text-right font-bold" style="color:#c2410c;">參考年度提領<br><span style="font-size:10px;font-weight:normal;">(達退休後按提領率)</span></th>
                                 </tr>
                             </thead>
                             <tbody id="tableBody">
-                                <tr><td colspan="9" class="p-8 text-center text-slate-400">請執行回測分析</td></tr>
+                                <tr><td colspan="10" class="p-8 text-center text-slate-400">請執行回測分析</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -545,19 +550,20 @@
                         退休後情境比較摘要（整體投資組合）
                         <span id="retireSummaryLabel" class="ml-2 text-xs font-normal text-slate-400"></span>
                     </h3>
-                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                        <!-- 情境A：停止投入 -->
-                        <div class="border border-orange-200 rounded-xl overflow-hidden">
-                            <div class="bg-orange-50 px-4 py-2 font-bold text-orange-700 text-sm flex items-center gap-2">
-                                <i class="fa-solid fa-stop-circle"></i> 情境A：停止投入
-                                <span class="text-xs font-normal text-orange-500">（只提領，不再追加）</span>
-                            </div>
-                            <div class="overflow-x-auto">
+                    <!-- 並排：用 overflow-x-auto + flex 讓兩表等寬且不換行 -->
+                    <div class="overflow-x-auto">
+                        <div style="display:flex; gap:20px; min-width:900px;">
+                            <!-- 情境A：停止投入 -->
+                            <div style="flex:1; min-width:0;" class="border border-orange-200 rounded-xl overflow-hidden">
+                                <div class="bg-orange-100 px-4 py-2 font-bold text-orange-700 text-sm flex items-center gap-2">
+                                    <i class="fa-solid fa-stop-circle"></i> 情境A：停止投入
+                                    <span class="text-xs font-normal text-orange-500">（只提領，不再追加）</span>
+                                </div>
                                 <table class="w-full text-xs">
                                     <thead class="bg-orange-50 text-slate-600">
                                         <tr>
-                                            <th class="px-3 py-2 text-center">退休後第</th>
-                                            <th class="px-3 py-2 text-left">年份</th>
+                                            <th class="px-3 py-2 text-center w-16">退休後第</th>
+                                            <th class="px-3 py-2 text-left  w-16">年份</th>
                                             <th class="px-3 py-2 text-right">年初資產</th>
                                             <th class="px-3 py-2 text-right text-orange-600">年度提領</th>
                                             <th class="px-3 py-2 text-right font-bold">年末資產</th>
@@ -568,19 +574,17 @@
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
-                        <!-- 情境B：繼續定期定額 -->
-                        <div class="border border-purple-200 rounded-xl overflow-hidden">
-                            <div class="bg-purple-50 px-4 py-2 font-bold text-purple-700 text-sm flex items-center gap-2">
-                                <i class="fa-solid fa-rotate"></i> 情境B：繼續定期定額
-                                <span class="text-xs font-normal text-purple-500">（繼續投入+提領）</span>
-                            </div>
-                            <div class="overflow-x-auto">
+                            <!-- 情境B：繼續定期定額 -->
+                            <div style="flex:1; min-width:0;" class="border border-purple-200 rounded-xl overflow-hidden">
+                                <div class="bg-purple-100 px-4 py-2 font-bold text-purple-700 text-sm flex items-center gap-2">
+                                    <i class="fa-solid fa-rotate"></i> 情境B：繼續定期定額
+                                    <span class="text-xs font-normal text-purple-500">（繼續投入＋提領）</span>
+                                </div>
                                 <table class="w-full text-xs">
                                     <thead class="bg-purple-50 text-slate-600">
                                         <tr>
-                                            <th class="px-3 py-2 text-center">退休後第</th>
-                                            <th class="px-3 py-2 text-left">年份</th>
+                                            <th class="px-3 py-2 text-center w-16">退休後第</th>
+                                            <th class="px-3 py-2 text-left  w-16">年份</th>
                                             <th class="px-3 py-2 text-right">年初資產</th>
                                             <th class="px-3 py-2 text-right text-blue-600">年度投入</th>
                                             <th class="px-3 py-2 text-right text-purple-600">年度提領</th>
@@ -796,7 +800,7 @@
         updateChart(result.chart_data);
 
         // 年度報表表格
-        updateTable(result.table_data);
+        updateTable(result.table_data, result);
 
         // 退休後報表（Tab1, Tab2）
         updateRetirementTables(result);
@@ -1328,8 +1332,22 @@
     }
 
     // ── 更新年度報表表格 ──────────────────────────────────────────
-    function updateTable(tableData) {
+    function updateTable(tableData, result) {
+        const retireYrIdx    = (result && result.retire_yr_idx != null) ? result.retire_yr_idx : -1;
+        const withdrawalRate = (result && result.withdrawal_rate)       ? result.withdrawal_rate : 0;
+        const retireStop     = (result && result.retirement_stop)       ? result.retirement_stop : [];
+
+        // 建立退休後停止情境 年末資產 lookup（key = 退休後年序 1-based）
+        const retireStopYE = {};
+        retireStop.forEach((r, i) => { retireStopYE[i + 1] = r['年末資產']; });
+
+        // 顯示退休標記圖例
+        const lgd = document.getElementById('retireMarkerLegend');
+        if (lgd) lgd.classList.toggle('hidden', retireYrIdx < 0);
+
         let html = '';
+        // 前一年末資產（供計算參考提領）
+        let prevEndAssets = 0;
         for (let idx = 0; idx < tableData.length; idx++) {
             const row = tableData[idx];
             const isActual = row.data_type === 'actual';
@@ -1339,9 +1357,45 @@
                 : '<span class="badge-forecast">推估</span>';
 
             const returnColor = row.year_return_raw >= 0 ? 'text-green-600' : 'text-red-600';
-            const rateColor = row.year_return_rate >= 0 ? 'text-green-600' : 'text-red-600';
+            const rateColor   = row.year_return_rate >= 0 ? 'text-green-600' : 'text-red-600';
             const rateDisplay = row.year_return_rate !== undefined ? row.year_return_rate.toFixed(2) + '%' : '-';
             const yearNum = `第${idx}年`;
+
+            // 退休達成標記（在達成年份插入分隔列）
+            if (idx === retireYrIdx && retireYrIdx >= 0) {
+                html += `
+                <tr style="background:#fff7ed;">
+                    <td colspan="10" class="py-2 px-4 text-center text-sm font-black" style="color:#c2410c;border-top:2px solid #fb923c;border-bottom:2px solid #fb923c;">
+                        🏖️ 退休門檻達成 ── 以下退休後情境請參閱 Tab「退休後－停止投入」及「退休後－繼續定期定額」
+                        &nbsp;｜&nbsp; 退休時年末資產 = ${parseInt(row.year_end_assets.replace(/,/g,'')).toLocaleString()} 元
+                    </td>
+                </tr>`;
+            }
+
+            // 參考年度提領欄：退休達成當年（idx===retireYrIdx）顯示第1年提領，之後顯示對應年序
+            let refWithdrawalCell = '<td class="p-3 text-right text-slate-300">—</td>';
+            if (retireYrIdx >= 0 && idx >= retireYrIdx) {
+                const postYr       = idx - retireYrIdx; // 0=退休年本身, 1=退休後第1年...
+                const refWithdraw  = Math.round(prevEndAssets * withdrawalRate);
+                if (idx === retireYrIdx) {
+                    // 退休年：顯示若以退休時年末資產為基準的提領額
+                    const retireAssets = parseInt(row.year_end_assets.replace(/,/g,''));
+                    const w1 = Math.round(retireAssets * withdrawalRate);
+                    refWithdrawalCell = `<td class="p-3 text-right font-bold" style="color:#c2410c;">
+                        ${w1.toLocaleString()}<br>
+                        <span style="font-size:10px;color:#9a3412;">※次年起提領</span>
+                    </td>`;
+                } else {
+                    // 停止投入情境的年末資產供勾稽（退休後第postYr年）
+                    const stopYE = retireStopYE[postYr] || 0;
+                    refWithdrawalCell = `<td class="p-3 text-right" style="color:#c2410c;">
+                        ${refWithdraw.toLocaleString()}
+                        ${stopYE ? '<br><span style="font-size:10px;color:#94a3b8;">停止投入年末:' + stopYE.toLocaleString() + '</span>' : ''}
+                    </td>`;
+                }
+            }
+
+            prevEndAssets = parseInt(row.year_end_assets.replace(/,/g,''));
 
             html += `
             <tr class="${rowClass} border-b">
@@ -1354,6 +1408,7 @@
                 <td class="p-3 text-right ${rateColor} font-bold">${rateDisplay}</td>
                 <td class="p-3 text-right font-bold">${row.year_end_assets}</td>
                 <td class="p-3 text-right text-red-600">${row.inflation_threshold}</td>
+                ${refWithdrawalCell}
             </tr>`;
         }
         document.getElementById('tableBody').innerHTML = html;

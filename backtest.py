@@ -214,8 +214,9 @@ class PortfolioBacktestV3:
                     start_year, end_year,
                     initial_capital, monthly_investment, inflation_target, current_age):
 
-        etf_shares = {t: 0.0 for t in etf_weights}
-        etf_cash   = {t: 0.0 for t in etf_weights}
+        etf_shares     = {t: 0.0 for t in etf_weights}
+        etf_cash       = {t: 0.0 for t in etf_weights}
+        etf_end_prices = {t: 0.0 for t in etf_weights}  # ★ 記錄上年末均價，修正ROI
         results    = []
         tracking   = {t: [] for t in etf_weights}
 
@@ -235,7 +236,10 @@ class PortfolioBacktestV3:
 
                 prev_shares = etf_shares[t]
                 prev_cash   = etf_cash[t]
-                prev_asset  = prev_shares * avg_p + prev_cash
+                # ★ 修正：期初資產用「上年末均價」計算，而非當年均價
+                #   第0年無上年，prev_asset=0（ROI設為0%）
+                prev_price  = etf_end_prices[t]
+                prev_asset  = prev_shares * prev_price + prev_cash if prev_price > 0 else 0.0
 
                 # 股息收入
                 div_income = prev_shares * div_sum
@@ -262,7 +266,10 @@ class PortfolioBacktestV3:
 
                 end_asset = new_shares * avg_p + etf_cash[t]
 
-                # ROI
+                # ★ 記錄本年末均價，供下年計算期初資產使用
+                etf_end_prices[t] = avg_p
+
+                # ROI = (期末資產 - 期初資產 - 本年投入) / (期初資產 + 本年投入)
                 if yr_idx == 0 or (prev_asset + annual_dep) <= 0:
                     roi = 0.0
                 else:
