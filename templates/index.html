@@ -962,7 +962,7 @@
                         grid: { color: 'rgba(0,0,0,0.04)' },
                         ticks: {
                             color: '#64748b',
-                            font: { size: 11 },
+                            font: { size: 10 },
                             maxRotation: 0,
                             autoSkip: true,
                             maxTicksLimit: 15,
@@ -972,7 +972,7 @@
                                 if (match) {
                                     const yearNum = parseInt(match[1]);
                                     const calYear = startYear + yearNum;
-                                    return String(calYear);
+                                    return [String(calYear), label];
                                 }
                                 return label;
                             }
@@ -1354,27 +1354,18 @@
                 </tr>`;
             }
 
-            // 參考年度提領欄：退休達成當年（idx===retireYrIdx）顯示第1年提領，之後顯示對應年序
+            // 參考年度提領欄：退休達成當年顯示—，退休後第1年起才提領
             let refWithdrawalCell = '<td class="p-3 text-right text-slate-300">—</td>';
-            if (retireYrIdx >= 0 && idx >= retireYrIdx) {
-                const postYr       = idx - retireYrIdx; // 0=退休年本身, 1=退休後第1年...
-                const refWithdraw  = Math.round(prevEndAssets * withdrawalRate);
-                if (idx === retireYrIdx) {
-                    // 退休年：顯示若以退休時年末資產為基準的提領額
-                    const retireAssets = parseInt(row.year_end_assets.replace(/,/g,''));
-                    const w1 = Math.round(retireAssets * withdrawalRate);
-                    refWithdrawalCell = `<td class="p-3 text-right font-bold" style="color:#c2410c;">
-                        ${w1.toLocaleString()}<br>
-                        <span style="font-size:10px;color:#9a3412;">※次年起提領</span>
-                    </td>`;
-                } else {
-                    // 停止投入情境的年末資產供勾稽（退休後第postYr年）
-                    const stopYE = retireStopYE[postYr] || 0;
-                    refWithdrawalCell = `<td class="p-3 text-right" style="color:#c2410c;">
-                        ${refWithdraw.toLocaleString()}
-                        ${stopYE ? '<br><span style="font-size:10px;color:#94a3b8;">停止投入年末:' + stopYE.toLocaleString() + '</span>' : ''}
-                    </td>`;
-                }
+            if (retireYrIdx >= 0 && idx > retireYrIdx) {
+                // idx > retireYrIdx：退休後第1年起，prevEndAssets 即為退休年末資產（第1年）
+                // 或各年末資產（第2年以後），以此計算年初提領
+                const postYr      = idx - retireYrIdx; // 1=退休後第1年, 2=退休後第2年...
+                const refWithdraw = Math.round(prevEndAssets * withdrawalRate);
+                const stopYE      = retireStopYE[postYr] || 0;
+                refWithdrawalCell = `<td class="p-3 text-right font-bold" style="color:#c2410c;">
+                    ${refWithdraw.toLocaleString()}
+                    ${stopYE ? '<br><span style="font-size:10px;color:#94a3b8;">停止投入年末:' + stopYE.toLocaleString() + '</span>' : ''}
+                </td>`;
             }
 
             prevEndAssets = parseInt(row.year_end_assets.replace(/,/g,''));
