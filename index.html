@@ -542,62 +542,45 @@
                         下載現金流CSV
                     </button>
                 </div>
+            </div>
 
-                <!-- 退休後情境摘要 -->
-                <div id="retirementSummarySection" class="mt-8 pt-6 border-t-2 border-dashed border-slate-300 hidden">
-                    <h3 class="font-bold text-base text-slate-700 mb-4 flex items-center">
-                        <i class="fa-solid fa-umbrella-beach mr-2 text-orange-500"></i>
-                        退休後情境比較摘要（整體投資組合）
-                        <span id="retireSummaryLabel" class="ml-2 text-xs font-normal text-slate-400"></span>
-                    </h3>
-                    <!-- 並排：用 overflow-x-auto + flex 讓兩表等寬且不換行 -->
-                    <div class="overflow-x-auto">
-                        <div style="display:flex; gap:20px; min-width:900px;">
-                            <!-- 情境A：停止投入 -->
-                            <div style="flex:1; min-width:0;" class="border border-orange-200 rounded-xl overflow-hidden">
-                                <div class="bg-orange-100 px-4 py-2 font-bold text-orange-700 text-sm flex items-center gap-2">
-                                    <i class="fa-solid fa-stop-circle"></i> 情境A：停止投入
+            <!-- 退休後情境比較摘要（獨立區塊，永遠顯示於年度報表下方） -->
+            <div id="retirementSummarySection" class="bg-white p-6 rounded-2xl border border-slate-200 hidden">
+                <h3 class="font-bold text-lg text-slate-800 mb-4 flex items-center">
+                    <i class="fa-solid fa-umbrella-beach mr-2 text-orange-500"></i>
+                    退休後情境比較摘要（整體投資組合）
+                    <span id="retireSummaryLabel" class="ml-2 text-xs font-normal text-slate-400"></span>
+                </h3>
+                <!-- 合併情境A＋B 為同一張表，共用「退休後第」與「年份」欄 -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs border border-slate-200 rounded-xl overflow-hidden">
+                        <thead>
+                            <tr>
+                                <th rowspan="2" class="px-3 py-2 text-center bg-slate-100 text-slate-600 border-b border-r border-slate-200 w-16">退休後第</th>
+                                <th rowspan="2" class="px-3 py-2 text-left  bg-slate-100 text-slate-600 border-b border-r border-slate-200 w-16">年份</th>
+                                <th colspan="3" class="px-3 py-2 text-center bg-orange-100 text-orange-700 border-b border-r border-slate-200">
+                                    <i class="fa-solid fa-stop-circle mr-1"></i>情境A：停止投入
                                     <span class="text-xs font-normal text-orange-500">（只提領，不再追加）</span>
-                                </div>
-                                <table class="w-full text-xs">
-                                    <thead class="bg-orange-50 text-slate-600">
-                                        <tr>
-                                            <th class="px-3 py-2 text-center w-16">退休後第</th>
-                                            <th class="px-3 py-2 text-left  w-16">年份</th>
-                                            <th class="px-3 py-2 text-right">年初資產</th>
-                                            <th class="px-3 py-2 text-right text-orange-600">年度提領</th>
-                                            <th class="px-3 py-2 text-right font-bold">年末資產</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cfRetireStopBody">
-                                        <tr><td colspan="5" class="p-4 text-center text-slate-400">計算中...</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <!-- 情境B：繼續定期定額 -->
-                            <div style="flex:1; min-width:0;" class="border border-purple-200 rounded-xl overflow-hidden">
-                                <div class="bg-purple-100 px-4 py-2 font-bold text-purple-700 text-sm flex items-center gap-2">
-                                    <i class="fa-solid fa-rotate"></i> 情境B：繼續定期定額
+                                </th>
+                                <th colspan="4" class="px-3 py-2 text-center bg-purple-100 text-purple-700 border-b border-slate-200">
+                                    <i class="fa-solid fa-rotate mr-1"></i>情境B：繼續定期定額
                                     <span class="text-xs font-normal text-purple-500">（繼續投入＋提領）</span>
-                                </div>
-                                <table class="w-full text-xs">
-                                    <thead class="bg-purple-50 text-slate-600">
-                                        <tr>
-                                            <th class="px-3 py-2 text-center w-16">退休後第</th>
-                                            <th class="px-3 py-2 text-left  w-16">年份</th>
-                                            <th class="px-3 py-2 text-right">年初資產</th>
-                                            <th class="px-3 py-2 text-right text-blue-600">年度投入</th>
-                                            <th class="px-3 py-2 text-right text-purple-600">年度提領</th>
-                                            <th class="px-3 py-2 text-right font-bold">年末資產</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="cfRetireContBody">
-                                        <tr><td colspan="6" class="p-4 text-center text-slate-400">計算中...</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
+                                </th>
+                            </tr>
+                            <tr>
+                                <th class="px-3 py-2 text-right bg-orange-50 text-slate-600 border-b border-slate-200">年初資產</th>
+                                <th class="px-3 py-2 text-right bg-orange-50 text-orange-600 border-b border-slate-200">年度提領</th>
+                                <th class="px-3 py-2 text-right bg-orange-50 font-bold text-slate-700 border-b border-r border-slate-200">年末資產</th>
+                                <th class="px-3 py-2 text-right bg-purple-50 text-slate-600 border-b border-slate-200">年初資產</th>
+                                <th class="px-3 py-2 text-right bg-purple-50 text-blue-600 border-b border-slate-200">年度投入</th>
+                                <th class="px-3 py-2 text-right bg-purple-50 text-purple-600 border-b border-slate-200">年度提領</th>
+                                <th class="px-3 py-2 text-right bg-purple-50 font-bold text-slate-700 border-b border-slate-200">年末資產</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cfRetireMergedBody">
+                            <tr><td colspan="9" class="p-4 text-center text-slate-400">計算中...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -988,7 +971,7 @@
                                 if (match) {
                                     const yearNum = parseInt(match[1]);
                                     const calYear = startYear + yearNum;
-                                    return [label, String(calYear)];
+                                    return String(calYear);
                                 }
                                 return label;
                             }
@@ -1280,7 +1263,7 @@
             '<tr><td colspan="6" class="p-4 text-center text-purple-400">尚未達到退休門檻</td></tr>';
     }
 
-    // ── 更新現金流退休後情境摘要 ───────────────────────────────
+    // ── 更新現金流退休後情境摘要（合併單表）──────────────────
     function updateCFRetirementSummary(result) {
         const stop = result.retirement_stop || [];
         const cont = result.retirement_continue || [];
@@ -1297,38 +1280,36 @@
         const lbl = document.getElementById('retireSummaryLabel');
         if (lbl) lbl.textContent = `提領率 ${wr}%／退休後30年`;
 
-        // 情境A 表格
-        let htmlA = '';
-        for (let i = 0; i < stop.length; i++) {
-            const r = stop[i];
-            htmlA += `
-            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-orange-50'} border-b border-orange-100">
-                <td class="px-3 py-2 text-center font-bold text-orange-600">第${i+1}年</td>
-                <td class="px-3 py-2">${r['年份'] || '-'}</td>
-                <td class="px-3 py-2 text-right">${r['年初資產'].toLocaleString()}</td>
-                <td class="px-3 py-2 text-right text-orange-600 font-bold">${r['年度提領'].toLocaleString()}</td>
-                <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
+        // 合併單表：共用退休後第 / 年份，左半情境A，右半情境B
+        const maxRows = Math.max(stop.length, cont.length);
+        let htmlMerged = '';
+        for (let i = 0; i < maxRows; i++) {
+            const s = stop[i] || null;
+            const c = cont[i] || null;
+            const rowBg = i % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+            // 年份以 stop 為主（兩者相同）
+            const yearLabel = `第${i+1}年`;
+            const calYear   = s ? (s['年份'] || '-') : (c ? (c['年份'] || '-') : '-');
+            htmlMerged += `
+            <tr class="${rowBg} border-b border-slate-100">
+                <td class="px-3 py-2 text-center font-bold text-slate-600 border-r border-slate-200">${yearLabel}</td>
+                <td class="px-3 py-2 text-left border-r border-slate-200">${calYear}</td>
+                ${s ? `
+                <td class="px-3 py-2 text-right text-slate-700">${s['年初資產'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-orange-600 font-bold">${s['年度提領'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right font-black border-r border-slate-200">${s['年末資產'].toLocaleString()}</td>
+                ` : `<td colspan="3" class="px-3 py-2 text-center text-slate-300 border-r border-slate-200">—</td>`}
+                ${c ? `
+                <td class="px-3 py-2 text-right text-slate-700">${c['年初資產'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-blue-600 font-bold">${c['年度投入'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-purple-600 font-bold">${c['年度提領'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right font-black">${c['年末資產'].toLocaleString()}</td>
+                ` : `<td colspan="4" class="px-3 py-2 text-center text-slate-300">—</td>`}
             </tr>`;
         }
-        const stopBody = document.getElementById('cfRetireStopBody');
-        if (stopBody) stopBody.innerHTML = htmlA;
-
-        // 情境B 表格
-        let htmlB = '';
-        for (let i = 0; i < cont.length; i++) {
-            const r = cont[i];
-            htmlB += `
-            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-purple-50'} border-b border-purple-100">
-                <td class="px-3 py-2 text-center font-bold text-purple-600">第${i+1}年</td>
-                <td class="px-3 py-2">${r['年份'] || '-'}</td>
-                <td class="px-3 py-2 text-right">${r['年初資產'].toLocaleString()}</td>
-                <td class="px-3 py-2 text-right text-blue-600 font-bold">${r['年度投入'].toLocaleString()}</td>
-                <td class="px-3 py-2 text-right text-purple-600 font-bold">${r['年度提領'].toLocaleString()}</td>
-                <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
-            </tr>`;
-        }
-        const contBody = document.getElementById('cfRetireContBody');
-        if (contBody) contBody.innerHTML = htmlB;
+        const mergedBody = document.getElementById('cfRetireMergedBody');
+        if (mergedBody) mergedBody.innerHTML = htmlMerged ||
+            '<tr><td colspan="9" class="p-4 text-center text-slate-400">尚未達到退休門檻</td></tr>';
     }
 
     // ── 更新年度報表表格 ──────────────────────────────────────────
