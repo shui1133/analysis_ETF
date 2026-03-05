@@ -238,14 +238,22 @@
                         <i class="fa-solid fa-chart-area mr-2 text-blue-600"></i>
                         <span id="chartTitle">資產成長趨勢圖</span>
                     </h2>
-                    <div class="flex gap-4 text-xs">
+                    <div class="flex flex-wrap gap-3 text-xs">
                         <div class="flex items-center gap-1">
                             <span class="legend-dot" style="background:#10b981;"></span>
                             <span class="text-slate-600">歷史實際</span>
                         </div>
                         <div class="flex items-center gap-1">
                             <span class="legend-dot" style="background:#3b82f6;"></span>
-                            <span class="text-slate-600">推估預測</span>
+                            <span class="text-slate-600">推估預測（持續投入）</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="legend-dot" style="background:#f97316;"></span>
+                            <span class="text-slate-600">退休後－停止投入</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="legend-dot" style="background:#a855f7;"></span>
+                            <span class="text-slate-600">退休後－繼續定期定額</span>
                         </div>
                         <div class="flex items-center gap-1">
                             <span class="legend-dot" style="background:#ef4444;"></span>
@@ -330,38 +338,111 @@
 
             <!-- 年度投資報表 -->
             <div class="bg-white p-6 rounded-2xl border border-slate-200">
-                <div class="flex justify-between items-center mb-4">
+                <div class="flex flex-wrap justify-between items-center mb-4 gap-3">
                     <h2 class="font-bold text-lg text-slate-800 flex items-center">
                         <i class="fa-solid fa-table mr-2 text-blue-600"></i><span id="reportTitle">年度投資報表</span>
                     </h2>
-                    <div class="flex gap-2">
-                        <span class="badge-actual">實際歷史</span>
-                        <span class="badge-forecast">推估預測</span>
+                    <!-- Tab 切換 -->
+                    <div class="flex gap-2 flex-wrap">
+                        <button id="tabBtn0" onclick="switchReportTab(0)"
+                            class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-blue-500 bg-blue-500 text-white transition">
+                            持續投入推估
+                        </button>
+                        <button id="tabBtn1" onclick="switchReportTab(1)"
+                            class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-orange-400 text-orange-500 bg-white transition">
+                            退休後－停止投入
+                        </button>
+                        <button id="tabBtn2" onclick="switchReportTab(2)"
+                            class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-purple-500 text-purple-500 bg-white transition">
+                            退休後－繼續定期定額
+                        </button>
                     </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-slate-100 text-slate-700">
-                            <tr>
-                                <th class="p-3 text-center font-bold">項次</th>
-                                <th class="p-3 text-left font-bold">年份</th>
-                                <th class="p-3 text-center font-bold">資料類型</th>
-                                <th class="p-3 text-right font-bold">年度投入</th>
-                                <th class="p-3 text-right font-bold">年度股利</th>
-                                <th class="p-3 text-right font-bold">年度報酬</th>
-                                <th class="p-3 text-right font-bold">年度投資報酬率(%)</th>
-                                <th class="p-3 text-right font-bold">年末資產</th>
-                                <th class="p-3 text-right font-bold">通膨門檻</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tableBody">
-                            <tr>
-                                <td colspan="7" class="p-8 text-center text-slate-400">
-                                    請執行回測分析
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+
+                <!-- Tab 0：持續投入推估（原有） -->
+                <div id="reportTab0">
+                    <div class="flex gap-2 mb-3 flex-wrap items-center">
+                        <span class="badge-actual">實際歷史</span>
+                        <span class="badge-forecast">推估預測</span>
+                        <span id="retireMarkerLegend" class="hidden ml-2 px-3 py-1 rounded-full text-xs font-bold"
+                              style="background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;">
+                            🏖️ 退休達成年份已標記
+                        </span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-100 text-slate-700">
+                                <tr>
+                                    <th class="p-3 text-center font-bold">項次</th>
+                                    <th class="p-3 text-left font-bold">年份</th>
+                                    <th class="p-3 text-center font-bold">資料類型</th>
+                                    <th class="p-3 text-right font-bold">年度投入</th>
+                                    <th class="p-3 text-right font-bold">年度股利</th>
+                                    <th class="p-3 text-right font-bold">年度報酬</th>
+                                    <th class="p-3 text-right font-bold">年度投資報酬率(%)</th>
+                                    <th class="p-3 text-right font-bold">年末資產</th>
+                                    <th class="p-3 text-right font-bold">通膨門檻</th>
+                                    <th class="p-3 text-right font-bold" style="color:#c2410c;">參考年度提領<br><span style="font-size:10px;font-weight:normal;">(達退休後按提領率)</span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <tr><td colspan="10" class="p-8 text-center text-slate-400">請執行回測分析</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 1：退休後-停止投入 -->
+                <div id="reportTab1" class="hidden">
+                    <div class="mb-3 text-xs text-orange-600 bg-orange-50 rounded-lg p-3">
+                        <i class="fa-solid fa-circle-info mr-1"></i>
+                        退休後停止追加投入，每年年初依 <strong>年初資產 × 提領率</strong> 提領，剩餘資產繼續複利成長。
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-orange-50 text-slate-700">
+                                <tr>
+                                    <th class="p-3 text-center font-bold">退休後<br>年序</th>
+                                    <th class="p-3 text-left font-bold">年份</th>
+                                    <th class="p-3 text-right font-bold">年初資產</th>
+                                    <th class="p-3 text-right font-bold">年度提領</th>
+                                    <th class="p-3 text-right font-bold">年末資產</th>
+                                    <th class="p-3 text-right font-bold">提領率</th>
+                                    <th class="p-3 text-right font-bold">資產變化</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBodyStop">
+                                <tr><td colspan="7" class="p-8 text-center text-slate-400">請執行回測分析</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 2：退休後-繼續定期定額 -->
+                <div id="reportTab2" class="hidden">
+                    <div class="mb-3 text-xs text-purple-600 bg-purple-50 rounded-lg p-3">
+                        <i class="fa-solid fa-circle-info mr-1"></i>
+                        退休後每月繼續定期投入，同時每年年初依 <strong>年初資產 × 提領率</strong> 提領，提領後剩餘加上投入繼續複利成長。
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-purple-50 text-slate-700">
+                                <tr>
+                                    <th class="p-3 text-center font-bold">退休後<br>年序</th>
+                                    <th class="p-3 text-left font-bold">年份</th>
+                                    <th class="p-3 text-right font-bold">年初資產</th>
+                                    <th class="p-3 text-right font-bold">年度投入</th>
+                                    <th class="p-3 text-right font-bold">年度提領</th>
+                                    <th class="p-3 text-right font-bold">年末資產</th>
+                                    <th class="p-3 text-right font-bold">提領率</th>
+                                    <th class="p-3 text-right font-bold">資產變化</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBodyCont">
+                                <tr><td colspan="8" class="p-8 text-center text-slate-400">請執行回測分析</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -460,6 +541,63 @@
                         <i class="fa-solid fa-download mr-2"></i>
                         下載現金流CSV
                     </button>
+                </div>
+
+                <!-- 退休後情境摘要 -->
+                <div id="retirementSummarySection" class="mt-8 pt-6 border-t-2 border-dashed border-slate-300 hidden">
+                    <h3 class="font-bold text-base text-slate-700 mb-4 flex items-center">
+                        <i class="fa-solid fa-umbrella-beach mr-2 text-orange-500"></i>
+                        退休後情境比較摘要（整體投資組合）
+                        <span id="retireSummaryLabel" class="ml-2 text-xs font-normal text-slate-400"></span>
+                    </h3>
+                    <!-- 並排：用 overflow-x-auto + flex 讓兩表等寬且不換行 -->
+                    <div class="overflow-x-auto">
+                        <div style="display:flex; gap:20px; min-width:900px;">
+                            <!-- 情境A：停止投入 -->
+                            <div style="flex:1; min-width:0;" class="border border-orange-200 rounded-xl overflow-hidden">
+                                <div class="bg-orange-100 px-4 py-2 font-bold text-orange-700 text-sm flex items-center gap-2">
+                                    <i class="fa-solid fa-stop-circle"></i> 情境A：停止投入
+                                    <span class="text-xs font-normal text-orange-500">（只提領，不再追加）</span>
+                                </div>
+                                <table class="w-full text-xs">
+                                    <thead class="bg-orange-50 text-slate-600">
+                                        <tr>
+                                            <th class="px-3 py-2 text-center w-16">退休後第</th>
+                                            <th class="px-3 py-2 text-left  w-16">年份</th>
+                                            <th class="px-3 py-2 text-right">年初資產</th>
+                                            <th class="px-3 py-2 text-right text-orange-600">年度提領</th>
+                                            <th class="px-3 py-2 text-right font-bold">年末資產</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cfRetireStopBody">
+                                        <tr><td colspan="5" class="p-4 text-center text-slate-400">計算中...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- 情境B：繼續定期定額 -->
+                            <div style="flex:1; min-width:0;" class="border border-purple-200 rounded-xl overflow-hidden">
+                                <div class="bg-purple-100 px-4 py-2 font-bold text-purple-700 text-sm flex items-center gap-2">
+                                    <i class="fa-solid fa-rotate"></i> 情境B：繼續定期定額
+                                    <span class="text-xs font-normal text-purple-500">（繼續投入＋提領）</span>
+                                </div>
+                                <table class="w-full text-xs">
+                                    <thead class="bg-purple-50 text-slate-600">
+                                        <tr>
+                                            <th class="px-3 py-2 text-center w-16">退休後第</th>
+                                            <th class="px-3 py-2 text-left  w-16">年份</th>
+                                            <th class="px-3 py-2 text-right">年初資產</th>
+                                            <th class="px-3 py-2 text-right text-blue-600">年度投入</th>
+                                            <th class="px-3 py-2 text-right text-purple-600">年度提領</th>
+                                            <th class="px-3 py-2 text-right font-bold">年末資產</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cfRetireContBody">
+                                        <tr><td colspan="6" class="p-4 text-center text-slate-400">計算中...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -662,7 +800,10 @@
         updateChart(result.chart_data);
 
         // 年度報表表格
-        updateTable(result.table_data);
+        updateTable(result.table_data, result);
+
+        // 退休後報表（Tab1, Tab2）
+        updateRetirementTables(result);
 
         // 蒙地卡羅
         if (result.monte_carlo && result.monte_carlo.labels) {
@@ -699,9 +840,11 @@
         const forecast = chartData.forecast_assets || [];
         const inflRaw  = chartData.inflation_threshold || [];
         const ret8     = chartData.return_8_assets || [];
+        const retStop  = chartData.retire_stop_assets || [];
+        const retCont  = chartData.retire_cont_assets || [];
         const startYear = chartData.start_year || new Date().getFullYear();
 
-        const assetVals = [...actual, ...forecast, ...ret8]
+        const assetVals = [...actual, ...forecast, ...ret8, ...retStop, ...retCont]
             .filter(v => v !== null && v !== undefined && !isNaN(v));
         const rawMax = assetVals.length > 0 ? Math.max(...assetVals) : 1000000;
         const yMax = rawMax * 1.1;
@@ -743,7 +886,7 @@
                         spanGaps: false
                     },
                     {
-                        label: '推估預測',
+                        label: '推估預測（持續投入）',
                         data: forecast,
                         borderColor: '#3b82f6',
                         backgroundColor: 'transparent',
@@ -753,6 +896,34 @@
                         pointRadius: 4,
                         pointHoverRadius: 6,
                         pointBackgroundColor: '#3b82f6',
+                        fill: false,
+                        spanGaps: false
+                    },
+                    {
+                        label: '退休後－停止投入',
+                        data: retStop,
+                        borderColor: '#f97316',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2.5,
+                        borderDash: [8, 4],
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: '#f97316',
+                        fill: false,
+                        spanGaps: false
+                    },
+                    {
+                        label: '退休後－繼續定期定額',
+                        data: retCont,
+                        borderColor: '#a855f7',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2.5,
+                        borderDash: [8, 4],
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: '#a855f7',
                         fill: false,
                         spanGaps: false
                     },
@@ -791,7 +962,7 @@
                         callbacks: {
                             label: function(context) {
                                 if (context.parsed.y === null) return null;
-                                if (context.datasetIndex === 2) {
+                                if (context.datasetIndex === 4) {
                                     const orig = inflRaw[context.dataIndex];
                                     if (orig == null) return null;
                                     return context.dataset.label + ': ' + (orig / 10000).toFixed(0) + ' 萬';
@@ -912,15 +1083,40 @@
                     legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
                     tooltip: {
                         callbacks: {
-                            label: ctx => ctx.dataset.label + ': ' + (ctx.parsed.y / 10000).toFixed(0) + ' 萬'
+                            label: function(ctx) {
+                                const v = ctx.parsed.y;
+                                const allVals = [...(mc.p90||[]), ...(mc.p50||[]), ...(mc.p10||[])].filter(x => x != null);
+                                const maxVal = allVals.length ? Math.max(...allVals) : v;
+                                let formatted;
+                                if (maxVal >= 1e8) {
+                                    formatted = (v / 1e8).toFixed(2) + ' 億';
+                                } else {
+                                    formatted = (v / 10000).toFixed(0) + ' 萬';
+                                }
+                                return ctx.dataset.label + ': ' + formatted;
+                            }
                         }
                     }
                 },
                 scales: {
                     x: { ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: 12 },
                          grid: { color: 'rgba(255,255,255,.04)' } },
-                    y: { ticks: { color: '#64748b', callback: v => (v/10000).toFixed(0)+'萬' },
-                         grid: { color: 'rgba(255,255,255,.06)' } }
+                    y: {
+                        ticks: {
+                            color: '#64748b',
+                            callback: function(v) {
+                                const allVals = [...(mc.p90||[]), ...(mc.p50||[]), ...(mc.p10||[])].filter(x => x != null);
+                                const maxVal = allVals.length ? Math.max(...allVals) : v;
+                                if (maxVal >= 1e8) {
+                                    // 超過1億，用億為單位
+                                    return (v / 1e8).toFixed(v % 1e8 === 0 ? 0 : 1) + '億';
+                                } else {
+                                    return (v / 10000).toFixed(0) + '萬';
+                                }
+                            }
+                        },
+                        grid: { color: 'rgba(255,255,255,.06)' }
+                    }
                 }
             }
         });
@@ -1007,9 +1203,151 @@
         });
     }
 
+    // ── Tab 切換（年度報表）──────────────────────────────────────
+    let activeReportTab = 0;
+    function switchReportTab(tab) {
+        activeReportTab = tab;
+        [0, 1, 2].forEach(i => {
+            const tabEl = document.getElementById(`reportTab${i}`);
+            const btnEl = document.getElementById(`tabBtn${i}`);
+            if (tabEl) tabEl.classList.toggle('hidden', i !== tab);
+            if (btnEl) {
+                const colors = [
+                    ['bg-blue-500', 'text-white', 'border-blue-500'],
+                    ['bg-orange-400', 'text-white', 'border-orange-400'],
+                    ['bg-purple-500', 'text-white', 'border-purple-500']
+                ];
+                const inactive = ['bg-white'];
+                if (i === tab) {
+                    btnEl.classList.remove('bg-white', 'text-orange-500', 'text-purple-500', 'text-blue-500');
+                    colors[i].forEach(c => btnEl.classList.add(c));
+                } else {
+                    colors[i].forEach(c => btnEl.classList.remove(c));
+                    btnEl.classList.add('bg-white');
+                    // 恢復文字色
+                    const textColors = ['text-blue-500', 'text-orange-500', 'text-purple-500'];
+                    btnEl.classList.add(textColors[i]);
+                    btnEl.classList.remove('text-white');
+                }
+            }
+        });
+    }
+
+    // ── 更新退休後報表（Tab1 & Tab2）────────────────────────────
+    function updateRetirementTables(result) {
+        const stop = result.retirement_stop || [];
+        const cont = result.retirement_continue || [];
+        const wr   = ((result.withdrawal_rate || 0.04) * 100).toFixed(0);
+        const finishYr = result.finish_year;
+
+        // Tab1 - 停止投入
+        let htmlStop = '';
+        for (let i = 0; i < stop.length; i++) {
+            const r  = stop[i];
+            const delta = (i > 0) ? r['年末資產'] - stop[i-1]['年末資產'] : 0;
+            const dColor = delta >= 0 ? 'text-green-600' : 'text-red-600';
+            const dSign  = delta >= 0 ? '+' : '';
+            htmlStop += `
+            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-orange-50'} border-b border-orange-100">
+                <td class="px-3 py-2 text-center font-bold text-orange-700">第${i+1}年</td>
+                <td class="px-3 py-2">${r['年份'] || '-'}</td>
+                <td class="px-3 py-2 text-right">${r['年初資產'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-orange-600 font-bold">${r['年度提領'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
+            </tr>`;
+        }
+        document.getElementById('tableBodyStop').innerHTML = htmlStop ||
+            '<tr><td colspan="5" class="p-4 text-center text-orange-400">尚未達到退休門檻</td></tr>';
+
+        // Tab2 - 繼續定期定額
+        let htmlCont = '';
+        for (let i = 0; i < cont.length; i++) {
+            const r  = cont[i];
+            const delta = (i > 0) ? r['年末資產'] - cont[i-1]['年末資產'] : 0;
+            const dColor = delta >= 0 ? 'text-green-600' : 'text-red-600';
+            const dSign  = delta >= 0 ? '+' : '';
+            htmlCont += `
+            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-purple-50'} border-b border-purple-100">
+                <td class="px-3 py-2 text-center font-bold text-purple-700">第${i+1}年</td>
+                <td class="px-3 py-2">${r['年份'] || '-'}</td>
+                <td class="px-3 py-2 text-right">${r['年初資產'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-blue-600 font-bold">${r['年度投入'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-purple-600 font-bold">${r['年度提領'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
+            </tr>`;
+        }
+        document.getElementById('tableBodyCont').innerHTML = htmlCont ||
+            '<tr><td colspan="6" class="p-4 text-center text-purple-400">尚未達到退休門檻</td></tr>';
+    }
+
+    // ── 更新現金流退休後情境摘要 ───────────────────────────────
+    function updateCFRetirementSummary(result) {
+        const stop = result.retirement_stop || [];
+        const cont = result.retirement_continue || [];
+        const sec  = document.getElementById('retirementSummarySection');
+        const wr   = ((result.withdrawal_rate || 0.04) * 100).toFixed(0);
+
+        if (stop.length === 0) {
+            if (sec) sec.classList.add('hidden');
+            return;
+        }
+        if (sec) sec.classList.remove('hidden');
+
+        // 提領率說明
+        const lbl = document.getElementById('retireSummaryLabel');
+        if (lbl) lbl.textContent = `提領率 ${wr}%／退休後30年`;
+
+        // 情境A 表格
+        let htmlA = '';
+        for (let i = 0; i < stop.length; i++) {
+            const r = stop[i];
+            htmlA += `
+            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-orange-50'} border-b border-orange-100">
+                <td class="px-3 py-2 text-center font-bold text-orange-600">第${i+1}年</td>
+                <td class="px-3 py-2">${r['年份'] || '-'}</td>
+                <td class="px-3 py-2 text-right">${r['年初資產'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-orange-600 font-bold">${r['年度提領'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
+            </tr>`;
+        }
+        const stopBody = document.getElementById('cfRetireStopBody');
+        if (stopBody) stopBody.innerHTML = htmlA;
+
+        // 情境B 表格
+        let htmlB = '';
+        for (let i = 0; i < cont.length; i++) {
+            const r = cont[i];
+            htmlB += `
+            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-purple-50'} border-b border-purple-100">
+                <td class="px-3 py-2 text-center font-bold text-purple-600">第${i+1}年</td>
+                <td class="px-3 py-2">${r['年份'] || '-'}</td>
+                <td class="px-3 py-2 text-right">${r['年初資產'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-blue-600 font-bold">${r['年度投入'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right text-purple-600 font-bold">${r['年度提領'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
+            </tr>`;
+        }
+        const contBody = document.getElementById('cfRetireContBody');
+        if (contBody) contBody.innerHTML = htmlB;
+    }
+
     // ── 更新年度報表表格 ──────────────────────────────────────────
-    function updateTable(tableData) {
+    function updateTable(tableData, result) {
+        const retireYrIdx    = (result && result.retire_yr_idx != null) ? result.retire_yr_idx : -1;
+        const withdrawalRate = (result && result.withdrawal_rate)       ? result.withdrawal_rate : 0;
+        const retireStop     = (result && result.retirement_stop)       ? result.retirement_stop : [];
+
+        // 建立退休後停止情境 年末資產 lookup（key = 退休後年序 1-based）
+        const retireStopYE = {};
+        retireStop.forEach((r, i) => { retireStopYE[i + 1] = r['年末資產']; });
+
+        // 顯示退休標記圖例
+        const lgd = document.getElementById('retireMarkerLegend');
+        if (lgd) lgd.classList.toggle('hidden', retireYrIdx < 0);
+
         let html = '';
+        // 前一年末資產（供計算參考提領）
+        let prevEndAssets = 0;
         for (let idx = 0; idx < tableData.length; idx++) {
             const row = tableData[idx];
             const isActual = row.data_type === 'actual';
@@ -1019,9 +1357,45 @@
                 : '<span class="badge-forecast">推估</span>';
 
             const returnColor = row.year_return_raw >= 0 ? 'text-green-600' : 'text-red-600';
-            const rateColor = row.year_return_rate >= 0 ? 'text-green-600' : 'text-red-600';
+            const rateColor   = row.year_return_rate >= 0 ? 'text-green-600' : 'text-red-600';
             const rateDisplay = row.year_return_rate !== undefined ? row.year_return_rate.toFixed(2) + '%' : '-';
             const yearNum = `第${idx}年`;
+
+            // 退休達成標記（在達成年份插入分隔列）
+            if (idx === retireYrIdx && retireYrIdx >= 0) {
+                html += `
+                <tr style="background:#fff7ed;">
+                    <td colspan="10" class="py-2 px-4 text-center text-sm font-black" style="color:#c2410c;border-top:2px solid #fb923c;border-bottom:2px solid #fb923c;">
+                        🏖️ 退休門檻達成 ── 以下退休後情境請參閱 Tab「退休後－停止投入」及「退休後－繼續定期定額」
+                        &nbsp;｜&nbsp; 退休時年末資產 = ${parseInt(row.year_end_assets.replace(/,/g,'')).toLocaleString()} 元
+                    </td>
+                </tr>`;
+            }
+
+            // 參考年度提領欄：退休達成當年（idx===retireYrIdx）顯示第1年提領，之後顯示對應年序
+            let refWithdrawalCell = '<td class="p-3 text-right text-slate-300">—</td>';
+            if (retireYrIdx >= 0 && idx >= retireYrIdx) {
+                const postYr       = idx - retireYrIdx; // 0=退休年本身, 1=退休後第1年...
+                const refWithdraw  = Math.round(prevEndAssets * withdrawalRate);
+                if (idx === retireYrIdx) {
+                    // 退休年：顯示若以退休時年末資產為基準的提領額
+                    const retireAssets = parseInt(row.year_end_assets.replace(/,/g,''));
+                    const w1 = Math.round(retireAssets * withdrawalRate);
+                    refWithdrawalCell = `<td class="p-3 text-right font-bold" style="color:#c2410c;">
+                        ${w1.toLocaleString()}<br>
+                        <span style="font-size:10px;color:#9a3412;">※次年起提領</span>
+                    </td>`;
+                } else {
+                    // 停止投入情境的年末資產供勾稽（退休後第postYr年）
+                    const stopYE = retireStopYE[postYr] || 0;
+                    refWithdrawalCell = `<td class="p-3 text-right" style="color:#c2410c;">
+                        ${refWithdraw.toLocaleString()}
+                        ${stopYE ? '<br><span style="font-size:10px;color:#94a3b8;">停止投入年末:' + stopYE.toLocaleString() + '</span>' : ''}
+                    </td>`;
+                }
+            }
+
+            prevEndAssets = parseInt(row.year_end_assets.replace(/,/g,''));
 
             html += `
             <tr class="${rowClass} border-b">
@@ -1034,6 +1408,7 @@
                 <td class="p-3 text-right ${rateColor} font-bold">${rateDisplay}</td>
                 <td class="p-3 text-right font-bold">${row.year_end_assets}</td>
                 <td class="p-3 text-right text-red-600">${row.inflation_threshold}</td>
+                ${refWithdrawalCell}
             </tr>`;
         }
         document.getElementById('tableBody').innerHTML = html;
@@ -1156,6 +1531,9 @@
             (lastRow['當年度期末累計股數'] || 0).toLocaleString() + ' 股';
         document.getElementById('cfFinalValue').textContent    =
             Math.round(lastRow['當年度個股資產'] || 0).toLocaleString() + ' 元';
+
+        // 退休後情境摘要
+        updateCFRetirementSummary(backtestResult);
     }
 
     // ── selectCashflowETF ─────────────────────────────────────────
