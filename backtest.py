@@ -543,6 +543,61 @@ class PortfolioBacktestV3:
         return out
 
     # ─────────────────────────────────────────────────────────
+    # 退休後情境模擬（停止投入 / 繼續定期定額）
+    # ─────────────────────────────────────────────────────────
+    def _run_retirement_scenarios(self, retire_assets, fp, monthly_investment,
+                                   withdrawal_rate, n_years=30,
+                                   retire_cal_year=None, retire_yr_idx=0):
+        """
+        從退休點年末資產出發，模擬退休後30年兩種情境：
+          A. 停止投入：只提領，資產繼續複利成長
+          B. 繼續定期定額：每月繼續投入，同時按提領率提領
+        提領時機：年初資產 × withdrawal_rate（先提後算複利）
+        """
+        total_return = fp['total_return']
+
+        stop_rows = []
+        cont_rows = []
+
+        assets_stop = float(retire_assets)
+        assets_cont = float(retire_assets)
+
+        for yr in range(n_years):
+            yr_seq    = retire_yr_idx + 1 + yr          # 圖表第幾年（0-based 年序）
+            cal_year  = (retire_cal_year + yr) if retire_cal_year else None
+
+            # ── 情境A：停止投入 ─────────────────────────
+            withdrawal_a   = assets_stop * withdrawal_rate
+            after_withdraw = max(assets_stop - withdrawal_a, 0.0)
+            eoy_stop       = after_withdraw * (1 + total_return)
+            stop_rows.append({
+                '年份':     cal_year,
+                '年序':     yr_seq,
+                '年初資產': round(assets_stop),
+                '年度提領': round(withdrawal_a),
+                '年度投入': 0,
+                '年末資產': round(eoy_stop),
+            })
+            assets_stop = eoy_stop
+
+            # ── 情境B：繼續定期定額 ─────────────────────
+            withdrawal_b   = assets_cont * withdrawal_rate
+            annual_inv     = monthly_investment * 12
+            after_w_cont   = max(assets_cont - withdrawal_b, 0.0)
+            eoy_cont       = (after_w_cont + annual_inv) * (1 + total_return)
+            cont_rows.append({
+                '年份':     cal_year,
+                '年序':     yr_seq,
+                '年初資產': round(assets_cont),
+                '年度提領': round(withdrawal_b),
+                '年度投入': round(annual_inv),
+                '年末資產': round(eoy_cont),
+            })
+            assets_cont = eoy_cont
+
+        return stop_rows, cont_rows
+
+    # ─────────────────────────────────────────────────────────
     # 主入口
     # ─────────────────────────────────────────────────────────
     def backtest_portfolio(self, portfolio_type='conservative',
@@ -640,6 +695,23 @@ class PortfolioBacktestV3:
         else:
             forecast_assets = all_rows[-1]['年末資產'] if all_rows else initial_capital
 
+        # ── 退休後情境模擬 ────────────────────────────────────
+        retire_yr_idx = (finish_year - 1) if finish_year is not None else None
+        if finish_year is not None:
+            retire_assets   = all_rows[finish_year - 1]['年末資產']
+            retire_cal_year = all_rows[finish_year - 1]['年份'] + 1
+            ret_stop, ret_cont = self._run_retirement_scenarios(
+                retire_assets      = retire_assets,
+                fp                 = fp,
+                monthly_investment = monthly_investment,
+                withdrawal_rate    = withdrawal_rate,
+                n_years            = 30,
+                retire_cal_year    = retire_cal_year,
+                retire_yr_idx      = finish_year - 1,
+            )
+        else:
+            ret_stop = ret_cont = []
+
         # ── 蒙地卡羅模擬 ──────────────────────────────────────
         mc = self._monte_carlo(fp, last_assets, monthly_investment,
                                inflation_target, actual_count)
@@ -673,6 +745,11 @@ class PortfolioBacktestV3:
             'total_dividend':   total_dividend,
             'initial_capital':  initial_capital,
             'monthly_investment': monthly_investment,
+            'withdrawal_rate':  withdrawal_rate,
+            'inflation_target': inflation_target,
+            'retire_yr_idx':    retire_yr_idx,
+            'retirement_stop':  ret_stop,
+            'retirement_continue': ret_cont,
             'results':          {'annual_summary': all_rows},
             'etf_weights':      etf_weights,
             'etf_annual_tracking': combined_track,

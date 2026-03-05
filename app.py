@@ -217,6 +217,11 @@ def run_backtest():
                 'monte_carlo': mc_data,
                 'scenarios': scenarios_data,
                 'forecast_params': fp_data,
+                # ── 退休後情境 ──────────────────────────────────
+                'retirement_stop':     result.get('retirement_stop', []),
+                'retirement_continue': result.get('retirement_continue', []),
+                'retire_yr_idx':       result.get('retire_yr_idx'),
+                'withdrawal_rate':     result.get('withdrawal_rate', 0.04),
             }
         })
 
@@ -265,72 +270,99 @@ def download_csv(portfolio_type):
 
 
 def prepare_chart_data_from_annual(result):
-    """從年度摘要準備圖表資料"""
-    annual_summary = result['results']['annual_summary']
+    """從年度摘要準備圖表資料（含退休後兩條情境線）"""
+    annual_summary     = result['results']['annual_summary']
+    retirement_stop    = result.get('retirement_stop', [])
+    retirement_cont    = result.get('retirement_continue', [])
+    retire_yr_idx      = result.get('retire_yr_idx')   # 0-based in all_rows
+    initial_capital    = result['initial_capital']
+    monthly_investment = result['monthly_investment']
+    inflation_target   = result.get('inflation_target', 0)
 
-    # 每隔幾年取樣一次（避免圖表過於密集）
-    total_years = len(annual_summary)
-    sample_interval = max(1, total_years // 20)  # 最多顯示20個點
+    # ── 時間軸長度 ────────────────────────────────────────────
+    total_all = len(annual_summary)
+    # 退休後情境的最大年序（以 stop 為準，stop/cont 長度相同）
+    max_retire_seq = retirement_stop[-1]['年序'] if retirement_stop else 0
+    total_points = max(total_all, max_retire_seq + 1)
+
+    # ── 取樣策略（最多 20 個點，但必須含退休點）────────────────
+    sample_interval = max(1, total_points // 20)
+    sampled_set = set(range(0, total_points, sample_interval))
+    sampled_set.add(0)
+    sampled_set.add(total_points - 1)
+    if retire_yr_idx is not None:
+        sampled_set.add(retire_yr_idx)
+    sorted_idx = sorted(sampled_set)
+
+    # ── 退休後情境 lookup（key = 年序）────────────────────────
+    stop_lk = {r['年序']: r for r in retirement_stop}
+    cont_lk = {r['年序']: r for r in retirement_cont}
+
+    # 找最後一筆 actual 行的 index
+    last_actual_idx = max((i for i, r in enumerate(annual_summary)
+                           if r['資料類型'] == 'actual'), default=-1)
 
     labels = []
-    actual_series = []
-    forecast_series = []
-    threshold_series = []
+    actual_series     = []
+    forecast_series   = []
+    stop_series       = []
+    cont_series       = []
+    threshold_series  = []
 
-    last_actual_idx = -1
-    for i, row in enumerate(annual_summary):
-        if row['資料類型'] == 'actual':
-            last_actual_idx = i
+    for idx in sorted_idx:
+        labels.append(f"第{idx}年")
 
-    for i in range(0, len(annual_summary), sample_interval):
-        row = annual_summary[i]
-        year_offset = i
-        labels.append(f"第{year_offset}年")
-        threshold_series.append(round(row['通膨門檻']))
-
-        if i <= last_actual_idx:
-            actual_series.append(round(row['年末資產']))
-            forecast_series.append(None)
+        # actual（實際歷史行）
+        if idx < total_all and idx <= last_actual_idx:
+            actual_series.append(round(annual_summary[idx]['年末資產']))
         else:
             actual_series.append(None)
-            forecast_series.append(round(row['年末資產']))
 
-    # 確保最後一年也被包含
-    if (len(annual_summary) - 1) % sample_interval != 0:
-        last_row = annual_summary[-1]
-        year_offset = len(annual_summary) - 1
-        labels.append(f"第{year_offset}年")
-        threshold_series.append(round(last_row['通膨門檻']))
-
-        if len(annual_summary) - 1 <= last_actual_idx:
-            actual_series.append(round(last_row['年末資產']))
-            forecast_series.append(None)
+        # forecast（推估行，只到退休點）
+        if (idx < total_all
+                and idx > last_actual_idx
+                and (retire_yr_idx is None or idx <= retire_yr_idx)):
+            forecast_series.append(round(annual_summary[idx]['年末資產']))
         else:
-            actual_series.append(None)
-            forecast_series.append(round(last_row['年末資產']))
+            forecast_series.append(None)
 
-    # 8%報酬率參考線（簡化計算）
-    initial_capital = result['initial_capital']
-    monthly_investment = result['monthly_investment']
-    r_monthly_8 = (1 + 0.08) ** (1 / 12) - 1
+        # 退休後-停止投入（退休點開始，含退休點本身作連線起點）
+        if retire_yr_idx is not None and idx == retire_yr_idx:
+            base = round(annual_summary[idx]['年末資產'])
+            stop_series.append(base)
+            cont_series.append(base)
+        elif retire_yr_idx is not None and idx > retire_yr_idx:
+            stop_series.append(stop_lk[idx]['年末資產'] if idx in stop_lk else None)
+            cont_series.append(cont_lk[idx]['年末資產'] if idx in cont_lk else None)
+        else:
+            stop_series.append(None)
+            cont_series.append(None)
 
+        # 通膨門檻
+        if idx < total_all:
+            threshold_series.append(round(annual_summary[idx]['通膨門檻']))
+        else:
+            threshold_series.append(round(inflation_target * (1 + 0.03) ** idx))
+
+    # ── 8% 年化報酬參考線 ─────────────────────────────────────
+    r8 = (1 + 0.08) ** (1 / 12) - 1
     return_8_series = []
-    for i, label in enumerate(labels):
+    for label in labels:
         year_num = int(label.replace('第', '').replace('年', ''))
-        months = year_num * 12
-
-        wealth = initial_capital
-        for m in range(1, months + 1):
-            wealth = (wealth + monthly_investment) * (1 + r_monthly_8)
-
+        wealth = float(initial_capital)
+        for _ in range(year_num * 12):
+            wealth = (wealth + monthly_investment) * (1 + r8)
         return_8_series.append(round(wealth))
 
     return {
-        'labels': labels,
-        'inflation_threshold': threshold_series,
-        'actual_assets': actual_series,
-        'forecast_assets': forecast_series,
-        'return_8_assets': return_8_series
+        'labels':               labels,
+        'actual_assets':        actual_series,
+        'forecast_assets':      forecast_series,
+        'retire_stop_assets':   stop_series,
+        'retire_cont_assets':   cont_series,
+        'inflation_threshold':  threshold_series,
+        'return_8_assets':      return_8_series,
+        'start_year':           annual_summary[0]['年份'] if annual_summary else 2023,
     }
 
 
