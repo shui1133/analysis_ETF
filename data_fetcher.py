@@ -497,9 +497,11 @@ class ETFDataFetcher:
         """
         查詢自訂台灣上市股票/ETF（透過 yfinance）
         台灣上市：代碼.TW；上櫃：代碼.TWO
-        若兩者都失敗，回傳 None
+        若兩者都失敗，回傳 None，並在 self.last_error 記錄原因
         """
         print(f"\n[自訂查詢] 嘗試取得 {ticker} 股價資料...")
+        self.last_error = ''
+        errors = []
 
         # 依序嘗試 .TW / .TWO
         for suffix in ['.TW', '.TWO']:
@@ -507,8 +509,9 @@ class ETFDataFetcher:
             print(f"  嘗試 yfinance: {yf_ticker}")
             try:
                 tk = yf.Ticker(yf_ticker)
-                hist = tk.history(period='max')
+                hist = tk.history(period='max', timeout=15)
                 if hist is None or hist.empty:
+                    errors.append(f"{yf_ticker}: 無歷史資料（代碼可能錯誤或不在此市場）")
                     continue
 
                 price_data = []
@@ -524,6 +527,7 @@ class ETFDataFetcher:
                         continue
 
                 if not price_data:
+                    errors.append(f"{yf_ticker}: 取得的資料筆數為0")
                     continue
 
                 # 配息資料
@@ -537,8 +541,8 @@ class ETFDataFetcher:
                                     'date': str(date.date()),
                                     'dividend': round(float(amount), 4)
                                 })
-                except Exception:
-                    pass
+                except Exception as de:
+                    print(f"  配息查詢失敗（非致命）: {de}")
 
                 print(f"  ✓ yfinance ({yf_ticker}) 成功：{len(price_data)} 筆股價，{len(dividend_data)} 筆配息")
                 result = {
@@ -551,11 +555,19 @@ class ETFDataFetcher:
                 self._save_data(ticker, result)
                 return result
 
+            except requests.exceptions.ConnectionError:
+                msg = f"{yf_ticker}: 網路連線失敗（伺服器無法連接 Yahoo Finance）"
+                errors.append(msg)
+                print(f"  ✗ {msg}")
+                break  # 若連線問題，後續也不必再試
             except Exception as e:
-                print(f"  yfinance {yf_ticker} 錯誤: {e}")
+                msg = f"{yf_ticker}: {type(e).__name__} - {str(e)[:80]}"
+                errors.append(msg)
+                print(f"  ✗ yfinance {yf_ticker} 錯誤: {e}")
                 continue
 
-        print(f"  ✗ {ticker} 所有來源均失敗，無法取得股價資料")
+        self.last_error = '；'.join(errors)
+        print(f"  ✗ {ticker} 所有來源均失敗：{self.last_error}")
         return None
 
 

@@ -107,13 +107,25 @@ def fetch_custom():
                 results[ticker] = result
                 etf_memory_cache[ticker] = result
             else:
-                failed.append(ticker)
+                reason = getattr(fetcher, 'last_error', '')
+                failed.append({'ticker': ticker, 'reason': reason})
 
         if failed:
+            failed_codes = [f['ticker'] for f in failed]
+            # 判斷是否為網路問題
+            is_network = any('網路連線失敗' in f['reason'] for f in failed)
+            if is_network:
+                hint = '⚠️ 伺服器無法連接 Yahoo Finance，請確認 Render 環境允許對外連線，或稍後再試。'
+            else:
+                details = '、'.join(
+                    f"{f['ticker']}（{f['reason'][:40]}）" if f['reason'] else f['ticker']
+                    for f in failed
+                )
+                hint = f"無法取得股價資料：{details}。請確認代碼格式正確（台灣上市輸入如 2330、00878，不含 .TW）"
             return jsonify({
                 'status': 'error',
-                'message': f'無法取得以下股票的股價資料：{", ".join(failed)}。請確認代碼正確（台灣上市如 2330、00878）',
-                'failed': failed,
+                'message': hint,
+                'failed': failed_codes,
                 'success': list(results.keys())
             }), 422
 
