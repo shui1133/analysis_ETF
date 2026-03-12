@@ -611,15 +611,30 @@ class PortfolioBacktestV3:
                            initial_capital=1_000_000,
                            monthly_investment=10_000,
                            current_age=30,
-                           target_monthly_spend=30_000):
+                           target_monthly_spend=30_000,
+                           custom_tickers=None,
+                           custom_withdrawal_rate=0.04):
+        """
+        portfolio_type='custom' 時，使用 custom_tickers (list) 與 custom_withdrawal_rate。
+        三支股票各佔 1/3 權重。
+        """
 
-        cfg = PORTFOLIO_CONFIGS.get(portfolio_type)
-        if not cfg:
-            return None
+        if portfolio_type == 'custom':
+            if not custom_tickers or len(custom_tickers) != 3:
+                return None
+            tickers = [t.strip().upper() for t in custom_tickers]
+            weight  = round(1 / 3, 6)
+            etf_weights     = {t: weight for t in tickers}
+            withdrawal_rate = custom_withdrawal_rate
+            portfolio_name  = f'自訂_{"/".join(tickers)}'
+        else:
+            cfg = PORTFOLIO_CONFIGS.get(portfolio_type)
+            if not cfg:
+                return None
+            etf_weights     = cfg['etfs']
+            withdrawal_rate = cfg['withdrawal_rate']
+            portfolio_name  = cfg['name']
 
-        etf_weights     = cfg['etfs']
-        withdrawal_rate = cfg['withdrawal_rate']
-        portfolio_name  = cfg['name']
         inflation_target = target_monthly_spend * 12 / withdrawal_rate
 
         # ── 載入資料 & 歷史統計 ──────────────────────────────

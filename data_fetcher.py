@@ -493,6 +493,71 @@ class ETFDataFetcher:
         print(f"\n完成！成功爬取 {len([r for r in results.values() if r is not None])}/{len(etf_list)} 支ETF")
         return results
 
+    def fetch_custom_stock(self, ticker):
+        """
+        查詢自訂台灣上市股票/ETF（透過 yfinance）
+        台灣上市：代碼.TW；上櫃：代碼.TWO
+        若兩者都失敗，回傳 None
+        """
+        print(f"\n[自訂查詢] 嘗試取得 {ticker} 股價資料...")
+
+        # 依序嘗試 .TW / .TWO
+        for suffix in ['.TW', '.TWO']:
+            yf_ticker = f"{ticker}{suffix}"
+            print(f"  嘗試 yfinance: {yf_ticker}")
+            try:
+                tk = yf.Ticker(yf_ticker)
+                hist = tk.history(period='max')
+                if hist is None or hist.empty:
+                    continue
+
+                price_data = []
+                for date, row in hist.iterrows():
+                    try:
+                        close = float(row['Close'])
+                        if close > 0:
+                            price_data.append({
+                                'date': str(date.date()),
+                                'close': round(close, 2)
+                            })
+                    except Exception:
+                        continue
+
+                if not price_data:
+                    continue
+
+                # 配息資料
+                dividend_data = []
+                try:
+                    divs = tk.dividends
+                    if divs is not None and not divs.empty:
+                        for date, amount in divs.items():
+                            if float(amount) > 0:
+                                dividend_data.append({
+                                    'date': str(date.date()),
+                                    'dividend': round(float(amount), 4)
+                                })
+                except Exception:
+                    pass
+
+                print(f"  ✓ yfinance ({yf_ticker}) 成功：{len(price_data)} 筆股價，{len(dividend_data)} 筆配息")
+                result = {
+                    'ticker': ticker,
+                    'yf_ticker': yf_ticker,
+                    'price_data': price_data,
+                    'dividend_data': dividend_data,
+                    'is_simulated': False
+                }
+                self._save_data(ticker, result)
+                return result
+
+            except Exception as e:
+                print(f"  yfinance {yf_ticker} 錯誤: {e}")
+                continue
+
+        print(f"  ✗ {ticker} 所有來源均失敗，無法取得股價資料")
+        return None
+
 
 if __name__ == "__main__":
     fetcher = ETFDataFetcher()

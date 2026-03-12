@@ -83,6 +83,53 @@ def fetch_data():
         }), 500
 
 
+@app.route('/api/fetch_custom', methods=['POST'])
+def fetch_custom():
+    """爬取自訂3支台灣上市股票/ETF資料"""
+    try:
+        data = request.json
+        tickers_raw = data.get('tickers', [])
+
+        if not tickers_raw or len(tickers_raw) != 3:
+            return jsonify({'status': 'error', 'message': '請輸入恰好3支股票代碼'}), 400
+
+        tickers = [t.strip().upper() for t in tickers_raw if t.strip()]
+        if len(tickers) != 3:
+            return jsonify({'status': 'error', 'message': '請輸入3支不重複的股票代碼'}), 400
+
+        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+        results = {}
+        failed  = []
+
+        for ticker in tickers:
+            result = fetcher.fetch_custom_stock(ticker)
+            if result and result.get('price_data'):
+                results[ticker] = result
+                etf_memory_cache[ticker] = result
+            else:
+                failed.append(ticker)
+
+        if failed:
+            return jsonify({
+                'status': 'error',
+                'message': f'無法取得以下股票的股價資料：{", ".join(failed)}。請確認代碼正確（台灣上市如 2330、00878）',
+                'failed': failed,
+                'success': list(results.keys())
+            }), 422
+
+        return jsonify({
+            'status': 'success',
+            'message': f'成功取得 {len(results)} 支股票資料',
+            'tickers': tickers,
+            'results': {k: True for k in results}
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 def restore_cache_to_disk():
     """從記憶體快取還原資料到磁碟"""
     if not etf_memory_cache:
@@ -128,13 +175,22 @@ def run_backtest():
         current_age = int(data.get('current_age', 30))
         target_monthly_spend = int(data.get('target_monthly_spend', 4)) * 10000
 
-        # 檢查磁碟資料
-        portfolio_etfs = {
-            'conservative': ['00878', '00713', '00679B'],
-            'balanced': ['00919', '00929', '0056'],
-            'aggressive': ['006208', '00929', '00915']
-        }
-        needed_etfs = portfolio_etfs.get(portfolio_type, [])
+        # 自訂模式
+        custom_tickers = data.get('custom_tickers', None)
+        custom_withdrawal_rate = float(data.get('custom_withdrawal_rate', 0.04))
+
+        # 決定需要的 ETF 清單
+        if portfolio_type == 'custom':
+            if not custom_tickers or len(custom_tickers) != 3:
+                return jsonify({'status': 'error', 'message': '自訂模式需提供3支股票代碼'}), 400
+            needed_etfs = [t.strip().upper() for t in custom_tickers]
+        else:
+            portfolio_etfs = {
+                'conservative': ['00878', '00713', '00679B'],
+                'balanced': ['00919', '00929', '0056'],
+                'aggressive': ['006208', '00929', '00915']
+            }
+            needed_etfs = portfolio_etfs.get(portfolio_type, [])
 
         missing = [
             etf for etf in needed_etfs
@@ -153,7 +209,7 @@ def run_backtest():
             if still_missing:
                 return jsonify({
                     'status': 'error',
-                    'message': f'找不到 {still_missing} 的資料，請先點擊「爬取資料」'
+                    'message': f'找不到 {still_missing} 的資料，請先點擊「查詢股票資料」'
                 }), 400
 
         # 執行回測（使用V3）
@@ -163,7 +219,9 @@ def run_backtest():
             initial_capital=initial_capital,
             monthly_investment=monthly_investment,
             current_age=current_age,
-            target_monthly_spend=target_monthly_spend
+            target_monthly_spend=target_monthly_spend,
+            custom_tickers=custom_tickers,
+            custom_withdrawal_rate=custom_withdrawal_rate,
         )
 
         if result is None:
