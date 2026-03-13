@@ -85,24 +85,39 @@ def fetch_data():
 
 @app.route('/api/fetch_custom', methods=['POST'])
 def fetch_custom():
-    """爬取自訂3支台灣上市股票/ETF資料"""
+    """爬取自訂台灣上市股票/ETF資料（2~5支，一次性批量取得）"""
     try:
         data = request.json
         tickers_raw = data.get('tickers', [])
 
-        if not tickers_raw or len(tickers_raw) != 3:
-            return jsonify({'status': 'error', 'message': '請輸入恰好3支股票代碼'}), 400
+        if not tickers_raw or len(tickers_raw) < 2:
+            return jsonify({'status': 'error', 'message': '請至少輸入2支股票代碼'}), 400
+        if len(tickers_raw) > 5:
+            return jsonify({'status': 'error', 'message': '最多輸入5支股票代碼'}), 400
 
         tickers = [t.strip().upper() for t in tickers_raw if t.strip()]
-        if len(tickers) != 3:
-            return jsonify({'status': 'error', 'message': '請輸入3支不重複的股票代碼'}), 400
+        if len(tickers) != len(set(tickers)):
+            return jsonify({'status': 'error', 'message': '股票代碼不能重複'}), 400
 
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+
+        # ── 一次性批量取得所有股票資料，避免各自取得過程中發生失敗 ──
+        try:
+            batch_results = fetcher.fetch_all_etfs(tickers)
+        except Exception as batch_err:
+            # 若 fetch_all_etfs 不支援，退回逐一取得
+            batch_results = {}
+            for ticker in tickers:
+                try:
+                    r = fetcher.fetch_custom_stock(ticker)
+                    batch_results[ticker] = r if (r and r.get('price_data')) else None
+                except Exception:
+                    batch_results[ticker] = None
+
         results = {}
         failed  = []
-
         for ticker in tickers:
-            result = fetcher.fetch_custom_stock(ticker)
+            result = batch_results.get(ticker)
             if result and result.get('price_data'):
                 results[ticker] = result
                 etf_memory_cache[ticker] = result
@@ -112,8 +127,7 @@ def fetch_custom():
 
         if failed:
             failed_codes = [f['ticker'] for f in failed]
-            # 判斷是否為網路問題
-            is_network = any('網路連線失敗' in f['reason'] for f in failed)
+            is_network = any('網路連線失敗' in (f['reason'] or '') for f in failed)
             if is_network:
                 hint = '⚠️ 伺服器無法連接 Yahoo Finance，請確認 Render 環境允許對外連線，或稍後再試。'
             else:
@@ -189,12 +203,13 @@ def run_backtest():
 
         # 自訂模式
         custom_tickers = data.get('custom_tickers', None)
+        custom_weights = data.get('custom_weights', None)
         custom_withdrawal_rate = float(data.get('custom_withdrawal_rate', 0.04))
 
         # 決定需要的 ETF 清單
         if portfolio_type == 'custom':
-            if not custom_tickers or len(custom_tickers) != 3:
-                return jsonify({'status': 'error', 'message': '自訂模式需提供3支股票代碼'}), 400
+            if not custom_tickers or len(custom_tickers) < 2:
+                return jsonify({'status': 'error', 'message': '自訂模式需提供至少2支股票代碼'}), 400
             needed_etfs = [t.strip().upper() for t in custom_tickers]
         else:
             portfolio_etfs = {
@@ -233,6 +248,7 @@ def run_backtest():
             current_age=current_age,
             target_monthly_spend=target_monthly_spend,
             custom_tickers=custom_tickers,
+            custom_weights=custom_weights,
             custom_withdrawal_rate=custom_withdrawal_rate,
         )
 

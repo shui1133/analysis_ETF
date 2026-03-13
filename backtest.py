@@ -613,18 +613,31 @@ class PortfolioBacktestV3:
                            current_age=30,
                            target_monthly_spend=30_000,
                            custom_tickers=None,
+                           custom_weights=None,
                            custom_withdrawal_rate=0.04):
         """
-        portfolio_type='custom' 時，使用 custom_tickers (list) 與 custom_withdrawal_rate。
-        三支股票各佔 1/3 權重。
+        portfolio_type='custom' 時，使用 custom_tickers (list)、custom_weights (list) 與 custom_withdrawal_rate。
+        custom_weights 為百分比整數列表（如 [30, 40, 30]），總和須為 100。
+        支援 2~5 支股票，若未提供 custom_weights 則平均分配。
         """
 
         if portfolio_type == 'custom':
-            if not custom_tickers or len(custom_tickers) != 3:
+            if not custom_tickers or len(custom_tickers) < 2:
                 return None
             tickers = [t.strip().upper() for t in custom_tickers]
-            weight  = round(1 / 3, 6)
-            etf_weights     = {t: weight for t in tickers}
+            n = len(tickers)
+
+            # 處理自訂權重
+            if custom_weights and len(custom_weights) == n:
+                weights_pct = [float(w) for w in custom_weights]
+                total = sum(weights_pct)
+                if abs(total - 100.0) > 0.01:
+                    return None  # 權重總和不等於100%，後端保險驗證
+                etf_weights = {t: round(w / 100.0, 6) for t, w in zip(tickers, weights_pct)}
+            else:
+                weight = round(1 / n, 6)
+                etf_weights = {t: weight for t in tickers}
+
             withdrawal_rate = custom_withdrawal_rate
             portfolio_name  = f'自訂_{"/".join(tickers)}'
         else:
