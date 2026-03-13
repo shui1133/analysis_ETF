@@ -167,18 +167,32 @@
                         <i class="fa-solid fa-magnifying-glass-chart mr-1" style="color:#4f46e5;"></i>
                         台灣上市/櫃代碼（如：2330、00878）
                     </div>
-                    <input type="text" id="ticker1" placeholder="股票1（如 2330）" maxlength="8"
-                           class="w-full p-2 border-2 rounded-lg text-sm outline-none"
-                           style="border-color:#a5b4fc;"
-                           oninput="this.value=this.value.toUpperCase()">
-                    <input type="text" id="ticker2" placeholder="股票2（如 00878）" maxlength="8"
-                           class="w-full p-2 border-2 rounded-lg text-sm outline-none"
-                           style="border-color:#a5b4fc;"
-                           oninput="this.value=this.value.toUpperCase()">
-                    <input type="text" id="ticker3" placeholder="股票3（如 0056）" maxlength="8"
-                           class="w-full p-2 border-2 rounded-lg text-sm outline-none"
-                           style="border-color:#a5b4fc;"
-                           oninput="this.value=this.value.toUpperCase()">
+
+                    <!-- 動態股票列表 -->
+                    <div id="stockRows" class="space-y-2"></div>
+
+                    <!-- 新增/移除按鈕 -->
+                    <div class="flex gap-2">
+                        <button onclick="addStockRow()"
+                                id="btnAddStock"
+                                class="flex-1 text-xs font-bold py-1.5 px-3 rounded-lg border-2 transition"
+                                style="border-color:#4f46e5;color:#4f46e5;background:transparent;">
+                            <i class="fa-solid fa-plus mr-1"></i>新增股票
+                        </button>
+                        <button onclick="removeStockRow()"
+                                id="btnRemoveStock"
+                                class="flex-1 text-xs font-bold py-1.5 px-3 rounded-lg border-2 transition"
+                                style="border-color:#94a3b8;color:#94a3b8;background:transparent;">
+                            <i class="fa-solid fa-minus mr-1"></i>移除股票
+                        </button>
+                    </div>
+
+                    <!-- 權重合計顯示 -->
+                    <div id="weightSumBar" class="rounded-lg p-2 text-xs font-bold text-center"
+                         style="background:#f1f5f9;border:1px solid #cbd5e1;color:#475569;">
+                        權重合計：<span id="weightSumVal">0</span>% / 100%
+                    </div>
+
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1">退休提領率</label>
                         <select id="customWithdrawalRate"
@@ -683,10 +697,11 @@
         el.classList.remove('inactive-btn');
         el.classList.add('active-btn');
 
-        // 自訂模式：顯示輸入區，不自動執行
+        // 自訂模式：顯示輸入區，初始化股票列，不自動執行
         const customArea = document.getElementById('customInputArea');
         if (strategy === 'custom') {
             customArea.classList.remove('hidden');
+            if (stockCount === 0) initStockRows();
             updateETFCards();
             return;
         } else {
@@ -723,6 +738,128 @@
             }
         }
         document.getElementById('etfCards').innerHTML = html;
+
+        // 自訂模式：同步更新卡片區欄數
+        const etfCardsEl = document.getElementById('etfCards');
+        if (currentStrategy === 'custom' && etfEntries.length > 0) {
+            const cols = Math.min(etfEntries.length, 3);
+            etfCardsEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        } else {
+            etfCardsEl.style.gridTemplateColumns = '';
+        }
+    }
+
+    // ── 動態股票列管理 ──────────────────────────────────────────
+    const MAX_STOCKS = 5;
+    const MIN_STOCKS = 2;
+    let stockCount = 0;
+
+    function initStockRows() {
+        stockCount = 0;
+        document.getElementById('stockRows').innerHTML = '';
+        addStockRow();
+        addStockRow();
+        addStockRow();
+        updateWeightSum();
+        updateAddRemoveBtns();
+    }
+
+    function addStockRow() {
+        if (stockCount >= MAX_STOCKS) return;
+        stockCount++;
+        const idx = stockCount;
+        const defaultWeight = Math.round(100 / idx);
+        const row = document.createElement('div');
+        row.className = 'flex gap-2 items-center';
+        row.id = `stockRow${idx}`;
+        row.innerHTML = `
+            <input type="text" id="ticker${idx}" placeholder="股票${idx}（如 2330）" maxlength="8"
+                   class="flex-1 p-2 border-2 rounded-lg text-sm outline-none"
+                   style="border-color:#a5b4fc;"
+                   oninput="this.value=this.value.toUpperCase()">
+            <div class="flex items-center gap-1" style="min-width:90px;">
+                <input type="number" id="weight${idx}" value="${defaultWeight}" min="1" max="99"
+                       class="w-14 p-2 border-2 rounded-lg text-sm outline-none text-center"
+                       style="border-color:#a5b4fc;"
+                       oninput="onWeightInput()">
+                <span class="text-xs text-slate-500 font-bold">%</span>
+            </div>`;
+        document.getElementById('stockRows').appendChild(row);
+        redistributeWeights();
+        updateAddRemoveBtns();
+    }
+
+    function removeStockRow() {
+        if (stockCount <= MIN_STOCKS) return;
+        const row = document.getElementById(`stockRow${stockCount}`);
+        if (row) row.remove();
+        stockCount--;
+        redistributeWeights();
+        updateAddRemoveBtns();
+    }
+
+    function redistributeWeights() {
+        // 平均重新分配
+        const base = Math.floor(100 / stockCount);
+        const remainder = 100 - base * stockCount;
+        for (let i = 1; i <= stockCount; i++) {
+            const el = document.getElementById(`weight${i}`);
+            if (el) el.value = i === 1 ? base + remainder : base;
+        }
+        updateWeightSum();
+    }
+
+    function onWeightInput() {
+        updateWeightSum();
+    }
+
+    function updateWeightSum() {
+        let total = 0;
+        for (let i = 1; i <= stockCount; i++) {
+            const el = document.getElementById(`weight${i}`);
+            if (el) total += parseInt(el.value) || 0;
+        }
+        const valEl = document.getElementById('weightSumVal');
+        const barEl = document.getElementById('weightSumBar');
+        valEl.textContent = total;
+        if (total === 100) {
+            barEl.style.background = '#f0fdf4';
+            barEl.style.borderColor = '#86efac';
+            barEl.style.color = '#15803d';
+        } else if (total > 100) {
+            barEl.style.background = '#fef2f2';
+            barEl.style.borderColor = '#fca5a5';
+            barEl.style.color = '#b91c1c';
+        } else {
+            barEl.style.background = '#fffbeb';
+            barEl.style.borderColor = '#fcd34d';
+            barEl.style.color = '#92400e';
+        }
+        return total;
+    }
+
+    function updateAddRemoveBtns() {
+        const btnAdd = document.getElementById('btnAddStock');
+        const btnRem = document.getElementById('btnRemoveStock');
+        if (btnAdd) {
+            btnAdd.disabled = stockCount >= MAX_STOCKS;
+            btnAdd.style.opacity = stockCount >= MAX_STOCKS ? '0.4' : '1';
+        }
+        if (btnRem) {
+            btnRem.disabled = stockCount <= MIN_STOCKS;
+            btnRem.style.opacity = stockCount <= MIN_STOCKS ? '0.4' : '1';
+        }
+    }
+
+    function getStockInputs() {
+        const tickers = [], weights = [];
+        for (let i = 1; i <= stockCount; i++) {
+            const t = (document.getElementById(`ticker${i}`)?.value || '').trim().toUpperCase();
+            const w = parseInt(document.getElementById(`weight${i}`)?.value) || 0;
+            tickers.push(t);
+            weights.push(w);
+        }
+        return { tickers, weights };
     }
 
     // ── 自訂模式：查詢 + 回測 ────────────────────────────────────
@@ -730,16 +867,27 @@
         document.getElementById('customError').classList.add('hidden');
         document.getElementById('customSuccess').classList.add('hidden');
 
-        const t1 = document.getElementById('ticker1').value.trim().toUpperCase();
-        const t2 = document.getElementById('ticker2').value.trim().toUpperCase();
-        const t3 = document.getElementById('ticker3').value.trim().toUpperCase();
+        const { tickers, weights } = getStockInputs();
 
-        if (!t1 || !t2 || !t3) {
-            showCustomError('請填寫全部3支股票代碼');
+        // 驗證：所有代碼必須填寫
+        if (tickers.some(t => !t)) {
+            showCustomError('請填寫所有股票代碼');
             return;
         }
-        if (new Set([t1, t2, t3]).size !== 3) {
-            showCustomError('3支股票代碼不能重複');
+        // 驗證：不能重複
+        if (new Set(tickers).size !== tickers.length) {
+            showCustomError('股票代碼不能重複');
+            return;
+        }
+        // 驗證：每個權重必須 ≥ 1
+        if (weights.some(w => w < 1)) {
+            showCustomError('每支股票的權重至少需為 1%');
+            return;
+        }
+        // 驗證：權重總和必須 = 100
+        const totalW = weights.reduce((a, b) => a + b, 0);
+        if (totalW !== 100) {
+            showCustomError(`投資權重合計為 ${totalW}%，必須達到 100% 才能進行查詢與分析`);
             return;
         }
 
@@ -763,18 +911,21 @@
             }
         }
 
-        // 更新自訂 config 顯示
-        const w = parseFloat((1/3).toFixed(6));
-        portfolioConfigs.custom.etfs = { [t1]: w, [t2]: w, [t3]: w };
+        // 更新自訂 config 顯示（使用自訂權重）
+        const etfsObj = {};
+        tickers.forEach((t, i) => { etfsObj[t] = weights[i] / 100; });
+        portfolioConfigs.custom.etfs = etfsObj;
         updateETFCards();
 
-        // Step 1: 查詢股價
-        showStatus(`正在查詢 ${t1}、${t2}、${t3} 股價資料（首次約30~60秒）...`);
+        const tickerList = tickers.join('、');
+
+        // Step 1: 一次性批量查詢所有股票資料
+        showStatus(`正在批量查詢 ${tickerList} 股價資料（首次約30~60秒）...`);
         try {
             const r1 = await fetchT('/api/fetch_custom', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tickers: [t1, t2, t3] })
+                body: JSON.stringify({ tickers })
             });
             const d1 = await r1.json();
             if (d1.status !== 'success') {
@@ -782,9 +933,9 @@
                 showCustomError(d1.message || '查詢失敗');
                 return;
             }
-            showCustomSuccess(`成功取得 ${t1}、${t2}、${t3} 資料，執行回測中...`);
+            showCustomSuccess(`成功取得 ${tickerList} 資料，執行回測中...`);
 
-            // Step 2: 回測
+            // Step 2: 回測（傳入自訂權重）
             showStatus('資料取得完成，正在執行回測+推估分析...');
             const rate = parseFloat(document.getElementById('customWithdrawalRate').value);
             const r2 = await fetchT('/api/backtest', {
@@ -796,7 +947,8 @@
                     monthly_investment: document.getElementById('monthly').value,
                     current_age: document.getElementById('age').value,
                     target_monthly_spend: document.getElementById('target').value,
-                    custom_tickers: [t1, t2, t3],
+                    custom_tickers: tickers,
+                    custom_weights: weights,
                     custom_withdrawal_rate: rate
                 })
             }, 90000);
