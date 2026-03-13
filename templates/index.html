@@ -811,6 +811,8 @@
             showCustomError('錯誤：' + err.message);
         } finally {
             hideStatus();
+            // 回測流程結束後，清除「執行回測中...」的提示訊息
+            document.getElementById('customSuccess').classList.add('hidden');
         }
     }
 
