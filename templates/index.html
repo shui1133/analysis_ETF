@@ -855,19 +855,9 @@
     }
 
     function getStockInputs() {
-        // 直接從 DOM 讀取當前值（最可靠），同步回 stocks 陣列
-        const tickers = [], weights = [];
-        for (let i = 0; i < stocks.length; i++) {
-            const tickerEl = document.getElementById(`ticker${i}`);
-            const weightEl = document.getElementById(`weight${i}`);
-            const t = tickerEl ? tickerEl.value.trim().toUpperCase() : stocks[i].ticker.trim().toUpperCase();
-            const w = weightEl ? (parseInt(weightEl.value) || 0) : (parseInt(stocks[i].weight) || 0);
-            // 同步回陣列
-            stocks[i].ticker = t;
-            stocks[i].weight = w;
-            tickers.push(t);
-            weights.push(w);
-        }
+        // 從 stocks 陣列取資料（已即時同步），不再依賴 DOM id 順序
+        const tickers = stocks.map(s => s.ticker.trim().toUpperCase());
+        const weights = stocks.map(s => parseInt(s.weight) || 0);
         return { tickers, weights };
     }
 
@@ -877,10 +867,6 @@
         document.getElementById('customSuccess').classList.add('hidden');
 
         const { tickers, weights } = getStockInputs();
-
-        // 除錯：顯示實際取得的 tickers（開發用，正式可移除）
-        console.log('[DEBUG] stocks:', JSON.stringify(stocks));
-        console.log('[DEBUG] tickers:', tickers, 'weights:', weights);
 
         // 驗證：所有代碼必須填寫
         if (tickers.some(t => !t)) {
