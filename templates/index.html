@@ -701,7 +701,7 @@
         const customArea = document.getElementById('customInputArea');
         if (strategy === 'custom') {
             customArea.classList.remove('hidden');
-            if (stockCount === 0) initStockRows();
+            if (stocks.length === 0) initStockRows();
             updateETFCards();
             return;
         } else {
@@ -749,64 +749,69 @@
         }
     }
 
-    // ── 動態股票列管理 ──────────────────────────────────────────
+    // ── 動態股票列管理（資料陣列驅動，徹底解決 id 錯位問題）──────
     const MAX_STOCKS = 5;
     const MIN_STOCKS = 2;
-    let stockCount = 0;
+
+    // stocks = [{ticker:'', weight:33}, ...]，為唯一資料來源
+    let stocks = [];
 
     function initStockRows() {
-        stockCount = 0;
-        document.getElementById('stockRows').innerHTML = '';
-        addStockRow();
-        addStockRow();
-        addStockRow();
+        stocks = [
+            { ticker: '', weight: 34 },
+            { ticker: '', weight: 33 },
+            { ticker: '', weight: 33 }
+        ];
+        renderStockRows();
+    }
+
+    function renderStockRows() {
+        const container = document.getElementById('stockRows');
+        container.innerHTML = '';
+        stocks.forEach((s, i) => {
+            const row = document.createElement('div');
+            row.className = 'flex gap-2 items-center';
+            row.id = `stockRow${i}`;
+            row.innerHTML = `
+                <input type="text" id="ticker${i}"
+                       placeholder="股票${i + 1}（如 2330）" maxlength="8"
+                       value="${s.ticker}"
+                       class="flex-1 p-2 border-2 rounded-lg text-sm outline-none"
+                       style="border-color:#a5b4fc;"
+                       oninput="stocks[${i}].ticker=this.value.toUpperCase();this.value=this.value.toUpperCase();">
+                <div class="flex items-center gap-1" style="min-width:90px;">
+                    <input type="number" id="weight${i}"
+                           value="${s.weight}" min="1" max="99"
+                           class="w-14 p-2 border-2 rounded-lg text-sm outline-none text-center"
+                           style="border-color:#a5b4fc;"
+                           oninput="stocks[${i}].weight=parseInt(this.value)||0;updateWeightSum();">
+                    <span class="text-xs text-slate-500 font-bold">%</span>
+                </div>`;
+            container.appendChild(row);
+        });
         updateWeightSum();
         updateAddRemoveBtns();
     }
 
     function addStockRow() {
-        if (stockCount >= MAX_STOCKS) return;
-        stockCount++;
-        const idx = stockCount;
-        const defaultWeight = Math.round(100 / idx);
-        const row = document.createElement('div');
-        row.className = 'flex gap-2 items-center';
-        row.id = `stockRow${idx}`;
-        row.innerHTML = `
-            <input type="text" id="ticker${idx}" placeholder="股票${idx}（如 2330）" maxlength="8"
-                   class="flex-1 p-2 border-2 rounded-lg text-sm outline-none"
-                   style="border-color:#a5b4fc;"
-                   oninput="this.value=this.value.toUpperCase()">
-            <div class="flex items-center gap-1" style="min-width:90px;">
-                <input type="number" id="weight${idx}" value="${defaultWeight}" min="1" max="99"
-                       class="w-14 p-2 border-2 rounded-lg text-sm outline-none text-center"
-                       style="border-color:#a5b4fc;"
-                       oninput="onWeightInput()">
-                <span class="text-xs text-slate-500 font-bold">%</span>
-            </div>`;
-        document.getElementById('stockRows').appendChild(row);
+        if (stocks.length >= MAX_STOCKS) return;
+        stocks.push({ ticker: '', weight: 0 });
         redistributeWeights();
-        updateAddRemoveBtns();
+        renderStockRows();
     }
 
     function removeStockRow() {
-        if (stockCount <= MIN_STOCKS) return;
-        const row = document.getElementById(`stockRow${stockCount}`);
-        if (row) row.remove();
-        stockCount--;
+        if (stocks.length <= MIN_STOCKS) return;
+        stocks.pop();
         redistributeWeights();
-        updateAddRemoveBtns();
+        renderStockRows();
     }
 
     function redistributeWeights() {
-        // 平均重新分配
-        const base = Math.floor(100 / stockCount);
-        const remainder = 100 - base * stockCount;
-        for (let i = 1; i <= stockCount; i++) {
-            const el = document.getElementById(`weight${i}`);
-            if (el) el.value = i === 1 ? base + remainder : base;
-        }
-        updateWeightSum();
+        const n = stocks.length;
+        const base = Math.floor(100 / n);
+        const remainder = 100 - base * n;
+        stocks.forEach((s, i) => { s.weight = i === 0 ? base + remainder : base; });
     }
 
     function onWeightInput() {
@@ -814,26 +819,24 @@
     }
 
     function updateWeightSum() {
-        let total = 0;
-        for (let i = 1; i <= stockCount; i++) {
-            const el = document.getElementById(`weight${i}`);
-            if (el) total += parseInt(el.value) || 0;
-        }
+        const total = stocks.reduce((sum, s) => sum + (parseInt(s.weight) || 0), 0);
         const valEl = document.getElementById('weightSumVal');
         const barEl = document.getElementById('weightSumBar');
-        valEl.textContent = total;
-        if (total === 100) {
-            barEl.style.background = '#f0fdf4';
-            barEl.style.borderColor = '#86efac';
-            barEl.style.color = '#15803d';
-        } else if (total > 100) {
-            barEl.style.background = '#fef2f2';
-            barEl.style.borderColor = '#fca5a5';
-            barEl.style.color = '#b91c1c';
-        } else {
-            barEl.style.background = '#fffbeb';
-            barEl.style.borderColor = '#fcd34d';
-            barEl.style.color = '#92400e';
+        if (valEl) valEl.textContent = total;
+        if (barEl) {
+            if (total === 100) {
+                barEl.style.background = '#f0fdf4';
+                barEl.style.borderColor = '#86efac';
+                barEl.style.color = '#15803d';
+            } else if (total > 100) {
+                barEl.style.background = '#fef2f2';
+                barEl.style.borderColor = '#fca5a5';
+                barEl.style.color = '#b91c1c';
+            } else {
+                barEl.style.background = '#fffbeb';
+                barEl.style.borderColor = '#fcd34d';
+                barEl.style.color = '#92400e';
+            }
         }
         return total;
     }
@@ -842,27 +845,23 @@
         const btnAdd = document.getElementById('btnAddStock');
         const btnRem = document.getElementById('btnRemoveStock');
         if (btnAdd) {
-            btnAdd.disabled = stockCount >= MAX_STOCKS;
-            btnAdd.style.opacity = stockCount >= MAX_STOCKS ? '0.4' : '1';
+            btnAdd.disabled = stocks.length >= MAX_STOCKS;
+            btnAdd.style.opacity = stocks.length >= MAX_STOCKS ? '0.4' : '1';
         }
         if (btnRem) {
-            btnRem.disabled = stockCount <= MIN_STOCKS;
-            btnRem.style.opacity = stockCount <= MIN_STOCKS ? '0.4' : '1';
+            btnRem.disabled = stocks.length <= MIN_STOCKS;
+            btnRem.style.opacity = stocks.length <= MIN_STOCKS ? '0.4' : '1';
         }
     }
 
     function getStockInputs() {
-        const tickers = [], weights = [];
-        for (let i = 1; i <= stockCount; i++) {
-            const t = (document.getElementById(`ticker${i}`)?.value || '').trim().toUpperCase();
-            const w = parseInt(document.getElementById(`weight${i}`)?.value) || 0;
-            tickers.push(t);
-            weights.push(w);
-        }
+        // 從 stocks 陣列取資料（已即時同步），不再依賴 DOM id 順序
+        const tickers = stocks.map(s => s.ticker.trim().toUpperCase());
+        const weights = stocks.map(s => parseInt(s.weight) || 0);
         return { tickers, weights };
     }
 
-    // ── 自訂模式：查詢 + 回測 ────────────────────────────────────
+        // ── 自訂模式：查詢 + 回測 ────────────────────────────────────
     async function runCustomAnalysis() {
         document.getElementById('customError').classList.add('hidden');
         document.getElementById('customSuccess').classList.add('hidden');
