@@ -257,7 +257,7 @@ class ETFDataFetcher:
             stock = yf.Ticker(symbol)
             
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=5*365)
+            start_date = end_date - timedelta(days=10*365)
             
             hist = stock.history(start=start_date, end=end_date)
             
@@ -341,7 +341,7 @@ class ETFDataFetcher:
         })
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=5*365)
+        start_date = end_date - timedelta(days=10*365)
         
         price_data = []
         current_price = params['start_price']
