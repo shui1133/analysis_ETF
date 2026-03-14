@@ -257,7 +257,7 @@ class ETFDataFetcher:
             stock = yf.Ticker(symbol)
             
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=10*365)
+            start_date = end_date - timedelta(days=11*365)
             
             hist = stock.history(start=start_date, end=end_date)
             
@@ -341,7 +341,7 @@ class ETFDataFetcher:
         })
         
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=10*365)
+        start_date = end_date - timedelta(days=11*365)
         
         price_data = []
         current_price = params['start_price']
@@ -492,83 +492,6 @@ class ETFDataFetcher:
         
         print(f"\n完成！成功爬取 {len([r for r in results.values() if r is not None])}/{len(etf_list)} 支ETF")
         return results
-
-    def fetch_custom_stock(self, ticker):
-        """
-        查詢自訂台灣上市股票/ETF（透過 yfinance）
-        台灣上市：代碼.TW；上櫃：代碼.TWO
-        若兩者都失敗，回傳 None，並在 self.last_error 記錄原因
-        """
-        print(f"\n[自訂查詢] 嘗試取得 {ticker} 股價資料...")
-        self.last_error = ''
-        errors = []
-
-        # 依序嘗試 .TW / .TWO
-        for suffix in ['.TW', '.TWO']:
-            yf_ticker = f"{ticker}{suffix}"
-            print(f"  嘗試 yfinance: {yf_ticker}")
-            try:
-                tk = yf.Ticker(yf_ticker)
-                hist = tk.history(period='max', timeout=15)
-                if hist is None or hist.empty:
-                    errors.append(f"{yf_ticker}: 無歷史資料（代碼可能錯誤或不在此市場）")
-                    continue
-
-                price_data = []
-                for date, row in hist.iterrows():
-                    try:
-                        close = float(row['Close'])
-                        if close > 0:
-                            price_data.append({
-                                'date': str(date.date()),
-                                'close': round(close, 2)
-                            })
-                    except Exception:
-                        continue
-
-                if not price_data:
-                    errors.append(f"{yf_ticker}: 取得的資料筆數為0")
-                    continue
-
-                # 配息資料
-                dividend_data = []
-                try:
-                    divs = tk.dividends
-                    if divs is not None and not divs.empty:
-                        for date, amount in divs.items():
-                            if float(amount) > 0:
-                                dividend_data.append({
-                                    'date': str(date.date()),
-                                    'dividend': round(float(amount), 4)
-                                })
-                except Exception as de:
-                    print(f"  配息查詢失敗（非致命）: {de}")
-
-                print(f"  ✓ yfinance ({yf_ticker}) 成功：{len(price_data)} 筆股價，{len(dividend_data)} 筆配息")
-                result = {
-                    'ticker': ticker,
-                    'yf_ticker': yf_ticker,
-                    'price_data': price_data,
-                    'dividend_data': dividend_data,
-                    'is_simulated': False
-                }
-                self._save_data(ticker, result)
-                return result
-
-            except requests.exceptions.ConnectionError:
-                msg = f"{yf_ticker}: 網路連線失敗（伺服器無法連接 Yahoo Finance）"
-                errors.append(msg)
-                print(f"  ✗ {msg}")
-                break  # 若連線問題，後續也不必再試
-            except Exception as e:
-                msg = f"{yf_ticker}: {type(e).__name__} - {str(e)[:80]}"
-                errors.append(msg)
-                print(f"  ✗ yfinance {yf_ticker} 錯誤: {e}")
-                continue
-
-        self.last_error = '；'.join(errors)
-        print(f"  ✗ {ticker} 所有來源均失敗：{self.last_error}")
-        return None
 
 
 if __name__ == "__main__":
