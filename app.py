@@ -1191,7 +1191,7 @@ def sim_analysis(ticker):
             'stock_annual_ret': stock_annual_ret,
             'market_annual_ret':round(ret_m_annual, 4),
             'risk_free':        risk_free,
-            'market_premium':   round(market_premium, 4),
+            'market_premium':   round(market_premium_hist, 4),
             'expected_ret_capm':expected_ret_capm,
             'alpha_sml':        alpha_sml,        # Jensen's alpha
             'resid_std':        resid_std,
