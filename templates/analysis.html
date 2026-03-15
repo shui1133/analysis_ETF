@@ -694,7 +694,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <i class="fa-solid fa-chart-scatter text-yellow-400"></i>效益邊緣線分析
           <span class="text-slate-400 text-sm font-normal">（Efficient Frontier）</span>
         </h3>
-        <p class="text-slate-500 text-xs mb-4">輸入2~15支股票代碼，系統從 yfinance 取得歷史資料，計算最佳投資組合邊緣。</p>
+        <p class="text-slate-500 text-xs mb-1">輸入2~15支股票代碼，系統從 yfinance 取得歷史資料，計算最佳投資組合邊緣。</p>
+        <p class="text-amber-400/70 text-xs mb-4">
+          <i class="fa-solid fa-circle-info mr-1"></i>
+          切換至本頁時，會自動將目前查詢的個股加入代碼欄；也可點「<strong>＋加入當前個股</strong>」手動加入。
+        </p>
 
         <!-- 股票輸入區 -->
         <div class="flex flex-wrap gap-3 items-end mb-4">
@@ -2274,6 +2278,19 @@ function switchTab(tab) {
     if (btn)   btn.classList.toggle('active', t === tab);
   });
   if (tab === 'news' && currentData) loadNews();
+  // 切換到效益邊緣線時，自動將目前個股代碼加入輸入框（若尚未包含）
+  if (tab === 'frontier' && currentData) {
+    const efInput = document.getElementById('efTickers');
+    const currentTicker = currentData.ticker;
+    const existing = efInput.value.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+    if (!existing.includes(currentTicker.toUpperCase())) {
+      efInput.value = (efInput.value.trim() + ' ' + currentTicker).trim();
+      // 短暫高亮提示使用者已加入
+      efInput.style.borderColor = '#10b981';
+      efInput.style.transition = 'border-color .3s';
+      setTimeout(() => { efInput.style.borderColor = ''; }, 1500);
+    }
+  }
   // 切換到 SIM 時自動執行（若已有股票資料）
   if (tab === 'sim' && currentData && !document.getElementById('simMetrics').classList.contains('hidden') === false) {
     runSIMAnalysis();

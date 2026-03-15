@@ -1138,15 +1138,16 @@ def sim_analysis(ticker):
         idio_risk  = round(float(np.sqrt(idio_risk2)), 4)
 
         # ── SML（證券市場線）資料點 ──────────────────────────
-        ret_m_annual   = float(np.mean(ret_m)) * 252
-        risk_free      = 0.02
-        market_premium = ret_m_annual - risk_free
-        sml_betas      = [round(b * 0.1, 1) for b in range(0, 26)]  # 0 ~ 2.5
-        sml_rets       = [round(risk_free + b * market_premium, 4) for b in sml_betas]
+        # 使用長期歷史市場溢酬（台灣加權指數長期約 7%），避免用近期樣本導致 SML 斜率失真
+        risk_free             = 0.02
+        market_premium_hist   = 0.07   # 台灣長期歷史市場風険溢酬（固定值）
+        ret_m_annual          = risk_free + market_premium_hist  # 市場預期報酬 9%
+        sml_betas             = [round(b * 0.1, 1) for b in range(0, 26)]  # β = 0 ~ 2.5
+        sml_rets              = [round(risk_free + b * market_premium_hist, 4) for b in sml_betas]
 
         # 個股在SML上的預期報酬 vs 實際報酬
         stock_annual_ret   = round(float(np.mean(ret_s)) * 252, 4)
-        expected_ret_capm  = round(risk_free + beta * market_premium, 4)
+        expected_ret_capm  = round(risk_free + beta * market_premium_hist, 4)
         alpha_sml          = round(stock_annual_ret - expected_ret_capm, 4)  # Jensen's alpha
 
         # ── 散點資料（縮減至最多 200 點）────────────────────
