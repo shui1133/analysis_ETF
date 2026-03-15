@@ -427,6 +427,7 @@ def get_stock_analysis(ticker):
         data_out = {
             'ticker':    ticker,
             'name':      raw.get('name', ticker),
+            'eng_name':  raw.get('eng_name', ''),
             'source':    raw.get('source', 'yfinance'),
             'is_simulated': raw.get('is_simulated', False),
             # 最新行情
@@ -440,7 +441,7 @@ def get_stock_analysis(ticker):
                 'change':     change,
                 'change_pct': change_pct,
             },
-            # 基本面
+            # 基本面（補充 OHLCV 計算備援）
             'fundamentals': {
                 'pe_ratio':      info.get('pe_ratio'),
                 'pb_ratio':      info.get('pb_ratio'),
@@ -449,12 +450,14 @@ def get_stock_analysis(ticker):
                 'eps':           info.get('eps'),
                 'roe':           info.get('roe'),
                 'profit_margin': info.get('profit_margin'),
-                'market_cap':    info.get('market_cap'),
+                'market_cap':    info.get('market_cap') or 0,
                 'sector':        info.get('sector', ''),
                 'industry':      info.get('industry', ''),
-                '52w_high':      info.get('52w_high'),
-                '52w_low':       info.get('52w_low'),
+                '52w_high':      info.get('52w_high') or (max(r['high'] for r in ohlcv[-252:]) if len(ohlcv) >= 10 else None),
+                '52w_low':       info.get('52w_low')  or (min(r['low']  for r in ohlcv[-252:]) if len(ohlcv) >= 10 else None),
                 'description':   info.get('description', ''),
+                'avg_volume':    info.get('avg_volume'),
+                'debt_ratio':    info.get('debt_ratio'),
             },
             # 技術分析
             'technical': {

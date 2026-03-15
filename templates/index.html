@@ -1286,8 +1286,7 @@
         const btnWrapper = document.getElementById('cashflowBtnWrapper');
         if (btnWrapper) btnWrapper.style.display = 'block';
 
-        // 回測完成後自動展開年度報表
-        setTimeout(() => openReportSection(), 100);
+        // 年度報表預設折疊，使用者手動展開
 
         // 顯示下載回測CSV按鈕
         const dlWrapper = document.getElementById('downloadBacktestWrapper');

@@ -206,10 +206,14 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <!-- ── 行情標題列 ─────────────────────────────────────────── -->
     <div class="card p-5 flex flex-wrap gap-4 items-center justify-between">
       <div>
-        <div class="flex items-center gap-3 mb-1">
+        <div class="flex flex-wrap items-start gap-x-3 gap-y-0.5 mb-1">
+          <!-- 代碼 -->
+          <span class="text-slate-400 mono text-base font-bold self-center" id="stockTicker">--</span>
+          <!-- 中文名（有則顯示，無則隱藏） -->
           <h2 class="text-2xl font-black text-white" id="stockName">--</h2>
-          <span class="text-slate-400 mono text-sm" id="stockTicker">--</span>
-          <span id="simulatedBadge" class="hidden text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-300 border border-amber-700">模擬資料</span>
+          <!-- 英文名 -->
+          <span class="text-slate-400 text-sm self-end pb-0.5" id="stockEngName" style="display:none"></span>
+          <span id="simulatedBadge" class="hidden text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-300 border border-amber-700 self-center">模擬資料</span>
         </div>
         <div class="text-slate-400 text-xs" id="stockSector">--</div>
       </div>
@@ -395,8 +399,14 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <!-- 52週高低 & 市值 -->
       <div class="card p-5">
         <h3 class="font-bold text-white mb-4"><i class="fa-solid fa-chart-simple mr-2 text-blue-400"></i>市場表現</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm" id="market-metrics"></div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 text-sm" id="market-metrics"></div>
       </div>
+      <!-- 資料說明提示 -->
+      <div class="rounded-xl bg-slate-800/40 border border-slate-700/30 px-4 py-2 text-xs text-slate-500 flex items-center gap-2">
+        <i class="fa-solid fa-circle-info text-blue-400 shrink-0"></i>
+        基本面資料來源：Yahoo Finance (yfinance)。部分欄位（本益比、ROE等）需上市公司定期財報揭露後方可取得，若暫無資料顯示「暫無」屬正常現象。52週高低點若 yfinance 未提供則由歷史K線計算補充。
+      </div>
+
       <!-- 公司描述 -->
       <div class="card p-5" id="descCard">
         <h3 class="font-bold text-white mb-3"><i class="fa-solid fa-building mr-2 text-slate-400"></i>公司簡介</h3>
@@ -682,6 +692,50 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
 <script>
 // ════════════════════════════════════════════════════════════════
+// 台灣股票/ETF 中文名稱對照表
+// ════════════════════════════════════════════════════════════════
+const STOCK_NAMES_ZH = {
+    '2330':'台積電','2317':'鴻海','2454':'聯發科','2382':'廣達',
+    '2308':'台達電','2881':'富邦金','2882':'國泰金','2891':'中信金',
+    '2886':'兆豐金','2303':'聯電','2412':'中華電','1301':'台塑',
+    '1303':'南亞','2002':'中鋼','2357':'華碩','3008':'大立光',
+    '2395':'研華','4938':'和碩','2603':'長榮','2615':'萬海',
+    '2609':'陽明','2880':'華南金','2884':'玉山金','2885':'元大金',
+    '2887':'台新金','2888':'新光金','2890':'永豐金','3045':'台灣大',
+    '4904':'遠傳','2376':'技嘉','3711':'日月光投控','2379':'瑞昱',
+    '2409':'友達','2408':'南亞科','6505':'台塑化','1326':'台化',
+    '2207':'和泰車','2474':'可成','3481':'群創','2345':'智邦',
+    '5880':'合庫金','2892':'第一金','2883':'開發金','2834':'臺企銀',
+    '5871':'中租-KY','6669':'緯穎','3034':'聯詠','2301':'光寶科',
+    '2347':'聯強','2352':'佳世達','2354':'鴻準','2356':'英業達',
+    '2360':'致茂','2363':'矽統','2367':'燿華','2368':'金像電',
+    '2371':'大同','2373':'震旦行','2374':'佳能','2375':'智寶',
+    '2377':'微星','2383':'台光電','2385':'群光','2386':'金利科技',
+    '2392':'正崴','2393':'億光','2397':'友通','2399':'映泰',
+    '2401':'凌陽','2404':'漢唐','2406':'國碩','2413':'環科',
+    '2414':'精技','2417':'圓剛','2421':'建準','2423':'固緯',
+    '2426':'鼎元','2429':'銘異','2431':'聯昌','2436':'偉詮電',
+    '2441':'超豐','2443':'史欽','2448':'晶電','2449':'京元電子',
+    '2450':'神腦','2451':'創見','2453':'凌群','2456':'奇力新',
+    '2457':'飛宏','2458':'義隆','2459':'敦吉','2461':'光群雷',
+    '2462':'實錄','2463':'揚德','2464':'盟立','2465':'麗臺',
+    '0050':'元大台灣50','0056':'元大高股息',
+    '006208':'富邦台50','00878':'國泰永續高股息',
+    '00713':'元大台灣高息低波','00679B':'元大美債20年',
+    '00919':'群益台灣精選高息','00929':'復華台灣科技優息',
+    '00915':'凱基優選高股息30','00757':'統一MSCI台灣',
+    '00850':'元大臺灣ESG永續','00692':'富邦公司治理',
+    '00900':'富邦特選高股息30','00907':'永豐優息存股',
+    '00930':'永豐ESG低碳高息','00934':'中信成長高股息',
+    '00939':'統一台灣高息動能','00940':'元大台灣價值高息',
+};
+
+function getStockNameZh(ticker) {
+    if (!ticker) return null;
+    return STOCK_NAMES_ZH[ticker.toUpperCase()] || null;
+}
+
+// ════════════════════════════════════════════════════════════════
 // 全域狀態
 // ════════════════════════════════════════════════════════════════
 let currentData   = null;
@@ -711,11 +765,14 @@ async function loadPopular() {
     const d = await r.json();
     if (d.status !== 'success') return;
     const el = document.getElementById('popularList');
-    el.innerHTML = d.stocks.map(s => `
-      <button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
-        <span class="text-slate-400">${s.code}</span>
-        <span>${s.name}</span>
-      </button>`).join('');
+    el.innerHTML = d.stocks.map(s => {
+      const zh = getStockNameZh(s.code);
+      const dispName = zh || s.name;
+      return `<button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
+        <span class="text-slate-400 text-xs">${s.code}</span>
+        <span>${dispName}</span>
+      </button>`;
+    }).join('');
   } catch(e) { console.error('載入熱門清單失敗', e); }
 }
 
@@ -790,8 +847,32 @@ function renderHeader(data) {
   const up = l.change >= 0;
   const color = up ? '#10b981' : '#ef4444';
 
-  document.getElementById('stockName').textContent   = data.name;
-  document.getElementById('stockTicker').textContent = `${data.ticker}`;
+  // ── 三層名稱顯示：代碼 / 中文名 / 英文名 ──────────────────
+  const zhName  = getStockNameZh(data.ticker);
+  const engName = data.eng_name || data.name || '';
+
+  // 代碼
+  document.getElementById('stockTicker').textContent = data.ticker;
+
+  // 中文名（優先顯示，若無則隱藏）
+  const nameEl = document.getElementById('stockName');
+  if (zhName) {
+    nameEl.textContent = zhName;
+    nameEl.style.display = '';
+  } else {
+    // 無中文名時，改以英文名填充主標題
+    nameEl.textContent = engName || data.ticker;
+    nameEl.style.display = '';
+  }
+
+  // 英文名（有中文名 且 英文名不同才顯示）
+  const engEl = document.getElementById('stockEngName');
+  if (engEl) {
+    const showEng = zhName && engName && engName !== data.ticker && engName !== zhName;
+    engEl.textContent = showEng ? engName : '';
+    engEl.style.display = showEng ? '' : 'none';
+  }
+
   document.getElementById('stockSector').textContent =
     [data.fundamentals.sector, data.fundamentals.industry].filter(Boolean).join(' · ') || '台灣上市';
 
@@ -898,25 +979,51 @@ function setIndCard(id, val, close) {
 function renderFundamental(data) {
   const f = data.fundamentals;
 
+  // ── 估值指標（智慧顯示，N/A 給予說明）──────────────────────
+  const peDisp  = f.pe_ratio  != null ? f.pe_ratio  : null;
+  const pbDisp  = f.pb_ratio  != null ? f.pb_ratio  : null;
+  const epsDisp = f.eps       != null ? f.eps       : null;
+  const dyDisp  = f.div_yield != null ? f.div_yield : null;
+
   document.getElementById('valuation-metrics').innerHTML = [
-    metricRow('本益比 (P/E)', f.pe_ratio, 'x', pe => pe < 15 ? 'up' : pe > 30 ? 'down' : 'flat'),
-    metricRow('股價淨值比 (P/B)', f.pb_ratio, 'x', pb => pb < 1.5 ? 'up' : pb > 3 ? 'down' : 'flat'),
-    metricRow('近12月殖利率', f.div_yield, '%', dy => dy >= 5 ? 'up' : dy >= 3 ? 'flat' : 'down'),
-    metricRow('每股盈餘 (EPS)', f.eps, '元'),
+    metricRow('本益比 (P/E)', peDisp, 'x',
+              pe => pe < 15 ? 'up' : pe > 30 ? 'down' : 'flat',
+              'yfinance 暫未提供此數據'),
+    metricRow('股價淨值比 (P/B)', pbDisp, 'x',
+              pb => pb < 1.5 ? 'up' : pb > 3 ? 'down' : 'flat',
+              'yfinance 暫未提供此數據'),
+    metricRow('近12月殖利率', dyDisp != null ? dyDisp : (f.annual_div > 0 && data.latest.close > 0 ? round2(f.annual_div / data.latest.close * 100) : null),
+              '%', dy => dy >= 5 ? 'up' : dy >= 3 ? 'flat' : 'down'),
+    metricRow('每股盈餘 (EPS)', epsDisp, '元', null, 'yfinance 暫未提供此數據'),
   ].join('');
+
+  const roeDisp = f.roe           != null ? (f.roe * 100)           : null;
+  const pmDisp  = f.profit_margin != null ? (f.profit_margin * 100) : null;
+  const drDisp  = f.debt_ratio    != null ? f.debt_ratio            : null;
 
   document.getElementById('profit-metrics').innerHTML = [
-    metricRow('股東權益報酬率 (ROE)', f.roe != null ? (f.roe * 100) : null, '%',
-              v => v > 15 ? 'up' : v > 5 ? 'flat' : 'down'),
-    metricRow('淨利率', f.profit_margin != null ? (f.profit_margin * 100) : null, '%',
-              v => v > 20 ? 'up' : v > 5 ? 'flat' : 'down'),
+    metricRow('股東權益報酬率 (ROE)', roeDisp, '%',
+              v => v > 15 ? 'up' : v > 5 ? 'flat' : 'down',
+              'yfinance 暫未提供此數據'),
+    metricRow('淨利率', pmDisp, '%',
+              v => v > 20 ? 'up' : v > 5 ? 'flat' : 'down',
+              'yfinance 暫未提供此數據'),
+    metricRow('負債比率 (D/E)', drDisp, '',
+              v => v < 50 ? 'up' : v > 150 ? 'down' : 'flat',
+              'yfinance 暫未提供此數據'),
   ].join('');
 
+  const w52h = f['52w_high'];
+  const w52l = f['52w_low'];
+  const mktcap = (f.market_cap && f.market_cap > 0) ? fmtMktCap(f.market_cap) : null;
+  const avgVol = f.avg_volume ? fmtVol(f.avg_volume) : null;
+
   document.getElementById('market-metrics').innerHTML = [
-    mCard('52週高點', f['52w_high'], '元', '#ef4444'),
-    mCard('52週低點', f['52w_low'],  '元', '#10b981'),
-    mCard('市值',      f.market_cap != null ? fmtMktCap(f.market_cap) : null, '', '#3b82f6', true),
-    mCard('近12月配息', f.annual_div > 0 ? f.annual_div.toFixed(4) : null, '元', '#f59e0b'),
+    mCard('52週高點',  w52h != null ? w52h.toFixed(2) : null, '元', '#ef4444', true),
+    mCard('52週低點',  w52l != null ? w52l.toFixed(2) : null, '元', '#10b981', true),
+    mCard('市值',      mktcap,  '', '#3b82f6', true),
+    mCard('近12月配息',f.annual_div > 0 ? f.annual_div.toFixed(4) : null, '元', '#f59e0b'),
+    mCard('均量',      avgVol,  '', '#8b5cf6', true),
   ].join('');
 
   // 公司描述
@@ -938,8 +1045,11 @@ function renderFundamental(data) {
     divHtml || '<tr><td colspan="2" class="py-4 text-center text-slate-500">無配息紀錄</td></tr>';
 }
 
-function metricRow(label, val, unit, colorFn) {
-  if (val == null) return `<div class="flex justify-between py-2 border-b border-slate-800"><span class="text-slate-400">${label}</span><span class="text-slate-600">N/A</span></div>`;
+function metricRow(label, val, unit, colorFn, naNote) {
+  if (val == null) {
+    const note = naNote ? `<span class="text-slate-600 text-xs ml-1" title="${naNote}">暫無</span>` : '<span class="text-slate-600">—</span>';
+    return `<div class="flex justify-between py-2 border-b border-slate-800"><span class="text-slate-400">${label}</span>${note}</div>`;
+  }
   const display = typeof val === 'number' ? val.toFixed(2) : val;
   const cls = colorFn ? colorFn(parseFloat(display)) : 'flat';
   const clsMap = {up:'text-green-400', down:'text-red-400', flat:'text-white'};
@@ -948,6 +1058,8 @@ function metricRow(label, val, unit, colorFn) {
     <span class="font-bold mono ${clsMap[cls]||'text-white'}">${display}${unit}</span>
   </div>`;
 }
+
+function round2(n) { return n != null ? Math.round(n * 100) / 100 : null; }
 
 function mCard(label, val, unit, color, raw=false) {
   const display = val != null ? (raw ? val : `${val}${unit}`) : 'N/A';
@@ -1528,47 +1640,104 @@ async function loadNews() {
   document.getElementById('newsList').innerHTML = '';
   document.getElementById('newsEmpty').classList.add('hidden');
 
-  // 查詢詞：用中文名（若有）+ 代碼
+  // 查詢詞：優先中文名，多組輪流嘗試提高命中率
   const queryTerms = [];
+  // 最優先：中文名（最精準）
   if (zhName) queryTerms.push(zhName);
-  queryTerms.push(`${ticker} 台灣股票`);
-  if (engName && engName !== ticker) queryTerms.push(engName.split(' ')[0]);
+  // 中文名 + 股票關鍵字
+  if (zhName) queryTerms.push(`${zhName} 股票`);
+  // 代碼 + 台股
+  queryTerms.push(`${ticker} 台股`);
+  // 英文公司名（取前一個詞）
+  if (engName && engName !== ticker) {
+    const firstWord = engName.split(/[\s,\.]/)[0];
+    if (firstWord.length > 2) queryTerms.push(firstWord);
+  }
 
   let articles = [];
 
+  // ── 多重 proxy 備援策略 ───────────────────────────────────
+  // proxy1: rss2json（穩定，支援 RSS 解析）
+  // proxy2: allorigins（備援）
+  async function fetchRSSviaProxy(q) {
+    const encoded = encodeURIComponent(q);
+    const rssUrl  = `https://news.google.com/rss/search?q=${encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
+
+    // 方法1: rss2json API（直接回傳 JSON，最穩定）
+    try {
+      const r2jUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=15`;
+      const r2j    = await fetch(r2jUrl, { signal: AbortSignal.timeout(8000) });
+      if (r2j.ok) {
+        const d = await r2j.json();
+        if (d.status === 'ok' && d.items && d.items.length > 0) {
+          return d.items.map(it => ({
+            title:   (it.title || '').trim(),
+            link:    it.link || it.guid || '#',
+            pubDate: it.pubDate || '',
+            source:  it.author || (it.source?.title) || 'Google News',
+            desc:    (it.description || it.content || '').replace(/<[^>]*>/g,'').trim(),
+          }));
+        }
+      }
+    } catch(e) { console.warn('rss2json 失敗:', e.message); }
+
+    // 方法2: allorigins proxy（備援）
+    try {
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      if (resp.ok) {
+        const json   = await resp.json();
+        const xmlStr = json.contents || '';
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
+        const items  = Array.from(xmlDoc.querySelectorAll('item'));
+        if (items.length > 0) {
+          return items.slice(0,15).map(item => ({
+            title:   (item.querySelector('title')?.textContent || '').trim(),
+            link:    (item.querySelector('link')?.textContent  || '#').trim(),
+            pubDate: (item.querySelector('pubDate')?.textContent || '').trim(),
+            source:  (item.querySelector('source')?.textContent || 'Google News').trim(),
+            desc:    (item.querySelector('description')?.textContent || '').replace(/<[^>]*>/g,'').trim(),
+          }));
+        }
+      }
+    } catch(e) { console.warn('allorigins 失敗:', e.message); }
+
+    // 方法3: corsproxy.io（第三備援）
+    try {
+      const cpUrl = `https://corsproxy.io/?${encodeURIComponent(rssUrl)}`;
+      const resp  = await fetch(cpUrl, { signal: AbortSignal.timeout(8000) });
+      if (resp.ok) {
+        const xmlStr = await resp.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
+        const items  = Array.from(xmlDoc.querySelectorAll('item'));
+        if (items.length > 0) {
+          return items.slice(0,15).map(item => ({
+            title:   (item.querySelector('title')?.textContent || '').trim(),
+            link:    (item.querySelector('link')?.textContent  || '#').trim(),
+            pubDate: (item.querySelector('pubDate')?.textContent || '').trim(),
+            source:  (item.querySelector('source')?.textContent || 'Google News').trim(),
+            desc:    (item.querySelector('description')?.textContent || '').replace(/<[^>]*>/g,'').trim(),
+          }));
+        }
+      }
+    } catch(e) { console.warn('corsproxy 失敗:', e.message); }
+
+    return [];
+  }
+
   for (const q of queryTerms) {
     try {
-      const encoded = encodeURIComponent(q);
-      // 使用 allorigins 作為 CORS proxy 存取 Google News RSS
-      const rssUrl  = `https://news.google.com/rss/search?q=${encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
-
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-      if (!resp.ok) continue;
-      const json = await resp.json();
-      const xmlStr = json.contents || '';
-
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
-      const items  = Array.from(xmlDoc.querySelectorAll('item'));
-
-      items.slice(0, 15).forEach(item => {
-        const title   = item.querySelector('title')?.textContent?.trim()  || '';
-        const link    = item.querySelector('link')?.textContent?.trim()   || '#';
-        const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
-        const source  = item.querySelector('source')?.textContent?.trim() || 'Google News';
-        const desc    = item.querySelector('description')?.textContent?.replace(/<[^>]*>/g,'')?.trim() || '';
-
-        // 避免重複
-        if (!articles.find(a => a.title === title)) {
-          articles.push({ title, link, pubDate, source, desc,
-            sentiment: classifySentiment(title + ' ' + desc) });
+      const items = await fetchRSSviaProxy(q);
+      items.forEach(it => {
+        if (it.title && !articles.find(a => a.title === it.title)) {
+          articles.push({ ...it, sentiment: classifySentiment(it.title + ' ' + it.desc) });
         }
       });
-
       if (articles.length >= 20) break;
     } catch (e) {
-      console.warn('新聞載入失敗:', e.message);
+      console.warn('新聞查詢失敗:', e.message);
     }
   }
 
@@ -1880,7 +2049,6 @@ function switchTab(tab) {
 // ════════════════════════════════════════════════════════════════
 function show(id) { const el = document.getElementById(id); if(el) el.classList.remove('hidden'); }
 function hide(id) { const el = document.getElementById(id); if(el) el.classList.add('hidden'); }
-function round2(n) { return Math.round(n * 100) / 100; }
 
 function fmtVol(n) {
   if (!n) return '0';
