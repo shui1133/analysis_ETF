@@ -416,8 +416,14 @@ def get_stock_analysis(ticker):
         )
 
         # ── 圖表資料（全部 OHLCV，前端依週期聚合）────────────
+        # yfinance 回傳的 volume 單位是「股」，台灣習慣用「張」(1張=1000股)
         chart_ohlcv = ohlcv  # 回傳全部供前端聚合年線等長週期
         chart_len   = len(chart_ohlcv)
+        offset      = len(ohlcv) - chart_len  # 對齊指標陣列
+
+        def to_lots(v):
+            """股 → 張（÷1000，至少1張）"""
+            return max(1, round(v / 1000)) if v else 0
         offset      = len(ohlcv) - chart_len  # 對齊指標陣列
 
         def slice_ind(key):
@@ -436,7 +442,7 @@ def get_stock_analysis(ticker):
                 'high':       last['high'],
                 'low':        last['low'],
                 'close':      last['close'],
-                'volume':     last['volume'],
+                'volume':     to_lots(last['volume']),
                 'change':     change,
                 'change_pct': change_pct,
             },
@@ -476,7 +482,7 @@ def get_stock_analysis(ticker):
                 'highs':        [r['high']   for r in chart_ohlcv],
                 'lows':         [r['low']    for r in chart_ohlcv],
                 'closes':       [r['close']  for r in chart_ohlcv],
-                'volumes':      [r['volume'] for r in chart_ohlcv],
+                'volumes':      [to_lots(r['volume']) for r in chart_ohlcv],
                 'ma5':          slice_ind('ma5'),
                 'ma10':         slice_ind('ma10'),
                 'ma20':         slice_ind('ma20'),
@@ -617,12 +623,12 @@ def _estimate_chip(ohlcv, trend):
         'foreign_dir':    foreign_dir,
         'trust_dir':      trust_dir,
         'vol_ratio':      vol_ratio,
-        'avg_volume':     int(avg_vol),
-        'recent5_volume': int(recent5_vol),
+        'avg_volume':     max(1, round(avg_vol / 1000)),        # 股→張
+        'recent5_volume': max(1, round(recent5_vol / 1000)),    # 股→張
         'up_days_20':     up_days,
         'down_days_20':   down_days,
-        'up_vol_20':      int(up_vol),
-        'down_vol_20':    int(down_vol),
+        'up_vol_20':      round(int(up_vol) / 1000),            # 股→張
+        'down_vol_20':    round(int(down_vol) / 1000),          # 股→張
         'estimated':      True,
         'note':           '⚠ 籌碼資料為統計模型估算，僅供參考，非真實法人申報數據'
     }

@@ -1733,13 +1733,16 @@ function setPeriod(period) {
 }
 
 // ── 重繪 K線圖（週期版）── 蠟燭圖（台股紅漲綠跌）─────────────
+// 各週期預設顯示根數
+const MAX_BARS_MAP = { 'D':120, 'W':104, '2W':60, 'M':999, 'Q':999, '6M':999, 'Y':999 };
+
 function drawCandleChartPeriod(data, period) {
   const ch  = buildPeriodChartData(data, period);
   const ctx = document.getElementById('candleChart');
   if (charts.candle) { charts.candle.destroy(); charts.candle = null; }
 
-  // 年線/半年線/季線 顯示更多歷史棒數
-  const MAX_BARS = period === 'Y' ? 999 : period === '6M' ? 999 : period === 'Q' ? 999 : period === 'M' ? 999 : 150;
+  // 各週期預設顯示根數：日線120（約半年）、週線104（約2年）、雙週線60、月線/季線/半年線/年線全部
+  const MAX_BARS = MAX_BARS_MAP[period] ?? 120;
   const n      = Math.min(ch.dates.length, MAX_BARS);
   const offset = ch.dates.length - n;
   const sl = arr => arr.slice(offset);
@@ -1754,6 +1757,10 @@ function drawCandleChartPeriod(data, period) {
   const ma2    = sl(ch.ma2);
   const ma3    = sl(ch.ma3);
   const cfg    = PERIOD_CFG[period];
+
+  // 根數越多 → K棒越細；自動調整寬度
+  const barPct  = n <= 30 ? 0.75 : n <= 60 ? 0.65 : n <= 120 ? 0.55 : 0.45;
+  const wickPct = n <= 30 ? 0.18 : n <= 60 ? 0.14 : 0.10;
 
   // 台股：紅漲綠跌
   const upClr   = 'rgba(239,68,68,0.92)';
@@ -1777,8 +1784,8 @@ function drawCandleChartPeriod(data, period) {
           backgroundColor: bodyColors,
           borderColor:     bodyColors,
           borderWidth: 0,
-          barPercentage:   0.55,
-          categoryPercentage: 0.9,
+          barPercentage:   barPct,
+          categoryPercentage: 0.85,
           order: 2,
         },
         // ② 上下影線（高~低，細長條）
@@ -1789,8 +1796,8 @@ function drawCandleChartPeriod(data, period) {
           backgroundColor: wickColors,
           borderColor:     wickColors,
           borderWidth: 0,
-          barPercentage:   0.12,
-          categoryPercentage: 0.9,
+          barPercentage:   wickPct,
+          categoryPercentage: 0.85,
           order: 3,
         },
         // ③ MA 均線
@@ -1866,7 +1873,7 @@ function drawVolumeChartPeriod(data, period) {
   const ctx = document.getElementById('volumeChart');
   if (charts.volume) { charts.volume.destroy(); charts.volume = null; }
 
-  const MAX_BARS = (period === 'Y' || period === '6M' || period === 'Q' || period === 'M') ? 999 : 150;
+  const MAX_BARS = MAX_BARS_MAP[period] ?? 120;
   const n = Math.min(ch.dates.length, MAX_BARS);
   const offset = ch.dates.length - n;
   const dates  = ch.dates.slice(offset);
