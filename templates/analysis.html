@@ -383,7 +383,17 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <!-- 技術面訊號 -->
       <div class="card p-5">
         <h3 class="font-bold text-white mb-3"><i class="fa-solid fa-signal mr-2 text-blue-400"></i>技術訊號解讀</h3>
-        <div id="techSignals" class="flex flex-wrap gap-2"></div>
+        <div id="techSignals" class="flex flex-wrap gap-2 mb-5"></div>
+        <!-- 詳細解讀區塊 -->
+        <div id="techSignalDetail" class="hidden space-y-3">
+          <div class="border-t border-slate-700 pt-4">
+            <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
+              <i class="fa-solid fa-microscope mr-1 text-blue-400"></i>各指標詳細解讀
+            </h4>
+            <div id="techDetailCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+          </div>
+          <div id="techSummaryBox" class="rounded-xl p-4 border"></div>
+        </div>
       </div>
     </div>
 
@@ -431,40 +441,39 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
     <!-- ═══ Tab: 籌碼面 ══════════════════════════════════════════ -->
     <div id="panel-chip" class="hidden space-y-4">
-      <!-- 法人方向 -->
       <div class="card p-5">
-        <div class="flex items-center gap-3 mb-4">
-          <h3 class="font-bold text-white"><i class="fa-solid fa-users mr-2 text-teal-400"></i>法人籌碼估算</h3>
-          <span class="text-xs px-2 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-700">⚠ 模型估算，僅供參考</span>
+        <div class="flex flex-wrap items-center gap-3 mb-5">
+          <h3 class="font-bold text-white text-lg"><i class="fa-solid fa-users mr-2 text-teal-400"></i>法人籌碼估算</h3>
+          <span class="text-xs px-2 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-700">⚠ 統計模型估算，非真實申報</span>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <div class="ind-card">
-            <div class="text-xs text-slate-500 mb-2">外資方向（估算）</div>
-            <div class="flex items-center gap-3">
-              <i id="foreignIcon" class="fa-solid fa-arrow-up text-2xl text-emerald-400"></i>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+          <div class="rounded-xl p-4 border" id="foreignCard" style="background:#0c1f15;border-color:#065f46;">
+            <div class="flex items-center gap-2 mb-3">
+              <i id="foreignIcon" class="fa-solid fa-arrow-trend-up text-2xl text-emerald-400"></i>
               <div>
-                <div class="text-lg font-black" id="foreignDir">--</div>
-                <div class="text-xs text-slate-500">基於趨勢+成交量模型</div>
+                <div class="text-xs text-slate-400 font-bold uppercase tracking-wide">外資方向（估算）</div>
+                <div class="text-xl font-black text-white mt-0.5" id="foreignDir">--</div>
               </div>
             </div>
+            <div class="text-xs text-slate-400 leading-relaxed" id="foreignDesc">--</div>
           </div>
-          <div class="ind-card">
-            <div class="text-xs text-slate-500 mb-2">投信方向（估算）</div>
-            <div class="flex items-center gap-3">
-              <i id="trustIcon" class="fa-solid fa-arrow-up text-2xl text-blue-400"></i>
+          <div class="rounded-xl p-4 border" id="trustCard" style="background:#0c1527;border-color:#1e40af;">
+            <div class="flex items-center gap-2 mb-3">
+              <i id="trustIcon" class="fa-solid fa-arrow-trend-up text-2xl text-blue-400"></i>
               <div>
-                <div class="text-lg font-black" id="trustDir">--</div>
-                <div class="text-xs text-slate-500">基於趨勢+成交量模型</div>
+                <div class="text-xs text-slate-400 font-bold uppercase tracking-wide">投信方向（估算）</div>
+                <div class="text-xl font-black text-white mt-0.5" id="trustDir">--</div>
               </div>
             </div>
+            <div class="text-xs text-slate-400 leading-relaxed" id="trustDesc">--</div>
           </div>
         </div>
+        <div id="chipSummaryBox" class="rounded-xl p-4 border border-slate-700 bg-slate-800/40 text-sm text-slate-300 leading-relaxed"></div>
       </div>
 
-      <!-- 成交量分析 -->
       <div class="card p-5">
-        <h3 class="font-bold text-white mb-4"><i class="fa-solid fa-bars-staggered mr-2 text-blue-400"></i>成交量分析（近20日）</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <h3 class="font-bold text-white mb-4"><i class="fa-solid fa-bars-staggered mr-2 text-blue-400"></i>量能分析（近20日）</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1">相對成交量</div>
             <div class="text-2xl font-black mono" id="chip-vol-ratio">--</div>
@@ -473,58 +482,71 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1">近5日均量</div>
             <div class="text-lg font-bold mono" id="chip-recent-vol">--</div>
+            <div class="text-xs text-slate-500 mt-1">張</div>
           </div>
           <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">近20日上漲天數</div>
-            <div class="text-2xl font-black text-green-400 mono" id="chip-up-days">--</div>
+            <div class="text-xs text-slate-500 mb-1">上漲天數</div>
+            <div class="text-2xl font-black text-emerald-400 mono" id="chip-up-days">--</div>
+            <div class="text-xs text-slate-500 mt-1">/ 20日</div>
           </div>
           <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">近20日下跌天數</div>
+            <div class="text-xs text-slate-500 mb-1">下跌天數</div>
             <div class="text-2xl font-black text-red-400 mono" id="chip-down-days">--</div>
+            <div class="text-xs text-slate-500 mt-1">/ 20日</div>
           </div>
         </div>
-        <!-- 漲跌量能比例 -->
-        <div class="mt-4">
-          <div class="text-xs text-slate-500 mb-2">近20日量能分布（上漲日 vs 下跌日）</div>
-          <div class="flex gap-1 h-6 rounded-lg overflow-hidden">
-            <div id="chip-up-bar" class="bg-emerald-600 transition-all" style="width:50%"></div>
-            <div id="chip-down-bar" class="bg-red-600 transition-all" style="width:50%"></div>
+        <div class="mb-4">
+          <div class="flex justify-between text-xs text-slate-500 mb-1">
+            <span>近20日量能分布（上漲日 vs 下跌日）</span>
+            <span id="chip-vol-balance-label" class="text-slate-400">--</span>
+          </div>
+          <div class="flex gap-0.5 h-6 rounded-lg overflow-hidden">
+            <div id="chip-up-bar"   class="bg-emerald-600 transition-all flex items-center justify-center text-xs font-bold text-white" style="width:50%"></div>
+            <div id="chip-down-bar" class="bg-red-600     transition-all flex items-center justify-center text-xs font-bold text-white" style="width:50%"></div>
           </div>
           <div class="flex justify-between text-xs mt-1">
             <span class="text-emerald-400" id="chip-up-pct">--</span>
-            <span class="text-red-400" id="chip-down-pct">--</span>
+            <span class="text-red-400"     id="chip-down-pct">--</span>
           </div>
         </div>
+        <div id="volDetailBox" class="rounded-xl p-4 border border-blue-900/50 bg-blue-950/30 text-sm text-slate-300 leading-relaxed space-y-2"></div>
       </div>
 
-      <!-- 免責聲明 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-white mb-4"><i class="fa-solid fa-magnifying-glass-chart mr-2 text-purple-400"></i>籌碼指標解讀說明</h3>
+        <div id="chipIndicatorCards" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      </div>
+
       <div class="rounded-xl bg-amber-900/20 border border-amber-700/40 p-4 text-xs text-amber-300">
         <i class="fa-solid fa-triangle-exclamation mr-2"></i>
-        <strong>重要聲明：</strong>籌碼面資料為統計模型估算，並非真實法人申報資料。實際法人買賣超請參閱台灣證交所（TWSE）官方揭露資訊。本分析僅供參考，不構成投資建議。
+        <strong>重要聲明：</strong>籌碼面資料為統計模型估算，並非真實法人申報資料（台灣法人真實買賣超每日收盤後由證交所公告）。本模型以近期趨勢強度＋成交量比值推估方向，僅供輔助判斷，不構成投資建議。
       </div>
     </div>
 
     <!-- ═══ Tab: 投資建議 ════════════════════════════════════════ -->
     <div id="panel-recommendation" class="hidden space-y-4">
-      <!-- 綜合評級 -->
       <div class="card p-6">
-        <div class="flex flex-wrap gap-6 items-center">
+        <h3 class="font-bold text-white text-lg mb-5"><i class="fa-solid fa-lightbulb mr-2 text-yellow-400"></i>綜合投資評級</h3>
+        <div class="flex flex-wrap gap-6 items-center mb-5">
           <div class="text-center">
             <div class="text-xs text-slate-500 mb-2">綜合評級</div>
             <div id="rec-rating-display" class="text-3xl font-black px-6 py-3 rounded-2xl">--</div>
           </div>
-          <div class="flex-1 grid grid-cols-3 gap-4 min-w-48">
+          <div class="flex-1 grid grid-cols-3 gap-3 min-w-48">
             <div class="ind-card text-center">
               <div class="text-xs text-slate-500 mb-1">技術面分數</div>
               <div class="text-2xl font-black" id="rec-tech-score">--</div>
+              <div class="text-xs text-slate-500 mt-1">（-8 ~ +8）</div>
             </div>
             <div class="ind-card text-center">
               <div class="text-xs text-slate-500 mb-1">基本面分數</div>
               <div class="text-2xl font-black" id="rec-fund-score">--</div>
+              <div class="text-xs text-slate-500 mt-1">（-2 ~ +4）</div>
             </div>
             <div class="ind-card text-center">
               <div class="text-xs text-slate-500 mb-1">綜合總分</div>
               <div class="text-2xl font-black" id="rec-total-score">--</div>
+              <div class="text-xs text-slate-500 mt-1">（-10 ~ +12）</div>
             </div>
           </div>
           <div class="ind-card text-center px-5">
@@ -533,28 +555,38 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <div class="text-xs mt-1" id="rec-target-desc" style="color:#64748b">元</div>
           </div>
         </div>
+        <div id="recScoreBar" class="rounded-xl p-4 border border-slate-700 bg-slate-800/40 text-sm text-slate-300 leading-relaxed"></div>
       </div>
 
-      <!-- 買進理由 & 賣出考量 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-white mb-4"><i class="fa-solid fa-chart-pie mr-2 text-blue-400"></i>評分維度分解</h3>
+        <div id="recScoreDimensions" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="card p-5">
-          <h3 class="font-bold text-green-400 mb-3"><i class="fa-solid fa-circle-check mr-2"></i>買進/持有理由</h3>
+          <h3 class="font-bold text-emerald-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-circle-check"></i>買進/持有理由</h3>
           <ul class="space-y-2 text-sm" id="reasons-buy"></ul>
         </div>
         <div class="card p-5">
-          <h3 class="font-bold text-red-400 mb-3"><i class="fa-solid fa-triangle-exclamation mr-2"></i>賣出/觀望考量</h3>
+          <h3 class="font-bold text-red-400 mb-3 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation"></i>賣出/觀望考量</h3>
           <ul class="space-y-2 text-sm" id="reasons-sell"></ul>
           <div id="risks-section" class="mt-3 space-y-2"></div>
         </div>
       </div>
 
-      <!-- 分析摘要 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-white mb-4"><i class="fa-solid fa-route mr-2 text-teal-400"></i>操作策略建議</h3>
+        <div id="recStrategyCards" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4"></div>
+        <div id="recStrategyDesc" class="rounded-xl p-4 border border-teal-900/50 bg-teal-950/20 text-sm text-slate-300 leading-relaxed"></div>
+      </div>
+
       <div class="card p-5">
         <h3 class="font-bold text-white mb-3"><i class="fa-solid fa-file-lines mr-2 text-blue-400"></i>完整分析摘要</h3>
         <div id="rec-summary" class="summary-text"></div>
         <div class="mt-4 p-3 rounded-xl bg-red-900/20 border border-red-800/40 text-xs text-red-300">
           <i class="fa-solid fa-shield-halved mr-1"></i>
-          本分析為電腦模型自動生成，僅供參考。投資有風險，入市前請審慎評估自身財務狀況，必要時諮詢專業財務顧問。
+          本分析為電腦模型自動生成，僅供參考。評分模型基於技術指標與基本面數據，無法預測未來走勢。投資有風險，入市前請審慎評估自身財務狀況，必要時諮詢專業財務顧問。
         </div>
       </div>
     </div>
@@ -1245,7 +1277,7 @@ function renderTechnical(data) {
   trendEl.style.color = tech.trend.color;
   trendEl.style.border = `1px solid ${tech.trend.color}55`;
 
-  // 技術訊號
+  // 技術訊號標籤
   const signalsEl = document.getElementById('techSignals');
   signalsEl.innerHTML = tech.trend.signals.map(s => {
     const isBuy  = s.includes('多') || s.includes('站上') || s.includes('超賣') || s.includes('黃金');
@@ -1254,6 +1286,7 @@ function renderTechnical(data) {
     return `<span class="signal-tag ${cls}">${s}</span>`;
   }).join('');
 
+  renderTechSignalDetail(data);
   // 繪製圖表（K線/成交量走週期版；MACD/RSI/KD維持日線）
   currentPeriod = 'D';
   // 重設週期按鈕
@@ -1274,6 +1307,107 @@ function renderTechnical(data) {
   drawKDChart(data);
 }
 
+// ── 技術訊號詳細解讀 ─────────────────────────────────────────
+function renderTechSignalDetail(data) {
+  const ind   = data.technical.latest;
+  const tech  = data.technical;
+  const close = data.latest.close;
+  const rec   = data.recommendation;
+  const detailEl  = document.getElementById('techSignalDetail');
+  const cardsEl   = document.getElementById('techDetailCards');
+  const summaryEl = document.getElementById('techSummaryBox');
+  if (!detailEl || !cardsEl || !summaryEl) return;
+
+  function makeCard(icon, label, value, statusClass, desc, extra) {
+    const borderMap = { buy:'#065f46', sell:'#7f1d1d', neutral:'#334155' };
+    const bgMap     = { buy:'#052e16', sell:'#450a0a', neutral:'#162032' };
+    const iconColorMap = { buy:'#10b981', sell:'#ef4444', neutral:'#94a3b8' };
+    const border = borderMap[statusClass]||borderMap.neutral;
+    const bg     = bgMap[statusClass]||bgMap.neutral;
+    const ic     = iconColorMap[statusClass]||iconColorMap.neutral;
+    return `<div style="background:${bg};border:1px solid ${border};border-radius:12px;padding:14px 16px;">
+      <div class="flex items-center gap-2 mb-2">
+        <i class="${icon}" style="color:${ic};font-size:14px;"></i>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wide">${label}</span>
+      </div>
+      <div class="text-lg font-black mono text-white mb-1">${value}</div>
+      <div class="text-xs text-slate-300 leading-relaxed">${desc}</div>
+      ${extra?`<div class="mt-2 text-xs text-slate-500">${extra}</div>`:''}
+    </div>`;
+  }
+
+  const cards = [];
+  const ma5=ind.ma5, ma20=ind.ma20, ma60=ind.ma60;
+  const macd=ind.macd, macdSig=ind.macd_signal, hist=ind.macd_hist;
+  const rsi=ind.rsi, kVal=ind.k, dVal=ind.d;
+
+  if (ma5!=null) {
+    const above=close>=ma5, diff=((close-ma5)/ma5*100).toFixed(2);
+    cards.push(makeCard('fa-solid fa-chart-line','MA5（5日均線）',`${ma5.toFixed(2)} (${above?'+':''}${diff}%)`,above?'buy':'sell',
+      above?`股價站上5日均線，短線趨勢偏多。近期持有者多處獲利狀態，短線買盤較強。`:`股價跌破5日均線，短線趨勢偏弱。近期進場者多為套牢，短線賣壓較大。`,`參考意義：超短線（1–5日）動能`));
+  }
+  if (ma20!=null) {
+    const above=close>=ma20, diff=((close-ma20)/ma20*100).toFixed(2);
+    cards.push(makeCard('fa-solid fa-chart-area','MA20（月線）',`${ma20.toFixed(2)} (${above?'+':''}${diff}%)`,above?'buy':'sell',
+      above?`股價站上20日均線（月線），中短線趨勢偏多。月線是機構重要操作基準，突破後往往吸引更多買盤。`:`股價位於20日均線下方，中短線趨勢偏弱。長期未能收復月線代表中期走勢仍偏空。`,`參考意義：中短線（20日）趨勢，法人重要參考`));
+  }
+  if (ma60!=null) {
+    const above=close>=ma60, diff=((close-ma60)/ma60*100).toFixed(2);
+    cards.push(makeCard('fa-solid fa-wave-square','MA60（季線）',`${ma60.toFixed(2)} (${above?'+':''}${diff}%)`,above?'buy':'sell',
+      above?`股價站上60日均線（季線），中長線趨勢偏多。季線代表一季平均持倉成本，多頭市場中常扮演強力支撐。`:`股價跌破季線，中長線趨勢偏弱。季線跌破是中長線轉空的重要訊號。`,`參考意義：中長線（60日）趨勢`));
+  }
+  if (macd!=null) {
+    const bullish=macd>0, histStr=hist!=null?(hist>=0?`+${hist.toFixed(3)}`:hist.toFixed(3)):'--';
+    const crossDesc=hist!=null?(hist>0?'黃金交叉（DIF>DEA）':'死亡交叉（DIF<DEA）'):'--';
+    cards.push(makeCard('fa-solid fa-arrows-left-right','MACD（12,26,9）',`DIF ${macd>0?'+':''}${macd.toFixed(3)}`,bullish?'buy':'sell',
+      `MACD ${macd>0?'正值':'負值'}，短期均線${macd>0?'高於':'低於'}長期均線，動能${macd>0?'偏多':'偏空'}。柱狀體 OSC=${histStr}，${crossDesc}。${hist!=null&&hist>0?' 正柱擴張為偏多訊號。':hist!=null&&hist<0?' 負柱擴張需注意下跌風險。':''}`,
+      `DEA=${macdSig!=null?macdSig.toFixed(3):'--'}；趨勢與動能確認`));
+  }
+  if (rsi!=null) {
+    let rsiSt='neutral', rsiDesc='';
+    if(rsi>=80){rsiSt='sell';rsiDesc=`RSI ${rsi.toFixed(1)}，<strong style="color:#ef4444">嚴重超買</strong>（≥80），回檔風險高，需注意獲利了結壓力。`;}
+    else if(rsi>=70){rsiSt='sell';rsiDesc=`RSI ${rsi.toFixed(1)}，<strong style="color:#f97316">超買</strong>（70–80），短線動能強勁但已有過熱跡象，留意高檔鈍化。`;}
+    else if(rsi>=50){rsiSt='buy';rsiDesc=`RSI ${rsi.toFixed(1)}，多方強勢區（50–70），多方掌控動能，趨勢偏多但尚未過熱。`;}
+    else if(rsi>=30){rsiSt='neutral';rsiDesc=`RSI ${rsi.toFixed(1)}，中性偏弱區（30–50），多空力道相當，方向尚不明確。`;}
+    else if(rsi>=20){rsiSt='buy';rsiDesc=`RSI ${rsi.toFixed(1)}，<strong style="color:#10b981">超賣</strong>（20–30），股價短線下跌過快，有反彈需求，可留意超賣反彈機會。`;}
+    else{rsiSt='buy';rsiDesc=`RSI ${rsi.toFixed(1)}，<strong style="color:#10b981">嚴重超賣</strong>（≤20），極度超賣，歷史上往往具較強技術反彈機會。`;}
+    cards.push(makeCard('fa-solid fa-gauge-high','RSI（14日）',rsi.toFixed(1),rsiSt,rsiDesc,'超買≥70 ／ 中性30–70 ／ 超賣≤30'));
+  }
+  if (kVal!=null&&dVal!=null) {
+    const kdSt=kVal>dVal?'buy':'sell';
+    let kdDesc='';
+    if(kVal>=80) kdDesc=`K值（${kVal.toFixed(1)}）位於超買區，短線有拉回風險，注意KD死叉訊號。`;
+    else if(kVal<=20) kdDesc=`K值（${kVal.toFixed(1)}）位於超賣區，短線有反彈機會，等待KD黃金交叉確認。`;
+    else kdDesc=`K值（${kVal.toFixed(1)}）中性區間，${kVal>dVal?'K>D偏多，趨勢向上。':'K<D偏弱，趨勢向下。'}`;
+    cards.push(makeCard('fa-solid fa-crosshairs','KD（9日）',`K: ${kVal.toFixed(1)} / D: ${dVal.toFixed(1)}`,kdSt,kdDesc,'超買≥80 ／ 超賣≤20；K穿越D向上為買訊'));
+  }
+  if (tech.support&&tech.resist) {
+    const pos=rec.price_position;
+    let srSt='neutral', srDesc='';
+    if(pos>=80){srSt='sell';srDesc=`股價接近壓力區（${pos.toFixed(1)}%），距壓力位 ${tech.resist} 已非常近，短線面臨較大賣壓，突破前宜謹慎。`;}
+    else if(pos>=50){srSt='buy';srDesc=`股價偏上方（${pos.toFixed(1)}%），多方略占優勢，可觀察能否有效突破壓力 ${tech.resist}。`;}
+    else if(pos>=20){srSt='neutral';srDesc=`股價偏下方（${pos.toFixed(1)}%），接近支撐 ${tech.support}，需留意是否守穩，跌破將是警訊。`;}
+    else{srSt='sell';srDesc=`股價接近支撐區（${pos.toFixed(1)}%），貼近 ${tech.support}，若有效跌破可能加速下跌。`;}
+    cards.push(makeCard('fa-solid fa-ruler-horizontal','支撐壓力位置',`${pos.toFixed(1)}%`,srSt,srDesc,`支撐：${tech.support} ／ 壓力：${tech.resist}（近60日高低點）`));
+  }
+  cardsEl.innerHTML = cards.join('');
+
+  // 綜合研判
+  const signals=tech.trend.signals||[];
+  const buyCount=signals.filter(s=>s.includes('多')||s.includes('站上')||s.includes('超賣')||s.includes('黃金')).length;
+  const sellCount=signals.filter(s=>s.includes('空')||s.includes('跌破')||s.includes('超買')||s.includes('死亡')).length;
+  const total=signals.length;
+  const score=total>0?Math.round(buyCount/total*100):50;
+  let sColor,sBg,sBorder,sIcon,sTitle,sText;
+  if(score>=70){sColor='#10b981';sBg='#052e16';sBorder='#065f46';sIcon='fa-solid fa-circle-up';sTitle='技術面偏多';sText=`${buyCount}/${total}項訊號多方，多個均線支撐完好、動能指標偏強，短中線可偏向多方操作，需搭配量能確認。`;}
+  else if(score>=50){sColor='#f59e0b';sBg='#1a1200';sBorder='#78350f';sIcon='fa-solid fa-circle-half-stroke';sTitle='技術面中性偏多';sText=`${buyCount}/${total}項訊號偏多，部分指標仍有矛盾，建議等待更明確突破或量能配合再行動。`;}
+  else if(score>=30){sColor='#f97316';sBg='#1a0800';sBorder='#7c2d12';sIcon='fa-solid fa-circle-half-stroke';sTitle='技術面中性偏弱';sText=`${sellCount}/${total}項訊號偏空，短線動能不足，以觀望為主，等待技術訊號好轉。`;}
+  else{sColor='#ef4444';sBg='#450a0a';sBorder='#7f1d1d';sIcon='fa-solid fa-circle-down';sTitle='技術面偏空';sText=`${sellCount}/${total}項訊號空方，均線排列向下、動能指標弱勢，以防守為主，嚴控停損。`;}
+  summaryEl.style.background=sBg; summaryEl.style.borderColor=sBorder;
+  summaryEl.innerHTML=`<div class="flex items-start gap-3"><i class="${sIcon} text-2xl mt-0.5" style="color:${sColor}"></i><div class="flex-1"><div class="font-black text-base mb-1" style="color:${sColor}">${sTitle}</div><div class="text-sm text-slate-300 leading-relaxed">${sText}</div><div class="flex gap-4 mt-3 text-xs"><span class="text-emerald-400 font-bold">多方 ${buyCount} 項</span><span class="text-red-400 font-bold">空方 ${sellCount} 項</span><span class="text-slate-400">中性 ${total-buyCount-sellCount} 項</span></div><div class="mt-2 text-xs text-slate-500">⚠️ 技術面僅為輔助參考，請綜合基本面與籌碼面評估。</div></div></div>`;
+  detailEl.classList.remove('hidden');
+}
+
 function setIndCard(id, val, close) {
   const el = document.getElementById(id);
   if (val == null) { el.textContent = '--'; return; }
@@ -1282,6 +1416,32 @@ function setIndCard(id, val, close) {
 }
 
 // ── 基本面 ────────────────────────────────────────────────────
+// ── 公司簡介翻譯（Claude API，帶本地快取）────────────────────
+const _descCache = {};   // key: ticker → 繁中描述
+
+async function translateDesc(engText, ticker) {
+  if (_descCache[ticker]) return _descCache[ticker];
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: '你是專業財經翻譯員。請將以下英文公司簡介翻譯成流暢的繁體中文。只輸出翻譯結果，不加任何說明或引號。',
+      messages: [{ role: 'user', content: engText }]
+    })
+  });
+
+  if (!resp.ok) throw new Error(`API ${resp.status}`);
+  const json = await resp.json();
+  const zh = (json.content?.[0]?.text || '').trim();
+  if (!zh) throw new Error('empty response');
+
+  _descCache[ticker] = zh;
+  return zh;
+}
+
 function renderFundamental(data) {
   const f = data.fundamentals;
 
@@ -1306,11 +1466,41 @@ function renderFundamental(data) {
     mCard('近12月配息', f.annual_div > 0 ? f.annual_div.toFixed(4) : null, '元', '#f59e0b'),
   ].join('');
 
-  // 公司描述
+  // 公司描述（自動偵測英文並翻譯為繁體中文）
   const desc = f.description || '';
-  document.getElementById('companyDesc').textContent = desc || '暫無公司簡介';
-  if (!desc || desc.length < 100) {
-    document.getElementById('descToggleBtn').style.display = 'none';
+  const descEl      = document.getElementById('companyDesc');
+  const descToggle  = document.getElementById('descToggleBtn');
+
+  if (!desc || desc.length < 10) {
+    descEl.textContent = '暫無公司簡介';
+    descToggle.style.display = 'none';
+  } else {
+    // 判斷是否為英文（主要字元為 ASCII 英文字母）
+    const isEnglish = (desc.replace(/\s/g, '').match(/[a-zA-Z]/g) || []).length
+                    / (desc.replace(/\s/g, '').length || 1) > 0.5;
+
+    if (!isEnglish) {
+      // 已是中文，直接顯示
+      descEl.textContent = desc;
+      if (desc.length < 100) descToggle.style.display = 'none';
+    } else {
+      // 先顯示翻譯中提示
+      descEl.innerHTML = `<span class="text-slate-500 italic text-xs">⏳ 翻譯中…</span>`;
+      descToggle.style.display = 'none';
+
+      // 呼叫 Claude API 翻譯（帶 ticker 快取）
+      translateDesc(desc, data.ticker).then(zhDesc => {
+        descEl.textContent = zhDesc;
+        if (zhDesc.length >= 100) {
+          descEl.classList.add('line-clamp-3');
+          descToggle.style.display = '';
+        }
+      }).catch(() => {
+        // 翻譯失敗退回英文原文
+        descEl.textContent = desc;
+        if (desc.length >= 100) descToggle.style.display = '';
+      });
+    }
   }
 
   // 配息歷史
@@ -1346,112 +1536,219 @@ function mCard(label, val, unit, color, raw=false) {
 
 // ── 籌碼面 ────────────────────────────────────────────────────
 function renderChip(data) {
-  const chip = data.chip;
+  const chip  = data.chip;
+  const tech  = data.technical;
   if (!chip || chip.note === '資料不足，無法估算籌碼') return;
 
-  const foreign = chip.foreign_dir;
-  const trust   = chip.trust_dir;
+  const foreign = chip.foreign_dir, trust = chip.trust_dir;
+  const volRatio = chip.vol_ratio, upDays = chip.up_days_20, downDays = chip.down_days_20;
+  const totalVol = (chip.up_vol_20 + chip.down_vol_20) || 1;
+  const upPct = Math.round(chip.up_vol_20 / totalVol * 100), downPct = 100 - upPct;
 
+  // 外資卡片
   document.getElementById('foreignDir').textContent = foreign;
-  document.getElementById('trustDir').textContent   = trust;
+  const fIcon = document.getElementById('foreignIcon'), fCard = document.getElementById('foreignCard');
+  let foreignDesc = '';
+  if (foreign.includes('偏向買超')) {
+    fIcon.className='fa-solid fa-arrow-trend-up text-2xl text-emerald-400'; fCard.style.background='#0c1f15'; fCard.style.borderColor='#065f46';
+    foreignDesc=`外資模型估算呈<strong style="color:#10b981">偏向買超</strong>。趨勢強勢（分數≥+2）且近5日量高於60日均量20%以上，大資金可能有積極布局跡象，有助中期股價支撐。`;
+  } else if (foreign.includes('小幅買超')) {
+    fIcon.className='fa-solid fa-arrow-trend-up text-2xl text-emerald-400'; fCard.style.background='#0d1a10'; fCard.style.borderColor='#166534';
+    foreignDesc=`外資模型估算呈<strong style="color:#6ee7b7">小幅買超</strong>。趨勢略偏多但量能不突出，外資可能維持小幅加碼，需搭配技術面突破才更具說服力。`;
+  } else if (foreign.includes('偏向賣超')) {
+    fIcon.className='fa-solid fa-arrow-trend-down text-2xl text-red-400'; fCard.style.background='#1f0c0c'; fCard.style.borderColor='#7f1d1d';
+    foreignDesc=`外資模型估算呈<strong style="color:#ef4444">偏向賣超</strong>。趨勢偏弱且量能放大，外資可能持續出脫，需注意股價持續承壓。`;
+  } else if (foreign.includes('小幅賣超')) {
+    fIcon.className='fa-solid fa-arrow-trend-down text-2xl text-red-400'; fCard.style.background='#1a0f0f'; fCard.style.borderColor='#991b1b';
+    foreignDesc=`外資模型估算呈<strong style="color:#fca5a5">小幅賣超</strong>。趨勢略偏弱，外資可能小幅減碼，需觀察後續量能能否縮減確認底部。`;
+  } else {
+    fIcon.className='fa-solid fa-arrows-left-right text-2xl text-slate-400'; fCard.style.background='#162032'; fCard.style.borderColor='#334155';
+    foreignDesc=`外資模型估算呈<strong style="color:#94a3b8">觀望中性</strong>。技術面趨勢訊號不明顯，外資可能持平觀望，等待更明確方向。`;
+  }
+  document.getElementById('foreignDesc').innerHTML = foreignDesc;
 
-  const fIcon = document.getElementById('foreignIcon');
-  const tIcon = document.getElementById('trustIcon');
-  if (foreign.includes('買超')) { fIcon.className = 'fa-solid fa-arrow-trend-up text-2xl text-emerald-400'; }
-  else if (foreign.includes('賣超')) { fIcon.className = 'fa-solid fa-arrow-trend-down text-2xl text-red-400'; }
-  else { fIcon.className = 'fa-solid fa-arrows-left-right text-2xl text-slate-400'; }
+  // 投信卡片
+  document.getElementById('trustDir').textContent = trust;
+  const tIcon = document.getElementById('trustIcon'), tCard = document.getElementById('trustCard');
+  let trustDesc = '';
+  if (trust.includes('買超') || trust.includes('偏多')) {
+    tIcon.className='fa-solid fa-arrow-trend-up text-2xl text-blue-400'; tCard.style.background='#0c1527'; tCard.style.borderColor='#1e40af';
+    trustDesc=trust.includes('偏向')?`投信模型估算呈<strong style="color:#60a5fa">偏向買超</strong>。投信積極買超往往吸引散戶跟進，有助股價向上突破，帶動人氣。`:`投信模型估算呈<strong style="color:#93c5fd">中性偏多</strong>。投信可能維持現有持股或小幅加碼，尚未出現積極推升訊號。`;
+  } else if (trust.includes('賣超') || trust.includes('偏空')) {
+    tIcon.className='fa-solid fa-arrow-trend-down text-2xl text-red-400'; tCard.style.background='#1a0c0c'; tCard.style.borderColor='#7f1d1d';
+    trustDesc=`投信模型估算呈<strong style="color:#fca5a5">偏向賣超/空</strong>。投信持續賣超代表國內機構看法保守，可能帶動市場信心下滑，需留意下行壓力。`;
+  } else {
+    tIcon.className='fa-solid fa-arrows-left-right text-2xl text-slate-400'; tCard.style.background='#162032'; tCard.style.borderColor='#334155';
+    trustDesc=`投信模型估算呈<strong style="color:#94a3b8">觀望中性</strong>。投信目前可能維持原有部位，等待市場方向更清晰後再決策。`;
+  }
+  document.getElementById('trustDesc').innerHTML = trustDesc;
 
-  if (trust.includes('買超') || trust.includes('多')) { tIcon.className = 'fa-solid fa-arrow-trend-up text-2xl text-blue-400'; }
-  else if (trust.includes('賣超') || trust.includes('空')) { tIcon.className = 'fa-solid fa-arrow-trend-down text-2xl text-red-400'; }
-  else { tIcon.className = 'fa-solid fa-arrows-left-right text-2xl text-slate-400'; }
+  // 量能數字
+  document.getElementById('chip-vol-ratio').textContent = volRatio + 'x';
+  document.getElementById('chip-vol-ratio').style.color = volRatio>=1.5?'#10b981':volRatio<=0.7?'#ef4444':'#e2e8f0';
+  document.getElementById('chip-recent-vol').textContent = fmtVol(chip.recent5_volume);
+  document.getElementById('chip-up-days').textContent   = upDays;
+  document.getElementById('chip-down-days').textContent = downDays;
+  document.getElementById('chip-up-bar').style.width    = upPct + '%';
+  document.getElementById('chip-down-bar').style.width  = downPct + '%';
+  document.getElementById('chip-up-bar').textContent    = upPct>15?upPct+'%':'';
+  document.getElementById('chip-down-bar').textContent  = downPct>15?downPct+'%':'';
+  document.getElementById('chip-up-pct').textContent    = `上漲量能 ${upPct}%（${fmtVol(chip.up_vol_20)} 張）`;
+  document.getElementById('chip-down-pct').textContent  = `下跌量能 ${downPct}%（${fmtVol(chip.down_vol_20)} 張）`;
+  const balLabel = document.getElementById('chip-vol-balance-label');
+  if (balLabel) {
+    if(upPct>=65){balLabel.textContent='量能偏多頭掌控';balLabel.style.color='#10b981';}
+    else if(upPct<=35){balLabel.textContent='量能偏空頭掌控';balLabel.style.color='#ef4444';}
+    else{balLabel.textContent='多空量能均衡';balLabel.style.color='#94a3b8';}
+  }
 
-  document.getElementById('chip-vol-ratio').textContent   = chip.vol_ratio + 'x';
-  document.getElementById('chip-recent-vol').textContent  = fmtVol(chip.recent5_volume);
-  document.getElementById('chip-up-days').textContent     = chip.up_days_20;
-  document.getElementById('chip-down-days').textContent   = chip.down_days_20;
+  // 量能詳細解讀
+  const winRate = Math.round(upDays/(upDays+downDays)*100);
+  let volDesc = '';
+  if(volRatio>=1.5) volDesc+=`<p>📈 <strong style="color:#10b981">量能放大（${volRatio}x）</strong>：近5日均量高於60日均量 ${Math.round((volRatio-1)*100)}%，屬顯著量增。量增配合上漲是多頭強勢訊號；量增配合下跌則代表恐慌性出逃，需謹慎。</p>`;
+  else if(volRatio>=1.2) volDesc+=`<p>📊 <strong style="color:#6ee7b7">量能溫和放大（${volRatio}x）</strong>：近期成交量略高於均值，市場逐漸活絡，方向仍需技術面配合確認。</p>`;
+  else if(volRatio<=0.7) volDesc+=`<p>📉 <strong style="color:#ef4444">量能明顯萎縮（${volRatio}x）</strong>：近5日均量遠低於60日均量，市場清淡。量縮在支撐區相對健康；在高檔量縮需留意籌碼鬆動。</p>`;
+  else if(volRatio<=0.9) volDesc+=`<p>📊 <strong style="color:#fca5a5">量能偏低（${volRatio}x）</strong>：成交量略低於均值，市場觀望氣氛偏濃，缺乏強力推動力道。</p>`;
+  else volDesc+=`<p>📊 <strong style="color:#94a3b8">量能正常（${volRatio}x）</strong>：近期成交量與歷史均值相當，無明顯異常量能訊號。</p>`;
+  volDesc+=`<p>🗓 <strong>近20日勝率：${winRate}%</strong>（上漲${upDays}日 / 下跌${downDays}日）。${winRate>=65?'勝率偏高，多方連續性較強，短線趨勢具慣性。':winRate<=35?'勝率偏低，空方主導，短線動能不足。':'多空互有勝負，市場方向尚不明朗。'}</p>`;
+  volDesc+=`<p>⚖️ <strong>量能分布</strong>：上漲日量能 ${upPct}%，下跌日 ${downPct}%。${upPct>=65?'上漲日量能遠大於下跌日，量價關係健康偏多。':downPct>=65?'下跌日量能遠大於上漲日，是偏空的量價訊號。':'多空量能分布均衡，缺乏明確方向性。'}</p>`;
+  const volDetailEl = document.getElementById('volDetailBox');
+  if (volDetailEl) volDetailEl.innerHTML = volDesc;
 
-  const totalVol = chip.up_vol_20 + chip.down_vol_20 || 1;
-  const upPct    = Math.round(chip.up_vol_20 / totalVol * 100);
-  const downPct  = 100 - upPct;
-  document.getElementById('chip-up-bar').style.width   = upPct + '%';
-  document.getElementById('chip-down-bar').style.width = downPct + '%';
-  document.getElementById('chip-up-pct').textContent   = `上漲量能 ${upPct}%`;
-  document.getElementById('chip-down-pct').textContent = `下跌量能 ${downPct}%`;
+  // 指標說明卡片
+  function chipIndCard(icon,title,value,color,desc){
+    return `<div class="rounded-xl p-4 border border-slate-700 bg-slate-800/40"><div class="flex items-center gap-2 mb-2"><i class="${icon}" style="color:${color};font-size:13px;"></i><span class="text-xs font-bold text-slate-400 uppercase tracking-wide">${title}</span></div><div class="text-base font-black mono text-white mb-1">${value}</div><div class="text-xs text-slate-400 leading-relaxed">${desc}</div></div>`;
+  }
+  const indCardsEl = document.getElementById('chipIndicatorCards');
+  if (indCardsEl) indCardsEl.innerHTML = [
+    chipIndCard('fa-solid fa-chart-bar','相對成交量',volRatio+'x（vs 60日均量）',volRatio>=1.2?'#10b981':volRatio<=0.8?'#ef4444':'#94a3b8','衡量近5日成交量相對於60日均量的倍數。>1.2x 為量增；<0.8x 為量縮。量增配合上漲為強勢，量縮配合上漲可能漲幅有限。'),
+    chipIndCard('fa-solid fa-trophy','勝率（近20日）',winRate+'%（上漲'+upDays+'日）',winRate>=60?'#10b981':winRate<=40?'#ef4444':'#94a3b8','近20個交易日收盤高於開盤的天數佔比。≥60% 多方佔優；≤40% 空方主導；介中間為拉鋸整理。'),
+    chipIndCard('fa-solid fa-scale-balanced','量能平衡比','上漲日 '+upPct+'% / 下跌日 '+downPct+'%',upPct>=60?'#10b981':downPct>=60?'#ef4444':'#94a3b8','上漲日量能>>下跌日為健康多頭結構；下跌日量能>>上漲日代表空方拋售力道強，籌碼面偏空。'),
+    chipIndCard('fa-solid fa-users','外資方向',foreign,foreign.includes('買')?'#10b981':foreign.includes('賣')?'#ef4444':'#94a3b8','以趨勢評分結合相對量能推估外資動向。外資為台股最大機構法人，方向對中期走勢影響深遠（注意：此為模型估算，非真實申報）。'),
+    chipIndCard('fa-solid fa-building','投信方向',trust,(trust.includes('買')||trust.includes('多'))?'#3b82f6':trust.includes('賣')?'#ef4444':'#94a3b8','投信代表國內共同基金及機構。投信買超往往帶動散戶跟進，對個股量能有正面推升作用；賣超則可能造成賣壓擴散。'),
+    chipIndCard('fa-solid fa-database','60日均量',fmtVol(chip.avg_volume)+' 張','#94a3b8','過去60個交易日平均每日成交量。高流動性個股籌碼較難鎖定；低流動性個股容易形成籌碼集中，波動可能更大。'),
+  ].join('');
+
+  // 籌碼綜合研判
+  const isBullChip = foreign.includes('買') && (trust.includes('買')||trust.includes('多')) && upPct>=50;
+  const isBearChip = (foreign.includes('賣') && trust.includes('賣')) || (downPct>=65 && volRatio>=1.3);
+  let chipSum = '';
+  if (isBullChip && volRatio>=1.2) chipSum=`<div class="flex items-start gap-3"><i class="fa-solid fa-circle-up text-2xl mt-0.5" style="color:#10b981"></i><div><div class="font-black text-base mb-1" style="color:#10b981">籌碼面偏多</div><div>外資與投信方向一致偏向買超，且近期成交量高於均值（${volRatio}x），上漲日量能佔比 ${upPct}%，主力資金有積極布局跡象，有助中期股價支撐。</div></div></div>`;
+  else if (isBearChip) chipSum=`<div class="flex items-start gap-3"><i class="fa-solid fa-circle-down text-2xl mt-0.5" style="color:#ef4444"></i><div><div class="font-black text-base mb-1" style="color:#ef4444">籌碼面偏空</div><div>外資或投信偏向賣超，或下跌日量能佔比過高（${downPct}%），籌碼面呈出逃格局，建議嚴格執行停損，避免在賣壓中接刀。</div></div></div>`;
+  else chipSum=`<div class="flex items-start gap-3"><i class="fa-solid fa-circle-half-stroke text-2xl mt-0.5" style="color:#94a3b8"></i><div><div class="font-black text-base mb-1" style="color:#94a3b8">籌碼面中性</div><div>法人方向尚未形成明顯共識，或外資與投信訊號分歧。近期量能（${volRatio}x）屬正常水準，上漲日量能佔 ${upPct}%。建議搭配技術面與基本面評估，避免單憑籌碼指標決策。</div></div></div>`;
+  const chipSumEl = document.getElementById('chipSummaryBox');
+  if (chipSumEl) chipSumEl.innerHTML = chipSum;
 }
 
 // ── 投資建議 ──────────────────────────────────────────────────
 function renderRecommendation(data) {
-  const rec = data.recommendation;
+  const rec   = data.recommendation;
+  const ind   = data.technical.latest;
+  const chip  = data.chip;
+  const close = data.latest.close;
+  const fmtScore = v => (v>=0?'+':'')+v;
 
   const ratingDisp = document.getElementById('rec-rating-display');
   ratingDisp.textContent = `${rec.rating_icon} ${rec.rating}`;
   ratingDisp.style.background = rec.rating_bg;
   ratingDisp.style.color = rec.rating_color;
 
-  document.getElementById('rec-tech-score').textContent  = (rec.tech_score >= 0 ? '+' : '') + rec.tech_score;
-  document.getElementById('rec-fund-score').textContent  = (rec.fund_score >= 0 ? '+' : '') + rec.fund_score;
-  document.getElementById('rec-total-score').textContent = (rec.total_score >= 0 ? '+' : '') + rec.total_score;
+  document.getElementById('rec-tech-score').textContent  = fmtScore(rec.tech_score);
+  document.getElementById('rec-fund-score').textContent  = fmtScore(rec.fund_score);
+  document.getElementById('rec-total-score').textContent = fmtScore(rec.total_score);
+  document.getElementById('rec-tech-score').style.color  = rec.tech_score >=0?'#10b981':'#ef4444';
+  document.getElementById('rec-fund-score').style.color  = rec.fund_score >=0?'#10b981':'#ef4444';
+  document.getElementById('rec-total-score').style.color = rec.total_score>=0?'#10b981':'#ef4444';
 
-  document.getElementById('rec-tech-score').style.color  = rec.tech_score >= 0 ? '#10b981' : '#ef4444';
-  document.getElementById('rec-fund-score').style.color  = rec.fund_score >= 0 ? '#10b981' : '#ef4444';
-  document.getElementById('rec-total-score').style.color = rec.total_score >= 0 ? '#10b981' : '#ef4444';
-
-  // ── 目標價（依 target_type 顯示不同顏色與標籤）────────────
+  // 目標價
   const targetEl    = document.getElementById('rec-target');
   const targetLabel = document.getElementById('rec-target-label');
   const targetDesc  = document.getElementById('rec-target-desc');
   if (rec.target_price) {
     targetEl.textContent = rec.target_price + ' 元';
     const tType = rec.target_type || 'fair';
-    if (tType === 'upside') {
-      targetEl.style.color   = '#10b981';
-      targetLabel.textContent = '⬆ 上漲目標價';
-      targetLabel.style.color = '#10b981';
-      const upPct = ((rec.target_price - close) / close * 100).toFixed(1);
-      targetDesc.textContent  = `潛在漲幅 +${upPct}%`;
-      targetDesc.style.color  = '#6ee7b7';
-    } else if (tType === 'downside') {
-      targetEl.style.color   = '#ef4444';
-      targetLabel.textContent = '⬇ 下行風險估值';
-      targetLabel.style.color = '#ef4444';
-      const dnPct = ((rec.target_price - close) / close * 100).toFixed(1);
-      targetDesc.textContent  = `下行空間 ${dnPct}%`;
-      targetDesc.style.color  = '#fca5a5';
+    if (tType==='upside') {
+      targetEl.style.color='#10b981'; targetLabel.textContent='⬆ 上漲目標價'; targetLabel.style.color='#10b981';
+      const p=((rec.target_price-close)/close*100).toFixed(1);
+      targetDesc.textContent=`潛在漲幅 +${p}%`; targetDesc.style.color='#6ee7b7';
+    } else if (tType==='downside') {
+      targetEl.style.color='#ef4444'; targetLabel.textContent='⬇ 下行風險估值'; targetLabel.style.color='#ef4444';
+      const p=((rec.target_price-close)/close*100).toFixed(1);
+      targetDesc.textContent=`下行空間 ${p}%`; targetDesc.style.color='#fca5a5';
     } else {
-      targetEl.style.color   = '#f59e0b';
-      targetLabel.textContent = '➡ 合理估值';
-      targetLabel.style.color = '#f59e0b';
-      const diffPct = ((rec.target_price - close) / close * 100).toFixed(1);
-      targetDesc.textContent  = `均線中心 ${diffPct >= 0 ? '+' : ''}${diffPct}%`;
-      targetDesc.style.color  = '#fde68a';
+      targetEl.style.color='#f59e0b'; targetLabel.textContent='➡ 合理估值'; targetLabel.style.color='#f59e0b';
+      const p=((rec.target_price-close)/close*100).toFixed(1);
+      targetDesc.textContent=`均線中心 ${p>=0?'+':''}${p}%`; targetDesc.style.color='#fde68a';
     }
-    // tooltip說明
     targetEl.title = rec.target_desc || '';
   } else {
-    targetEl.textContent = 'N/A';
-    targetEl.style.color = '#64748b';
-    if (targetDesc) targetDesc.textContent = '資料不足';
+    targetEl.textContent='N/A'; targetEl.style.color='#64748b';
+    if (targetDesc) targetDesc.textContent='資料不足';
   }
 
-  const buyEl = document.getElementById('reasons-buy');
-  buyEl.innerHTML = (rec.reasons_buy.length ? rec.reasons_buy : ['暫無明確買進訊號']).map(r =>
-    `<li class="flex items-start gap-2 text-slate-300"><i class="fa-solid fa-circle-check text-green-400 mt-0.5 shrink-0"></i>${r}</li>`
-  ).join('');
+  // 評分說明條
+  const totalScore = rec.total_score;
+  const barPct = Math.round((totalScore-(-10))/(12-(-10))*100);
+  const barColor = totalScore>=6?'#10b981':totalScore>=3?'#22d3ee':totalScore>=0?'#3b82f6':totalScore>=-3?'#f59e0b':'#ef4444';
+  const ratingDescs = {'強力買進':'多項指標高度一致偏多，為最強力買入訊號。建議在支撐位分批建倉，設定停損保護獲利。','買進':'技術面或基本面具明確優勢，整體偏多。建議在回撤至支撐位時逢低分批買進。','持有':'多空訊號相對平衡。已持有者續持觀望，未持有者等待更明確訊號。','減碼':'出現偏空訊號，趨勢開始轉弱。建議逐步減少持股，等待更佳時機。','賣出':'多項指標指向弱勢，整體偏空。建議儘早出脫，嚴格執行停損。'};
+  const scoreBarEl = document.getElementById('recScoreBar');
+  if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}）＋基本面（${fmtScore(rec.fund_score)}）＝ 總分（${fmtScore(totalScore)}）</div>`;
 
-  const sellEl = document.getElementById('reasons-sell');
-  sellEl.innerHTML = (rec.reasons_sell.length ? rec.reasons_sell : ['暫無明確賣出訊號']).map(r =>
-    `<li class="flex items-start gap-2 text-slate-300"><i class="fa-solid fa-circle-exclamation text-orange-400 mt-0.5 shrink-0"></i>${r}</li>`
-  ).join('');
+  // 評分維度分解
+  const dimEl = document.getElementById('recScoreDimensions');
+  function dimCard(icon,title,score,maxS,desc,color){
+    const pct=Math.round((score-(-maxS))/(maxS*2)*100);
+    return `<div class="rounded-xl p-4 border border-slate-700 bg-slate-800/40"><div class="flex items-center justify-between mb-2"><div class="flex items-center gap-2"><i class="${icon}" style="color:${color};font-size:13px;"></i><span class="text-xs font-bold text-slate-400 uppercase tracking-wide">${title}</span></div><span class="font-black mono" style="color:${color}">${fmtScore(score)}</span></div><div class="progress-bar mb-2"><div class="progress-fill" style="width:${Math.max(2,pct)}%;background:${color};"></div></div><div class="text-xs text-slate-400 leading-relaxed">${desc}</div></div>`;
+  }
+  const ma5=ind.ma5,ma20=ind.ma20,ma60=ind.ma60,macd=ind.macd,macdSig=ind.macd_signal,rsi=ind.rsi,k=ind.k,d=ind.d;
+  const techItems=[];
+  if(ma5&&ma20) techItems.push(ma5>ma20?'MA5>MA20（+2）':'MA5<MA20（-2）');
+  if(ma20&&ma60) techItems.push(ma20>ma60?'MA20>MA60（+2）':'MA20<MA60（-2）');
+  if(ma20) techItems.push(close>ma20?'價格>MA20（+1）':'價格<MA20（-1）');
+  if(macd) techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）');
+  if(macd&&macdSig) techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）');
+  if(rsi) techItems.push(rsi>70?'RSI超買（-1）':rsi<30?'RSI超賣（+1）':'RSI中性（0）');
+  if(k&&d) techItems.push(k<20?'KD超賣（+1）':k>80?'KD超買（-1）':'KD中性（0）');
+  const f=data.fundamentals||{};
+  const fundItems=[];
+  if(f.pe_ratio) fundItems.push(f.pe_ratio<15?`P/E ${f.pe_ratio.toFixed(1)}x 低估（+1）`:f.pe_ratio>30?`P/E ${f.pe_ratio.toFixed(1)}x 高估（-1）`:`P/E ${f.pe_ratio.toFixed(1)}x 中性`);
+  if(f.pb_ratio) fundItems.push(f.pb_ratio<1.5?`P/B ${f.pb_ratio.toFixed(2)}x 偏低（+1）`:`P/B ${f.pb_ratio.toFixed(2)}x`);
+  if(f.roe) fundItems.push(f.roe>0.15?`ROE ${(f.roe*100).toFixed(1)}% 優異（+1）`:`ROE ${(f.roe*100).toFixed(1)}%`);
+  if(f.div_yield) fundItems.push(f.div_yield>=5?`殖利率 ${f.div_yield}% 高股息（+1）`:f.div_yield>=3?`殖利率 ${f.div_yield}% 穩定`:`殖利率 ${f.div_yield}% 偏低`);
+  const chipDir=chip&&chip.foreign_dir; const chipBull=chipDir&&chipDir.includes('買'); const chipBear=chipDir&&chipDir.includes('賣');
+  if (dimEl) dimEl.innerHTML=[
+    dimCard('fa-solid fa-chart-area','技術面',rec.tech_score,8,'評分涵蓋：'+techItems.join('、'),rec.tech_score>=0?'#10b981':'#ef4444'),
+    dimCard('fa-solid fa-building-columns','基本面',rec.fund_score,4,fundItems.length?'評分涵蓋：'+fundItems.join('、'):'基本面資料不足',rec.fund_score>=0?'#f59e0b':'#ef4444'),
+    dimCard('fa-solid fa-users','籌碼面（參考）',chipBull?1:chipBear?-1:0,1,chip?`外資「${chip.foreign_dir}」，投信「${chip.trust_dir}」，相對量 ${chip.vol_ratio}x，近20日上漲 ${chip.up_days_20} 日`:'籌碼資料不足',chipBull?'#14b8a6':chipBear?'#ef4444':'#64748b'),
+    dimCard('fa-solid fa-ruler-horizontal','位置風險',rec.price_position<=20?1:rec.price_position>=80?-1:0,1,`股價位於近60日支撐${rec.support}至壓力${rec.resist}區間的 ${rec.price_position.toFixed(1)}%。`+(rec.price_position<=20?'接近支撐區，風險相對低，適合建倉。':rec.price_position>=80?'接近壓力區，上方空間有限，宜謹慎追高。':'位於中間區域，無明顯超買或超賣疑慮。'),rec.price_position<=20?'#10b981':rec.price_position>=80?'#ef4444':'#94a3b8'),
+  ].join('');
 
-  const risksEl = document.getElementById('risks-section');
-  risksEl.innerHTML = rec.risks.map(r =>
-    `<div class="flex items-start gap-2 text-red-300 text-sm"><i class="fa-solid fa-shield-exclamation text-red-400 mt-0.5 shrink-0"></i>${r}</div>`
-  ).join('');
+  // 買進/賣出理由
+  document.getElementById('reasons-buy').innerHTML=(rec.reasons_buy.length?rec.reasons_buy:['暫無明確買進訊號']).map(r=>`<li class="flex items-start gap-2 text-slate-300"><i class="fa-solid fa-circle-check text-emerald-400 mt-0.5 shrink-0"></i><span>${r}</span></li>`).join('');
+  document.getElementById('reasons-sell').innerHTML=(rec.reasons_sell.length?rec.reasons_sell:['暫無明確賣出訊號']).map(r=>`<li class="flex items-start gap-2 text-slate-300"><i class="fa-solid fa-circle-exclamation text-orange-400 mt-0.5 shrink-0"></i><span>${r}</span></li>`).join('');
+  document.getElementById('risks-section').innerHTML=rec.risks.map(r=>`<div class="flex items-start gap-2 text-red-300 text-sm"><i class="fa-solid fa-shield-exclamation text-red-400 mt-0.5 shrink-0"></i><span>${r}</span></div>`).join('');
 
-  // 摘要（Markdown簡易渲染）
-  const summaryEl = document.getElementById('rec-summary');
-  summaryEl.innerHTML = (rec.summary || '').replace(/\n/g, '<br>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  // 操作策略
+  const stEl=document.getElementById('recStrategyCards'), stDesc=document.getElementById('recStrategyDesc');
+  const support=rec.support,resist=rec.resist,target=rec.target_price;
+  const stopLoss=support?(support*0.97).toFixed(1):'--';
+  const upside=target?((target-close)/close*100).toFixed(1):'--';
+  const downside=support?((support-close)/close*100).toFixed(1):'--';
+  const rr=(upside!=='--'&&downside!=='--')?(Math.abs(upside)/Math.abs(downside)).toFixed(1):'--';
+  function stratCard(icon,label,value,color){return `<div class="rounded-xl p-4 border border-slate-700 bg-slate-800/40 text-center"><i class="${icon} mb-2 block" style="color:${color};font-size:18px;"></i><div class="text-xs text-slate-500 mb-1">${label}</div><div class="text-lg font-black mono" style="color:${color}">${value}</div></div>`;}
+  if(stEl) stEl.innerHTML=[
+    stratCard('fa-solid fa-location-crosshairs','建議進場參考',support?`${support} ~ ${(support*1.02).toFixed(1)} 元`:'等待回測支撐','#10b981'),
+    stratCard('fa-solid fa-shield-halved','參考停損位',stopLoss+' 元','#ef4444'),
+    stratCard('fa-solid fa-bullseye','均線估算目標',target?target+' 元':'N/A','#f59e0b'),
+  ].join('');
+  let stratText='';
+  if(rec.rating==='強力買進'||rec.rating==='買進'){stratText=`<p class="mb-2"><strong class="text-emerald-400">📌 建議操作：逢低布局、分批買進</strong></p><p>技術面與基本面均呈現有利訊號，可考慮在接近支撐區（${support}元附近）分批建立部位。進場後設定參考停損於支撐下方約 3%（${stopLoss}元），控制單筆最大虧損。</p><p class="mt-2">均線估算目標價 ${target||'--'}元${upside!=='--'?`，潛在漲幅約 ${upside}%`:''}${downside!=='--'?`；停損下跌空間約 ${Math.abs(downside)}%`:''}${rr!=='--'?`，風報比約 ${rr}:1`:''}。風報比 ≥ 2 較建議積極布局。</p>`;}
+  else if(rec.rating==='持有'){stratText=`<p class="mb-2"><strong class="text-blue-400">📌 建議操作：持股觀望、等待方向</strong></p><p>目前多空訊號混雜，無明確優勢。已持有者可續持，但宜緊盯支撐（${support}元），若有效跌破應考慮減碼或停損。未持有者建議等待更明確的技術突破或基本面改善再進場。</p><p class="mt-2">參考停損設在支撐下 3%（${stopLoss}元）；若股價突破壓力（${resist}元）並放量，可考慮加碼。</p>`;}
+  else{stratText=`<p class="mb-2"><strong class="text-red-400">📌 建議操作：觀望/減碼、嚴控停損</strong></p><p>技術面或基本面出現偏空訊號，不建議此時積極買進。持有者應評估是否依個人成本設定停損，避免虧損持續擴大。可等待股價回穩至支撐（${support}元）並出現反彈量能再重新評估。</p><p class="mt-2">切勿在下跌趨勢中攤平，除非基本面出現根本性改善。</p>`;}
+  if(stDesc) stDesc.innerHTML=stratText;
+
+  // 完整摘要
+  document.getElementById('rec-summary').innerHTML=(rec.summary||'').replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
 }
 
 // ── 蒙地卡羅模擬（前端計算）──────────────────────────────────
