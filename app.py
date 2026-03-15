@@ -1159,6 +1159,7 @@ def sim_analysis(ticker):
 
         # ── 風險分解 ─────────────────────────────────────────
         sigma_m2   = float(np.var(ret_m)) * 252           # 市場年化變異數
+        sigma_m    = float(np.sqrt(sigma_m2))             # 市場年化標準差
         sigma_i2   = float(np.var(ret_s)) * 252           # 個股年化變異數
         sys_risk2  = (beta ** 2) * sigma_m2               # 系統性風險（變異數）
         idio_risk2 = max(sigma_i2 - sys_risk2, 0)         # 非系統性風險（變異數）
@@ -1218,6 +1219,7 @@ def sim_analysis(ticker):
             'expected_ret_capm':expected_ret_capm,
             'alpha_sml':        alpha_sml,        # Jensen's alpha
             'resid_std':        resid_std,
+            'market_sigma':     round(sigma_m, 4),        # 市場年化標準差（用於CML）
             # SML 資料
             'sml': {
                 'betas': sml_betas,

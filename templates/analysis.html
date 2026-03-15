@@ -1006,6 +1006,42 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             </div>
           </div>
 
+          <!-- CML 資本市場線 -->
+          <div class="card p-4 mt-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h4 class="font-bold text-sm text-white">
+                <i class="fa-solid fa-chart-line mr-2 text-purple-400"></i>資本市場線（CML）
+                <span class="text-slate-400 text-xs font-normal ml-1">以 σ（標準差）為橫軸，可與 SML 對照分析</span>
+              </h4>
+              <div class="flex flex-wrap gap-3 text-xs text-slate-400">
+                <span><span class="inline-block w-4 h-px bg-purple-400 mr-1 align-middle" style="border-top:2px solid #a78bfa;display:inline-block;"></span>CML</span>
+                <span><span class="inline-block w-4 h-px bg-slate-500 mr-1 align-middle" style="border-top:2px dashed #64748b;display:inline-block;"></span>效率前緣（示意）</span>
+                <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 mr-1 align-middle" style="display:inline-block;"></span>個股（實際）</span>
+                <span><span class="inline-block w-2.5 h-2.5 rounded-full bg-blue-400 mr-1 align-middle" style="display:inline-block;"></span>市場組合 M</span>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3 text-center">
+              <div class="bg-slate-800/60 rounded p-2">
+                <div class="text-xs text-slate-400 mb-0.5">CML 斜率（市場夏普比率）</div>
+                <div class="text-sm font-bold text-purple-300" id="cmlSlope">—</div>
+                <div class="text-xs text-slate-500 mt-0.5">[E(Rm)−Rf] ÷ σm</div>
+              </div>
+              <div class="bg-slate-800/60 rounded p-2">
+                <div class="text-xs text-slate-400 mb-0.5">個股相對CML位置</div>
+                <div class="text-sm font-bold text-yellow-300" id="cmlStockPos">—</div>
+                <div class="text-xs text-slate-500 mt-0.5">實際報酬 vs CML報酬</div>
+              </div>
+              <div class="bg-slate-800/60 rounded p-2">
+                <div class="text-xs text-slate-400 mb-0.5">CML vs SML 核心差異</div>
+                <div class="text-xs text-slate-300 leading-tight pt-1">CML：橫軸為總風險 σ（適用效率組合）<br>SML：橫軸為系統風險 β（適用所有資產）</div>
+              </div>
+            </div>
+            <div class="chart-wrap" style="height:300px">
+              <canvas id="simCMLChart"></canvas>
+            </div>
+            <div class="mt-3 text-xs text-slate-400 bg-slate-800/40 rounded p-2 leading-relaxed" id="cmlInterpText"></div>
+          </div>
+
           <!-- 模型解釋 -->
           <div class="card p-4 mt-4" id="simInterpretation">
             <h4 class="font-bold text-sm text-white mb-2">
@@ -3346,6 +3382,169 @@ function renderSIM(d) {
         y: { title:{ display:true, text:'預期報酬率 (%)', color:'#64748b', font:{size:10} },
              ticks:{ color:'#64748b', font:{size:9}, callback: v => v.toFixed(1)+'%' },
              grid:{ color:'rgba(255,255,255,.05)' } }
+      }
+    }
+  });
+
+  // ── CML 資本市場線 ────────────────────────────────────────────
+  const cmlCtx = document.getElementById('simCMLChart');
+  if (charts.simCML) { charts.simCML.destroy(); charts.simCML = null; }
+
+  // CML 參數
+  const rf        = d.risk_free;                   // 無風險利率（例如 0.02）
+  const mktRet    = d.market_annual_ret;            // 市場預期年化報酬（例如 0.09）
+  const mktSigma  = d.market_sigma || 0.18;         // 市場年化標準差
+  const cmlSlope  = (mktRet - rf) / mktSigma;       // CML斜率 = 夏普比率
+
+  // CML 線：E(r) = rf + slope * σ，從 σ=0 到 σ=max_sigma
+  const stockSigma  = d.total_risk;                 // 個股年化標準差
+  const maxSigma    = Math.max(stockSigma * 1.6, mktSigma * 1.5, 0.45);
+  const cmlPts      = 60;
+  const cmlLine     = [];
+  for (let i = 0; i <= cmlPts; i++) {
+    const s = (maxSigma * i) / cmlPts;
+    cmlLine.push({ x: +(s * 100).toFixed(3), y: +((rf + cmlSlope * s) * 100).toFixed(3) });
+  }
+
+  // 效率前緣（拋物線示意：以市場點為切點向左彎）
+  // 採用近似方程：σ_ef(r) = σm * sqrt((r - rf) / (mktRet - rf)) 的逆向估計
+  const efPts = [];
+  const efRetMin = rf + 0.001;
+  const efRetMax = mktRet * 1.25;
+  for (let i = 0; i <= 40; i++) {
+    const r = efRetMin + (efRetMax - efRetMin) * i / 40;
+    // 效率前緣：近似最小變異組合點往右彎
+    // 最小變異組合約在 σ ≈ 0.5*σm
+    const mvpSigma  = mktSigma * 0.45;
+    const mvpRet    = rf + (mktRet - rf) * 0.35;
+    // 拋物線 σ^2 = a*(r-b)^2 + c，過(mvpSigma,mvpRet)和(mktSigma,mktRet)
+    const dR  = mktRet - mvpRet;
+    const dS2 = mktSigma ** 2 - mvpSigma ** 2;
+    const a   = dS2 / (dR ** 2);
+    const sig = Math.sqrt(Math.max(0, mvpSigma ** 2 + a * (r - mvpRet) ** 2));
+    if (sig <= maxSigma * 1.05) {
+      efPts.push({ x: +(sig * 100).toFixed(3), y: +(r * 100).toFixed(3) });
+    }
+  }
+
+  // 個股在CML空間的實際位置（σ, 實際年化報酬）
+  const stockActualRet  = d.stock_annual_ret * 100;
+  const stockSigmaPct   = stockSigma * 100;
+  // 個股在同σ下，CML對應報酬
+  const cmlAtStockSigma = (rf + cmlSlope * stockSigma) * 100;
+  const stockVsCML      = stockActualRet - cmlAtStockSigma;
+
+  // 更新指標數字
+  document.getElementById('cmlSlope').textContent =
+    cmlSlope.toFixed(3) + ' （每單位總風險可獲報酬）';
+  document.getElementById('cmlStockPos').textContent =
+    (stockVsCML >= 0 ? '+' : '') + stockVsCML.toFixed(2) + '% ' +
+    (stockVsCML >= 0 ? '▲ 優於CML' : '▼ 低於CML');
+  document.getElementById('cmlStockPos').style.color =
+    stockVsCML >= 0 ? '#34d399' : '#f87171';
+
+  // 解讀文字
+  const stockPosTxt = stockVsCML >= 0
+    ? `個股實際報酬（${stockActualRet.toFixed(2)}%）高於CML在相同風險下的預期（${cmlAtStockSigma.toFixed(2)}%），意味著**考量所有風險後**，報酬相對優異。但注意個股含有可分散的非系統性風險，在SML框架下評估更為嚴謹。`
+    : `個股實際報酬（${stockActualRet.toFixed(2)}%）低於CML在相同風險下的預期（${cmlAtStockSigma.toFixed(2)}%），意味著承受了較高的總風險，但未獲得相應補償。CML提醒投資人可透過持有效率投資組合（市場指數+無風險資產）達到同等報酬、更低風險。`;
+
+  document.getElementById('cmlInterpText').innerHTML = `
+    <strong class="text-slate-200">📐 CML 解讀：</strong> CML（Capital Market Line）代表在加入無風險資產後，所有效率投資組合的風險-報酬軌跡。斜率 = 市場夏普比率 <strong class="text-purple-300">${cmlSlope.toFixed(3)}</strong>，即承擔每1%總風險可獲得 ${(cmlSlope * 100).toFixed(2)} 個基點的額外報酬。<br>
+    <strong class="text-slate-200">📍 個股評估：</strong> ${stockPosTxt}<br>
+    <strong class="text-slate-200">⚠️ CML vs SML：</strong> 個股因含有非系統性風險，通常落在CML<em>右下方</em>（風險高但報酬未完全反映）；而在SML框架中，如果市場有效，個股應剛好落在SML<em>上方</em>（若被低估）或<em>下方</em>（若被高估）。
+  `;
+
+  charts.simCML = new Chart(cmlCtx, {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label:       'CML（資本市場線）',
+          data:        cmlLine,
+          borderColor: '#a78bfa',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          fill:        false,
+          tension:     0,
+          order:       1,
+        },
+        {
+          label:       '效率前緣（示意）',
+          data:        efPts,
+          borderColor: '#64748b',
+          borderWidth: 1.5,
+          borderDash:  [4, 4],
+          pointRadius: 0,
+          fill:        false,
+          tension:     0.4,
+          order:       2,
+        },
+        {
+          type:            'scatter',
+          label:           '市場組合 M',
+          data:            [{ x: +(mktSigma * 100).toFixed(2), y: +(mktRet * 100).toFixed(2) }],
+          pointStyle:      'circle',
+          pointRadius:     9,
+          pointHoverRadius:12,
+          backgroundColor: '#3b82f6',
+          borderColor:     '#fff',
+          borderWidth:     2,
+          order:           3,
+        },
+        {
+          type:            'scatter',
+          label:           `${d.ticker}（實際）`,
+          data:            [{ x: +stockSigmaPct.toFixed(2), y: +stockActualRet.toFixed(2) }],
+          pointStyle:      'circle',
+          pointRadius:     10,
+          pointHoverRadius:13,
+          backgroundColor: stockVsCML >= 0 ? '#10b981' : '#ef4444',
+          borderColor:     '#fff',
+          borderWidth:     2,
+          order:           4,
+        },
+        {
+          type:            'scatter',
+          label:           `無風險資產 Rf`,
+          data:            [{ x: 0, y: +(rf * 100).toFixed(2) }],
+          pointStyle:      'rectRot',
+          pointRadius:     7,
+          backgroundColor: '#f59e0b',
+          borderColor:     '#fff',
+          borderWidth:     2,
+          order:           5,
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: {
+        legend: { labels: { color: '#94a3b8', font: { size: 10 }, usePointStyle: true } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const lbl = ctx.dataset.label || '';
+              if (ctx.parsed) {
+                return `${lbl}  σ: ${ctx.parsed.x.toFixed(2)}%  E(r): ${ctx.parsed.y.toFixed(2)}%`;
+              }
+              return lbl;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type:  'linear',
+          title: { display: true, text: '年化標準差 σ (%)', color: '#64748b', font: { size: 10 } },
+          ticks: { color: '#64748b', font: { size: 9 }, callback: v => v.toFixed(0) + '%' },
+          grid:  { color: 'rgba(255,255,255,.05)' },
+          min:   0,
+        },
+        y: {
+          title: { display: true, text: '預期/實際報酬率 (%)', color: '#64748b', font: { size: 10 } },
+          ticks: { color: '#64748b', font: { size: 9 }, callback: v => v.toFixed(1) + '%' },
+          grid:  { color: 'rgba(255,255,255,.05)' },
+        }
       }
     }
   });
