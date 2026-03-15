@@ -207,9 +207,12 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <div class="card p-5 flex flex-wrap gap-4 items-center justify-between">
       <div>
         <div class="flex items-center gap-3 mb-1">
+          <span class="mono font-black text-blue-400 text-xl" id="stockTicker">--</span>
           <h2 class="text-2xl font-black text-white" id="stockName">--</h2>
-          <span class="text-slate-400 mono text-sm" id="stockTicker">--</span>
           <span id="simulatedBadge" class="hidden text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-300 border border-amber-700">模擬資料</span>
+        </div>
+        <div class="flex items-center gap-2 mb-0.5">
+          <span class="text-slate-400 text-xs" id="stockEngName">--</span>
         </div>
         <div class="text-slate-400 text-xs" id="stockSector">--</div>
       </div>
@@ -971,6 +974,36 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
 <script>
 // ════════════════════════════════════════════════════════════════
+// 台灣股票/ETF 中文名稱對照表
+// ════════════════════════════════════════════════════════════════
+const STOCK_NAMES_ZH = {
+  '2330':'台積電','2317':'鴻海','2454':'聯發科','2382':'廣達','2308':'台達電',
+  '2881':'富邦金','2882':'國泰金','2891':'中信金','2886':'兆豐金','2303':'聯電',
+  '2412':'中華電','1301':'台塑','1303':'南亞','2002':'中鋼','2357':'華碩',
+  '3008':'大立光','2395':'研華','4938':'和碩','2603':'長榮','2615':'萬海',
+  '2609':'陽明','2880':'華南金','2884':'玉山金','2885':'元大金','2887':'台新金',
+  '2888':'新光金','2890':'永豐金','3045':'台灣大','4904':'遠傳','2376':'技嘉',
+  '3711':'日月光投控','2379':'瑞昱','2409':'友達','2408':'南亞科','6505':'台塑化',
+  '1326':'台化','2207':'和泰車','2474':'可成','3481':'群創','2345':'智邦',
+  '5880':'合庫金','2892':'第一金','2883':'開發金','2834':'臺企銀','5871':'中租-KY',
+  '6669':'緯穎','3034':'聯詠','2301':'光寶科','2542':'興富發','2881':'富邦金',
+  '2324':'仁寶','2535':'達欣工','1101':'台泥','2317':'鴻海',
+  '0050':'元大台灣50','0056':'元大高股息','006208':'富邦台50',
+  '00878':'國泰永續高股息','00713':'元大台灣高息低波','00679B':'元大美債20年',
+  '00919':'群益台灣精選高息','00929':'復華台灣科技優息',
+  '00915':'凱基優選高股息30','00757':'統一MSCI台灣',
+  '00850':'元大臺灣ESG永續','00692':'富邦公司治理',
+  '00900':'富邦特選高股息30','00907':'永豐優息存股',
+  '00930':'永豐ESG低碳高息','00934':'中信成長高股息',
+  '00939':'統一台灣高息動能','00940':'元大台灣價值高息',
+};
+
+function getStockNameZh(ticker) {
+  if (!ticker) return null;
+  return STOCK_NAMES_ZH[ticker.toUpperCase()] || null;
+}
+
+// ════════════════════════════════════════════════════════════════
 // 全域狀態
 // ════════════════════════════════════════════════════════════════
 let currentData   = null;
@@ -1079,8 +1112,24 @@ function renderHeader(data) {
   const up = l.change >= 0;
   const color = up ? '#10b981' : '#ef4444';
 
-  document.getElementById('stockName').textContent   = data.name;
-  document.getElementById('stockTicker').textContent = `${data.ticker}`;
+  // ── 股票代碼、中文名、英文名分開顯示 ──────────────────────────────
+  const zhName  = getStockNameZh(data.ticker);
+  const engName = data.eng_name || data.name || '';
+
+  // 股票代碼
+  document.getElementById('stockTicker').textContent = data.ticker;
+
+  // 中文名稱（若無則用英文名，再沒有才用代碼）
+  document.getElementById('stockName').textContent = zhName || engName || data.ticker;
+
+  // 英文名稱（僅在有中文名時才顯示英文名）
+  const engEl = document.getElementById('stockEngName');
+  if (engName && engName !== data.ticker) {
+    engEl.textContent = engName;
+  } else {
+    engEl.textContent = '';
+  }
+
   document.getElementById('stockSector').textContent =
     [data.fundamentals.sector, data.fundamentals.industry].filter(Boolean).join(' · ') || '台灣上市';
 
@@ -1557,6 +1606,29 @@ function smaSimple(arr, n) {
   return res;
 }
 
+// 日曆分組聚合（月線、季線、半年線、年線）
+function aggregateByCalendar(ohlcv, keyFn) {
+  const groups = new Map();
+  for (const bar of ohlcv) {
+    const key = keyFn(bar.date);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(bar);
+  }
+  const result = [];
+  for (const [, chunk] of groups) {
+    if (!chunk.length) continue;
+    result.push({
+      date:   chunk[chunk.length - 1].date,
+      open:   chunk[0].open,
+      high:   Math.max(...chunk.map(r => r.high)),
+      low:    Math.min(...chunk.map(r => r.low)),
+      close:  chunk[chunk.length - 1].close,
+      volume: chunk.reduce((s, r) => s + r.volume, 0),
+    });
+  }
+  return result;
+}
+
 // OHLCV 聚合（日線陣列 → 任意週期）
 function aggregateOHLCV(ohlcv, days) {
   if (days <= 1) return ohlcv;
@@ -1596,7 +1668,25 @@ function buildPeriodChartData(rawData, period) {
     volume: daily.volumes[i],
   }));
 
-  const agg   = aggregateOHLCV(dailyOHLCV, cfg.days);
+  // 月線/季線/半年線/年線 → 按日曆分組，確保每根 K 棒對齊自然週期
+  let agg;
+  if (period === 'Y') {
+    agg = aggregateByCalendar(dailyOHLCV, d => d.substring(0, 4));
+  } else if (period === '6M') {
+    agg = aggregateByCalendar(dailyOHLCV, d => {
+      const [y, m] = d.split('-');
+      return `${y}-${+m <= 6 ? 'H1' : 'H2'}`;
+    });
+  } else if (period === 'Q') {
+    agg = aggregateByCalendar(dailyOHLCV, d => {
+      const [y, m] = d.split('-');
+      return `${y}-Q${Math.ceil(+m / 3)}`;
+    });
+  } else if (period === 'M') {
+    agg = aggregateByCalendar(dailyOHLCV, d => d.substring(0, 7));
+  } else {
+    agg = aggregateOHLCV(dailyOHLCV, cfg.days);
+  }
   const dates  = agg.map(r => r.date);
   const opens  = agg.map(r => r.open);
   const highs  = agg.map(r => r.high);
@@ -1636,78 +1726,76 @@ function setPeriod(period) {
   drawVolumeChartPeriod(currentData, period);
 }
 
-// ── 重繪 K線圖（週期版）───────────────────────────────────────
+// ── 重繪 K線圖（週期版）── 蠟燭圖（台股紅漲綠跌）─────────────
 function drawCandleChartPeriod(data, period) {
   const ch  = buildPeriodChartData(data, period);
   const ctx = document.getElementById('candleChart');
   if (charts.candle) { charts.candle.destroy(); charts.candle = null; }
 
-  // 決定顯示多少筆（螢幕適合 80~150 根K棒）
-  const MAX_BARS = 150;
-  const n = Math.min(ch.dates.length, MAX_BARS);
+  // 年線/半年線/季線 顯示更多歷史棒數
+  const MAX_BARS = period === 'Y' ? 999 : period === '6M' ? 999 : period === 'Q' ? 999 : period === 'M' ? 999 : 150;
+  const n      = Math.min(ch.dates.length, MAX_BARS);
   const offset = ch.dates.length - n;
-  const slice  = arr => arr.slice(offset);
+  const sl = arr => arr.slice(offset);
 
-  const dates  = slice(ch.dates);
-  const closes = slice(ch.closes);
-  const opens  = slice(ch.opens);
-  const highs  = slice(ch.highs);
-  const lows   = slice(ch.lows);
-  const ma1    = slice(ch.ma1);
-  const ma2    = slice(ch.ma2);
-  const ma3    = slice(ch.ma3);
+  const dates  = sl(ch.dates);
+  const closes = sl(ch.closes);
+  const opens  = sl(ch.opens);
+  const highs  = sl(ch.highs);
+  const lows   = sl(ch.lows);
+  const ma1    = sl(ch.ma1);
+  const ma2    = sl(ch.ma2);
+  const ma3    = sl(ch.ma3);
   const cfg    = PERIOD_CFG[period];
 
+  // 台股：紅漲綠跌
+  const upClr   = 'rgba(239,68,68,0.92)';
+  const downClr = 'rgba(22,163,74,0.92)';
+  const bodyColors = dates.map((_, i) => closes[i] >= opens[i] ? upClr : downClr);
+  const wickColors = dates.map((_, i) => closes[i] >= opens[i]
+    ? 'rgba(239,68,68,0.6)' : 'rgba(22,163,74,0.6)');
+
   charts.candle = new Chart(ctx, {
-    type: 'line',
+    type: 'bar',
     data: {
       labels: dates,
       datasets: [
+        // ① 蠟燭實體（開~收浮動長條）
         {
-          label: '收盤價',
-          data: closes,
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59,130,246,.06)',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          fill: true,
-          tension: .1,
-          order: 1,
-        },
-        {
-          label: `MA${cfg.ma[0]}`,
-          data: ma1,
-          borderColor: '#f59e0b',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill: false,
-          tension: .3,
-          spanGaps: false,
+          label: 'OHLC',
+          data:  dates.map((_, i) => [
+            Math.min(opens[i], closes[i]),
+            Math.max(opens[i], closes[i])
+          ]),
+          backgroundColor: bodyColors,
+          borderColor:     bodyColors,
+          borderWidth: 0,
+          barPercentage:   0.55,
+          categoryPercentage: 0.9,
           order: 2,
         },
+        // ② 上下影線（高~低，細長條）
         {
-          label: `MA${cfg.ma[1]}`,
-          data: ma2,
-          borderColor: '#60a5fa',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill: false,
-          tension: .3,
-          spanGaps: false,
+          type: 'bar',
+          label: 'wick',
+          data:  dates.map((_, i) => [lows[i], highs[i]]),
+          backgroundColor: wickColors,
+          borderColor:     wickColors,
+          borderWidth: 0,
+          barPercentage:   0.12,
+          categoryPercentage: 0.9,
           order: 3,
         },
-        {
-          label: `MA${cfg.ma[2]}`,
-          data: ma3,
-          borderColor: '#a78bfa',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill: false,
-          tension: .3,
-          spanGaps: false,
-          order: 4,
-        },
+        // ③ MA 均線
+        { type:'line', label:`MA${cfg.ma[0]}`, data:ma1,
+          borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0,
+          fill:false, tension:.3, spanGaps:false, order:1 },
+        { type:'line', label:`MA${cfg.ma[1]}`, data:ma2,
+          borderColor:'#60a5fa', borderWidth:1.5, pointRadius:0,
+          fill:false, tension:.3, spanGaps:false, order:1 },
+        { type:'line', label:`MA${cfg.ma[2]}`, data:ma3,
+          borderColor:'#a78bfa', borderWidth:1.5, pointRadius:0,
+          fill:false, tension:.3, spanGaps:false, order:1 },
       ]
     },
     options: {
@@ -1718,23 +1806,48 @@ function drawCandleChartPeriod(data, period) {
       plugins: {
         legend: {
           display: true,
-          labels: { color:'#94a3b8', font:{size:11}, boxWidth:20, usePointStyle:true }
+          labels: {
+            color:'#94a3b8', font:{size:11}, boxWidth:20, usePointStyle:true,
+            filter: item => item.text !== 'OHLC' && item.text !== 'wick'
+          }
         },
         tooltip: {
           callbacks: {
+            title: ctxArr => ctxArr[0]?.label || '',
             label: ctx => {
               const i = ctx.dataIndex;
-              if (ctx.datasetIndex === 0)
-                return [`開：${opens[i]}`, `高：${highs[i]}`, `低：${lows[i]}`, `收：${closes[i]}`];
-              return ctx.dataset.label + ': ' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '--');
-            }
+              if (ctx.datasetIndex === 0) {
+                const dir = closes[i] >= opens[i] ? '▲ 上漲' : '▼ 下跌';
+                return [`開: ${opens[i]}`, `高: ${highs[i]}`, `低: ${lows[i]}`, `收: ${closes[i]}`, dir];
+              }
+              if (ctx.datasetIndex === 1) return null;
+              const val = Array.isArray(ctx.raw) ? ctx.raw[1] : ctx.parsed?.y;
+              return ctx.dataset.label + ': ' + (val != null ? Number(val).toFixed(2) : '--');
+            },
+            filter: item => item.datasetIndex !== 1,
           }
         }
       },
       scales: {
-        x: { ticks:{ color:'#64748b', font:{size:10}, maxRotation:0, maxTicksLimit:14, autoSkip:true },
-             grid:{ color:'rgba(255,255,255,.04)' } },
-        y: { ticks:{ color:'#64748b', font:{size:10} }, grid:{ color:'rgba(255,255,255,.06)' } }
+        x: {
+          ticks: {
+            color:'#64748b', font:{size:10}, maxRotation:45, autoSkip:true,
+            maxTicksLimit: period === 'Y' ? 30 : 14,
+            callback: function(val, idx) {
+              const lbl = dates[idx];
+              if (!lbl) return '';
+              if (period === 'Y')  return lbl.substring(0, 4);
+              if (period === '6M') return lbl.substring(0, 7);
+              if (period === 'Q')  return lbl.substring(0, 7);
+              return lbl;
+            }
+          },
+          grid: { color:'rgba(255,255,255,.04)' }
+        },
+        y: {
+          ticks: { color:'#64748b', font:{size:10} },
+          grid:  { color:'rgba(255,255,255,.06)' }
+        }
       }
     }
   });
@@ -1746,7 +1859,7 @@ function drawVolumeChartPeriod(data, period) {
   const ctx = document.getElementById('volumeChart');
   if (charts.volume) { charts.volume.destroy(); charts.volume = null; }
 
-  const MAX_BARS = 150;
+  const MAX_BARS = (period === 'Y' || period === '6M' || period === 'Q' || period === 'M') ? 999 : 150;
   const n = Math.min(ch.dates.length, MAX_BARS);
   const offset = ch.dates.length - n;
   const dates  = ch.dates.slice(offset);
@@ -2265,6 +2378,14 @@ async function runEfficientFrontier() {
   }
 }
 
+// 個股色盤（18色，循環使用）
+const STOCK_PALETTE = [
+  '#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6',
+  '#ec4899','#14b8a6','#f97316','#a3e635','#06b6d4',
+  '#d946ef','#fb923c','#84cc16','#22d3ee','#f43f5e',
+  '#a855f7','#0ea5e9','#4ade80',
+];
+
 function renderEfficientFrontier(d) {
   const mvp = d.mvp, msp = d.msp;
 
@@ -2345,34 +2466,52 @@ function renderEfficientFrontier(d) {
           borderWidth:     1.5,
           order:           1,
         },
-        // 個股單點
-        {
-          label:           '個股',
-          data:            d.stocks.map(s => ({x: s.risk*100, y: s.ret*100, label: s.ticker})),
+        // 個股單點（每支不同顏色）
+        ...d.stocks.map((s, idx) => ({
+          label:           `${s.ticker}${s.name && s.name!==s.ticker ? ' '+s.name : ''}`,
+          data:            [{x: s.risk*100, y: s.ret*100}],
           pointStyle:      'circle',
-          pointRadius:     6,
-          pointHoverRadius:9,
-          backgroundColor: 'rgba(251,191,36,0.85)',
+          pointRadius:     7,
+          pointHoverRadius:10,
+          backgroundColor: STOCK_PALETTE[idx % STOCK_PALETTE.length],
           borderColor:     '#fff',
-          borderWidth:     1,
+          borderWidth:     1.5,
           order:           1,
-        },
+        })),
       ]
     },
+    plugins: [{
+      id: 'stockLabels',
+      afterDatasetsDraw(chart) {
+        const ctx2 = chart.ctx;
+        chart.data.datasets.forEach((ds, i) => {
+          if (i < 4) return; // 跳過模擬點、EF線、MVP、MSP
+          const meta = chart.getDatasetMeta(i);
+          if (!meta.visible || !meta.data.length) return;
+          const pt = meta.data[0];
+          const ticker = ds.label.split(' ')[0];
+          ctx2.save();
+          ctx2.font = 'bold 11px "Noto Sans TC", sans-serif';
+          ctx2.fillStyle = ds.backgroundColor;
+          ctx2.textAlign = 'center';
+          ctx2.fillText(ticker, pt.x, pt.y - 11);
+          ctx2.restore();
+        });
+      }
+    }],
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 400 },
       plugins: {
-        legend: { labels:{ color:'#94a3b8', font:{size:11} } },
+        legend: { labels:{ color:'#94a3b8', font:{size:11}, filter: (item) => item.datasetIndex >= 4 ? false : true } },
         tooltip: {
           callbacks: {
             label: function(ctx) {
-              const pt = ctx.raw;
               const base = `風險: ${ctx.parsed.x.toFixed(2)}%  報酬: ${ctx.parsed.y.toFixed(2)}%`;
               if (ctx.datasetIndex === 2) return '★ MVP  ' + base;
               if (ctx.datasetIndex === 3) return '◆ MSP  ' + base;
-              if (ctx.datasetIndex === 4 && pt.label) return `${pt.label}  ` + base;
+              if (ctx.datasetIndex >= 4) return ctx.dataset.label + '  ' + base;
               const idx = ctx.dataIndex;
               const sharpe = sim.sharpe[idx];
               return base + (sharpe != null ? `  夏普: ${sharpe.toFixed(2)}` : '');
