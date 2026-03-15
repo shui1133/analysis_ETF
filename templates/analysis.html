@@ -1619,10 +1619,11 @@ function aggregateByCalendar(ohlcv, keyFn) {
     groups.get(key).push(bar);
   }
   const result = [];
-  for (const [, chunk] of groups) {
+  for (const [key, chunk] of groups) {
     if (!chunk.length) continue;
     result.push({
       date:   chunk[chunk.length - 1].date,
+      label:  key,   // 保留分組鍵（如 "2024-Q1"），供X軸顯示
       open:   chunk[0].open,
       high:   Math.max(...chunk.map(r => r.high)),
       low:    Math.min(...chunk.map(r => r.low)),
@@ -1692,6 +1693,7 @@ function buildPeriodChartData(rawData, period) {
     agg = aggregateOHLCV(dailyOHLCV, cfg.days);
   }
   const dates  = agg.map(r => r.date);
+  const labels = agg.map(r => r.label || r.date);  // 季線用 "2024-Q1"，其他同 date
   const opens  = agg.map(r => r.open);
   const highs  = agg.map(r => r.high);
   const lows   = agg.map(r => r.low);
@@ -1700,7 +1702,7 @@ function buildPeriodChartData(rawData, period) {
 
   const [ma1, ma2, ma3] = calcMA(closes, cfg.ma);
 
-  return { dates, opens, highs, lows, closes, volumes: vols, ma1, ma2, ma3, maPeriods: cfg.ma };
+  return { dates, labels, opens, highs, lows, closes, volumes: vols, ma1, ma2, ma3, maPeriods: cfg.ma };
 }
 
 // 切換週期：重建圖表
@@ -1743,6 +1745,7 @@ function drawCandleChartPeriod(data, period) {
   const sl = arr => arr.slice(offset);
 
   const dates  = sl(ch.dates);
+  const labels = sl(ch.labels || ch.dates);   // 季線為 "2024-Q1" 格式
   const closes = sl(ch.closes);
   const opens  = sl(ch.opens);
   const highs  = sl(ch.highs);
@@ -1762,7 +1765,7 @@ function drawCandleChartPeriod(data, period) {
   charts.candle = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: dates,
+      labels: labels,
       datasets: [
         // ① 蠟燭實體（開~收浮動長條）
         {
@@ -1838,11 +1841,11 @@ function drawCandleChartPeriod(data, period) {
             color:'#64748b', font:{size:10}, maxRotation:45, autoSkip:true,
             maxTicksLimit: period === 'Y' ? 30 : 14,
             callback: function(val, idx) {
-              const lbl = dates[idx];
+              const lbl = labels[idx];
               if (!lbl) return '';
               if (period === 'Y')  return lbl.substring(0, 4);
-              if (period === '6M') return lbl.substring(0, 7);
-              if (period === 'Q')  return lbl.substring(0, 7);
+              if (period === 'Q')  return lbl;   // 已是 "2024-Q1" 格式
+              if (period === '6M') return lbl;   // 已是 "2024-H1" 格式
               return lbl;
             }
           },
@@ -1867,15 +1870,18 @@ function drawVolumeChartPeriod(data, period) {
   const n = Math.min(ch.dates.length, MAX_BARS);
   const offset = ch.dates.length - n;
   const dates  = ch.dates.slice(offset);
+  const labels = (ch.labels || ch.dates).slice(offset);
   const vols   = ch.volumes.slice(offset);
   const closes = ch.closes.slice(offset);
+  const opens  = ch.opens.slice(offset);
+  // 台股紅漲綠跌：以當根K棒 close vs open 判斷
   const bgColors = vols.map((_, i) =>
-    i === 0 || closes[i] >= closes[i-1] ? 'rgba(16,185,129,.7)' : 'rgba(239,68,68,.7)');
+    closes[i] >= opens[i] ? 'rgba(239,68,68,.75)' : 'rgba(22,163,74,.75)');
 
   charts.volume = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: dates,
+      labels: labels,
       datasets: [{ label:'成交量', data: vols, backgroundColor: bgColors, borderWidth:0 }]
     },
     options: {
