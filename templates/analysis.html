@@ -83,6 +83,24 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 .scenario-card{border-radius:14px;padding:16px;border:2px solid transparent;transition:all .2s;}
 .scenario-card:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(0,0,0,.3);}
 
+/* 週期切換按鈕 */
+.period-btn{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;
+  border:1px solid #334155;background:#162032;color:#64748b;transition:all .15s;white-space:nowrap;}
+.period-btn:hover{border-color:#3b82f6;color:#93c5fd;}
+.period-btn.active{background:#1e40af;border-color:#3b82f6;color:#fff;}
+
+/* 新聞卡片 */
+.news-card{background:#162032;border:1px solid #1e3a5f;border-radius:12px;padding:14px 16px;
+  transition:all .2s;cursor:pointer;}
+.news-card:hover{border-color:#3b82f6;background:#1a2a44;}
+.news-sentiment-pos{color:#10b981;background:#052e16;border:1px solid #065f46;}
+.news-sentiment-neg{color:#ef4444;background:#450a0a;border:1px solid #7f1d1d;}
+.news-sentiment-neu{color:#94a3b8;background:#1e293b;border:1px solid #334155;}
+.news-source{display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;
+  font-weight:700;background:#1e3a5f;color:#93c5fd;}
+.news-spinner{width:28px;height:28px;border:2px solid #1e3a5f;border-top-color:#3b82f6;
+  border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto;}
+
 /* 截斷文字 */
 .line-clamp-3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
 
@@ -230,6 +248,9 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('scenario')" id="tab-scenario">
         <i class="fa-solid fa-layer-group mr-1"></i>情境分析
       </button>
+      <button class="tab-btn" onclick="switchTab('news')" id="tab-news">
+        <i class="fa-solid fa-newspaper mr-1"></i>個股新聞
+      </button>
     </div>
 
     <!-- ═══ Tab: 圖表技術分析 ══════════════════════════════════════ -->
@@ -285,15 +306,28 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
       <!-- K線圖 -->
       <div class="card p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-bold text-sm text-white">K線圖（近180交易日）</h3>
+        <!-- 週期選擇器 + 標題列 -->
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div class="flex items-center gap-3">
+            <h3 class="font-bold text-sm text-white" id="chartPeriodTitle">K線圖</h3>
+            <!-- 週期按鈕 -->
+            <div class="flex flex-wrap gap-1" id="periodBtns">
+              <button class="period-btn active" onclick="setPeriod('D')"   id="pbtn-D">日線</button>
+              <button class="period-btn"        onclick="setPeriod('W')"   id="pbtn-W">週線</button>
+              <button class="period-btn"        onclick="setPeriod('2W')"  id="pbtn-2W">雙週線</button>
+              <button class="period-btn"        onclick="setPeriod('M')"   id="pbtn-M">月線</button>
+              <button class="period-btn"        onclick="setPeriod('Q')"   id="pbtn-Q">季線</button>
+              <button class="period-btn"        onclick="setPeriod('6M')"  id="pbtn-6M">半年線</button>
+              <button class="period-btn"        onclick="setPeriod('Y')"   id="pbtn-Y">年線</button>
+            </div>
+          </div>
           <div class="flex gap-2 text-xs">
-            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-yellow-400 inline-block"></span>MA5</span>
-            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-blue-400 inline-block"></span>MA20</span>
-            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-purple-400 inline-block"></span>MA60</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-yellow-400 inline-block"></span><span id="ma1Label">MA5</span></span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-blue-400 inline-block"></span><span id="ma2Label">MA20</span></span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-purple-400 inline-block"></span><span id="ma3Label">MA60</span></span>
           </div>
         </div>
-        <div class="chart-wrap" style="height:340px">
+        <div class="chart-wrap" style="height:360px">
           <canvas id="candleChart"></canvas>
         </div>
       </div>
@@ -587,6 +621,62 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       </div>
     </div>
 
+    <!-- ═══ Tab: 個股新聞 ══════════════════════════════════════════ -->
+    <div id="panel-news" class="hidden space-y-4">
+      <!-- 標題列 -->
+      <div class="card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 class="font-bold text-lg text-white flex items-center gap-2">
+              <i class="fa-solid fa-newspaper text-blue-400"></i>
+              個股新聞
+              <span class="text-slate-400 text-sm font-normal" id="newsTicker">--</span>
+            </h3>
+            <p class="text-slate-500 text-xs mt-0.5">來源：Google News，每次開啟自動更新</p>
+          </div>
+          <button onclick="loadNews()" id="newsRefreshBtn"
+                  class="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3 py-2 rounded-lg transition">
+            <i class="fa-solid fa-rotate-right"></i>重新整理
+          </button>
+        </div>
+
+        <!-- 情緒過濾 -->
+        <div class="flex gap-2 flex-wrap mb-4" id="newsSentimentFilter">
+          <button onclick="filterNews('all')"  id="nfBtn-all"  class="period-btn active">全部</button>
+          <button onclick="filterNews('pos')"  id="nfBtn-pos"  class="period-btn">利多 🟢</button>
+          <button onclick="filterNews('neg')"  id="nfBtn-neg"  class="period-btn">利空 🔴</button>
+          <button onclick="filterNews('neu')"  id="nfBtn-neu"  class="period-btn">中性 ⚪</button>
+        </div>
+
+        <!-- 新聞載入中 -->
+        <div id="newsLoading" class="hidden py-8 text-center">
+          <div class="news-spinner mb-3"></div>
+          <div class="text-slate-400 text-sm">搜尋新聞中...</div>
+        </div>
+
+        <!-- 新聞錯誤 -->
+        <div id="newsError" class="hidden rounded-xl bg-red-900/20 border border-red-700/40 p-4 text-sm text-red-300 text-center">
+          <i class="fa-solid fa-circle-exclamation mr-2"></i>
+          <span id="newsErrorMsg">載入失敗</span>
+        </div>
+
+        <!-- 新聞列表 -->
+        <div id="newsList" class="space-y-3"></div>
+
+        <!-- 無結果 -->
+        <div id="newsEmpty" class="hidden py-8 text-center text-slate-500">
+          <i class="fa-solid fa-magnifying-glass text-2xl mb-2 opacity-40"></i>
+          <div class="text-sm">目前無相關新聞</div>
+        </div>
+      </div>
+
+      <!-- 免責聲明 -->
+      <div class="rounded-xl bg-slate-800/50 border border-slate-700/50 p-3 text-xs text-slate-500">
+        <i class="fa-solid fa-circle-info mr-1"></i>
+        新聞來源為 Google News RSS，情緒判斷為關鍵字自動分析，僅供參考，不代表本系統立場。投資決策請以個人研究為準。
+      </div>
+    </div>
+
   </div><!-- /analysisSection -->
 </div><!-- /main -->
 
@@ -596,7 +686,21 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 // ════════════════════════════════════════════════════════════════
 let currentData   = null;
 let currentTab    = 'chart';
-let charts        = {};  // 儲存 Chart.js 實例
+let charts        = {};       // 儲存 Chart.js 實例
+let currentPeriod = 'D';      // 目前週期：D/W/2W/M/Q/6M/Y
+let allNewsData   = [];       // 所有新聞快取
+let newsFilter    = 'all';    // 新聞情緒過濾
+
+// 週期設定（name, 用於顯示及聚合倍數）
+const PERIOD_CFG = {
+  'D':  { name:'日線',  days:1,   ma:[5,20,60]  },
+  'W':  { name:'週線',  days:5,   ma:[5,13,26]  },
+  '2W': { name:'雙週線',days:10,  ma:[4,10,20]  },
+  'M':  { name:'月線',  days:21,  ma:[3,6,12]   },
+  'Q':  { name:'季線',  days:63,  ma:[2,4,8]    },
+  '6M': { name:'半年線',days:126, ma:[2,3,5]    },
+  'Y':  { name:'年線',  days:252, ma:[2,3,4]    },
+};
 
 // ════════════════════════════════════════════════════════════════
 // 載入熱門清單
@@ -763,9 +867,21 @@ function renderTechnical(data) {
     return `<span class="signal-tag ${cls}">${s}</span>`;
   }).join('');
 
-  // 繪製圖表
-  drawCandleChart(data);
-  drawVolumeChart(data);
+  // 繪製圖表（K線/成交量走週期版；MACD/RSI/KD維持日線）
+  currentPeriod = 'D';
+  // 重設週期按鈕
+  Object.keys(PERIOD_CFG).forEach(p => {
+    const btn = document.getElementById(`pbtn-${p}`);
+    if (btn) btn.classList.toggle('active', p === 'D');
+  });
+  const titleEl = document.getElementById('chartPeriodTitle');
+  if (titleEl) titleEl.textContent = 'K線圖（日線）';
+  ['ma1Label','ma2Label','ma3Label'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = 'MA' + PERIOD_CFG['D'].ma[i];
+  });
+  drawCandleChartPeriod(data, 'D');
+  drawVolumeChartPeriod(data, 'D');
   drawMACDChart(data);
   drawRSIChart(data);
   drawKDChart(data);
@@ -1138,6 +1254,384 @@ function renderScenario(data) {
 // 圖表繪製
 // ════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════
+// 週期聚合 & 技術指標重算
+// ════════════════════════════════════════════════════════════════
+
+// 簡易 SMA（處理 null）
+function smaSimple(arr, n) {
+  const res = new Array(arr.length).fill(null);
+  for (let i = n - 1; i < arr.length; i++) {
+    const win = arr.slice(i - n + 1, i + 1);
+    if (win.every(v => v != null)) res[i] = round2(win.reduce((a,b) => a+b, 0) / n);
+  }
+  return res;
+}
+
+// OHLCV 聚合（日線陣列 → 任意週期）
+function aggregateOHLCV(ohlcv, days) {
+  if (days <= 1) return ohlcv;
+  const result = [];
+  for (let i = 0; i < ohlcv.length; i += days) {
+    const chunk = ohlcv.slice(i, i + days);
+    if (!chunk.length) break;
+    result.push({
+      date:   chunk[chunk.length - 1].date,
+      open:   chunk[0].open,
+      high:   Math.max(...chunk.map(r => r.high)),
+      low:    Math.min(...chunk.map(r => r.low)),
+      close:  chunk[chunk.length - 1].close,
+      volume: chunk.reduce((s, r) => s + r.volume, 0),
+    });
+  }
+  return result;
+}
+
+// 由聚合後 OHLCV 計算 MA（3條）
+function calcMA(closes, maPeriods) {
+  return maPeriods.map(p => smaSimple(closes, p));
+}
+
+// 由日線原始資料建立週期圖表資料
+function buildPeriodChartData(rawData, period) {
+  const cfg   = PERIOD_CFG[period];
+  const daily = rawData.chart;
+
+  // 重建日線 OHLCV 陣列（從 chart 物件）
+  const dailyOHLCV = daily.dates.map((d, i) => ({
+    date:   d,
+    open:   daily.opens[i],
+    high:   daily.highs[i],
+    low:    daily.lows[i],
+    close:  daily.closes[i],
+    volume: daily.volumes[i],
+  }));
+
+  const agg   = aggregateOHLCV(dailyOHLCV, cfg.days);
+  const dates  = agg.map(r => r.date);
+  const opens  = agg.map(r => r.open);
+  const highs  = agg.map(r => r.high);
+  const lows   = agg.map(r => r.low);
+  const closes = agg.map(r => r.close);
+  const vols   = agg.map(r => r.volume);
+
+  const [ma1, ma2, ma3] = calcMA(closes, cfg.ma);
+
+  return { dates, opens, highs, lows, closes, volumes: vols, ma1, ma2, ma3, maPeriods: cfg.ma };
+}
+
+// 切換週期：重建圖表
+function setPeriod(period) {
+  if (!currentData) return;
+  currentPeriod = period;
+
+  // 更新按鈕狀態
+  Object.keys(PERIOD_CFG).forEach(p => {
+    const btn = document.getElementById(`pbtn-${p}`);
+    if (btn) btn.classList.toggle('active', p === period);
+  });
+
+  // 更新標題 & MA 圖例
+  const cfg = PERIOD_CFG[period];
+  const titleEl = document.getElementById('chartPeriodTitle');
+  if (titleEl) titleEl.textContent = `K線圖（${cfg.name}）`;
+  const ma1L = document.getElementById('ma1Label');
+  const ma2L = document.getElementById('ma2Label');
+  const ma3L = document.getElementById('ma3Label');
+  if (ma1L) ma1L.textContent = `MA${cfg.ma[0]}`;
+  if (ma2L) ma2L.textContent = `MA${cfg.ma[1]}`;
+  if (ma3L) ma3L.textContent = `MA${cfg.ma[2]}`;
+
+  // 重繪圖表
+  drawCandleChartPeriod(currentData, period);
+  drawVolumeChartPeriod(currentData, period);
+}
+
+// ── 重繪 K線圖（週期版）───────────────────────────────────────
+function drawCandleChartPeriod(data, period) {
+  const ch  = buildPeriodChartData(data, period);
+  const ctx = document.getElementById('candleChart');
+  if (charts.candle) { charts.candle.destroy(); charts.candle = null; }
+
+  // 決定顯示多少筆（螢幕適合 80~150 根K棒）
+  const MAX_BARS = 150;
+  const n = Math.min(ch.dates.length, MAX_BARS);
+  const offset = ch.dates.length - n;
+  const slice  = arr => arr.slice(offset);
+
+  const dates  = slice(ch.dates);
+  const closes = slice(ch.closes);
+  const opens  = slice(ch.opens);
+  const highs  = slice(ch.highs);
+  const lows   = slice(ch.lows);
+  const ma1    = slice(ch.ma1);
+  const ma2    = slice(ch.ma2);
+  const ma3    = slice(ch.ma3);
+  const cfg    = PERIOD_CFG[period];
+
+  charts.candle = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [
+        {
+          label: '收盤價',
+          data: closes,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,.06)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: true,
+          tension: .1,
+          order: 1,
+        },
+        {
+          label: `MA${cfg.ma[0]}`,
+          data: ma1,
+          borderColor: '#f59e0b',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: .3,
+          spanGaps: false,
+          order: 2,
+        },
+        {
+          label: `MA${cfg.ma[1]}`,
+          data: ma2,
+          borderColor: '#60a5fa',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: .3,
+          spanGaps: false,
+          order: 3,
+        },
+        {
+          label: `MA${cfg.ma[2]}`,
+          data: ma3,
+          borderColor: '#a78bfa',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: .3,
+          spanGaps: false,
+          order: 4,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 250 },
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color:'#94a3b8', font:{size:11}, boxWidth:20, usePointStyle:true }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const i = ctx.dataIndex;
+              if (ctx.datasetIndex === 0)
+                return [`開：${opens[i]}`, `高：${highs[i]}`, `低：${lows[i]}`, `收：${closes[i]}`];
+              return ctx.dataset.label + ': ' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '--');
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks:{ color:'#64748b', font:{size:10}, maxRotation:0, maxTicksLimit:14, autoSkip:true },
+             grid:{ color:'rgba(255,255,255,.04)' } },
+        y: { ticks:{ color:'#64748b', font:{size:10} }, grid:{ color:'rgba(255,255,255,.06)' } }
+      }
+    }
+  });
+}
+
+// ── 重繪成交量圖（週期版）────────────────────────────────────
+function drawVolumeChartPeriod(data, period) {
+  const ch  = buildPeriodChartData(data, period);
+  const ctx = document.getElementById('volumeChart');
+  if (charts.volume) { charts.volume.destroy(); charts.volume = null; }
+
+  const MAX_BARS = 150;
+  const n = Math.min(ch.dates.length, MAX_BARS);
+  const offset = ch.dates.length - n;
+  const dates  = ch.dates.slice(offset);
+  const vols   = ch.volumes.slice(offset);
+  const closes = ch.closes.slice(offset);
+  const bgColors = vols.map((_, i) =>
+    i === 0 || closes[i] >= closes[i-1] ? 'rgba(16,185,129,.7)' : 'rgba(239,68,68,.7)');
+
+  charts.volume = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: dates,
+      datasets: [{ label:'成交量', data: vols, backgroundColor: bgColors, borderWidth:0 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration:200 },
+      plugins: { legend:{display:false},
+        tooltip:{ callbacks:{ label: ctx => '成交量: ' + fmtVol(ctx.parsed.y) } } },
+      scales: {
+        x: { display:false },
+        y: { ticks:{ color:'#64748b', font:{size:9}, callback: v => fmtVol(v) },
+             grid:{ color:'rgba(255,255,255,.04)' } }
+      }
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// 個股新聞
+// ════════════════════════════════════════════════════════════════
+
+// 情緒關鍵字
+const NEWS_POS_KW = ['上漲','漲停','創高','獲利','增益','買進','強勢','突破','拉升','大漲',
+  '利多','轉盈','獲利增','法人買超','外資買','投信買','回升','反彈','新高'];
+const NEWS_NEG_KW = ['下跌','跌停','虧損','利空','賣出','弱勢','跌破','崩跌','大跌','衰退',
+  '減益','虧','轉虧','法人賣超','外資賣','投信賣','下修','警示'];
+
+function classifySentiment(text) {
+  const t = text || '';
+  let pos = 0, neg = 0;
+  NEWS_POS_KW.forEach(k => { if (t.includes(k)) pos++; });
+  NEWS_NEG_KW.forEach(k => { if (t.includes(k)) neg++; });
+  if (pos > neg) return 'pos';
+  if (neg > pos) return 'neg';
+  return 'neu';
+}
+
+function sentimentBadge(s) {
+  if (s === 'pos') return '<span class="news-sentiment-pos inline-block px-2 py-0.5 rounded text-xs font-bold">利多</span>';
+  if (s === 'neg') return '<span class="news-sentiment-neg inline-block px-2 py-0.5 rounded text-xs font-bold">利空</span>';
+  return '<span class="news-sentiment-neu inline-block px-2 py-0.5 rounded text-xs font-bold">中性</span>';
+}
+
+async function loadNews() {
+  if (!currentData) return;
+  const ticker = currentData.ticker;
+  const zhName = getStockNameZh(ticker);
+  const engName = currentData.name || ticker;
+  const displayName = zhName || engName;
+
+  // 更新新聞 ticker 標籤
+  const ntEl = document.getElementById('newsTicker');
+  if (ntEl) ntEl.textContent = `${ticker} ${displayName}`;
+
+  // 顯示載入
+  document.getElementById('newsLoading').classList.remove('hidden');
+  document.getElementById('newsError').classList.add('hidden');
+  document.getElementById('newsList').innerHTML = '';
+  document.getElementById('newsEmpty').classList.add('hidden');
+
+  // 查詢詞：用中文名（若有）+ 代碼
+  const queryTerms = [];
+  if (zhName) queryTerms.push(zhName);
+  queryTerms.push(`${ticker} 台灣股票`);
+  if (engName && engName !== ticker) queryTerms.push(engName.split(' ')[0]);
+
+  let articles = [];
+
+  for (const q of queryTerms) {
+    try {
+      const encoded = encodeURIComponent(q);
+      // 使用 allorigins 作為 CORS proxy 存取 Google News RSS
+      const rssUrl  = `https://news.google.com/rss/search?q=${encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) continue;
+      const json = await resp.json();
+      const xmlStr = json.contents || '';
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
+      const items  = Array.from(xmlDoc.querySelectorAll('item'));
+
+      items.slice(0, 15).forEach(item => {
+        const title   = item.querySelector('title')?.textContent?.trim()  || '';
+        const link    = item.querySelector('link')?.textContent?.trim()   || '#';
+        const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
+        const source  = item.querySelector('source')?.textContent?.trim() || 'Google News';
+        const desc    = item.querySelector('description')?.textContent?.replace(/<[^>]*>/g,'')?.trim() || '';
+
+        // 避免重複
+        if (!articles.find(a => a.title === title)) {
+          articles.push({ title, link, pubDate, source, desc,
+            sentiment: classifySentiment(title + ' ' + desc) });
+        }
+      });
+
+      if (articles.length >= 20) break;
+    } catch (e) {
+      console.warn('新聞載入失敗:', e.message);
+    }
+  }
+
+  document.getElementById('newsLoading').classList.add('hidden');
+
+  if (articles.length === 0) {
+    document.getElementById('newsEmpty').classList.remove('hidden');
+    return;
+  }
+
+  // 依時間排序（最新在前）
+  articles.sort((a, b) => {
+    const ta = new Date(a.pubDate).getTime() || 0;
+    const tb = new Date(b.pubDate).getTime() || 0;
+    return tb - ta;
+  });
+
+  allNewsData = articles;
+  renderNews(articles);
+}
+
+function renderNews(articles) {
+  const filtered = newsFilter === 'all'
+    ? articles
+    : articles.filter(a => a.sentiment === newsFilter);
+
+  document.getElementById('newsEmpty').classList.toggle('hidden', filtered.length > 0);
+
+  document.getElementById('newsList').innerHTML = filtered.map(a => {
+    // 格式化時間
+    let timeStr = '';
+    try {
+      const d = new Date(a.pubDate);
+      timeStr = d.toLocaleDateString('zh-TW', {month:'numeric',day:'numeric'}) + ' ' +
+                d.toLocaleTimeString('zh-TW', {hour:'2-digit',minute:'2-digit'});
+    } catch(e) { timeStr = a.pubDate.slice(0,16); }
+
+    return `
+    <div class="news-card" onclick="window.open('${a.link}','_blank')">
+      <div class="flex items-start justify-between gap-3 mb-2">
+        <div class="flex-1 font-bold text-sm text-white leading-snug hover:text-blue-300 transition">${a.title}</div>
+        <div class="shrink-0">${sentimentBadge(a.sentiment)}</div>
+      </div>
+      ${a.desc ? `<div class="text-xs text-slate-400 line-clamp-2 mb-2">${a.desc.slice(0,120)}${a.desc.length>120?'…':''}</div>` : ''}
+      <div class="flex items-center gap-3 text-xs">
+        <span class="news-source">${a.source}</span>
+        <span class="text-slate-500">${timeStr}</span>
+        <span class="text-blue-400 ml-auto hover:underline">閱讀全文 →</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterNews(sentiment) {
+  newsFilter = sentiment;
+  // 更新過濾按鈕
+  ['all','pos','neg','neu'].forEach(s => {
+    const btn = document.getElementById(`nfBtn-${s}`);
+    if (btn) btn.classList.toggle('active', s === sentiment);
+  });
+  if (allNewsData.length) renderNews(allNewsData);
+}
+
 function darkChartOpts(extra = {}) {
   return {
     responsive: true,
@@ -1370,13 +1864,15 @@ function drawKDChart(data) {
 // ════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  const tabs = ['chart','fundamental','chip','recommendation','montecarlo','scenario'];
+  const tabs = ['chart','fundamental','chip','recommendation','montecarlo','scenario','news'];
   tabs.forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn   = document.getElementById(`tab-${t}`);
     if (panel) panel.classList.toggle('hidden', t !== tab);
     if (btn)   btn.classList.toggle('active', t === tab);
   });
+  // 切換到新聞 Tab 時自動載入
+  if (tab === 'news' && currentData) loadNews();
 }
 
 // ════════════════════════════════════════════════════════════════
