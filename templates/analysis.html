@@ -1158,7 +1158,7 @@ function renderAll(data) {
 function renderHeader(data) {
   const l = data.latest;
   const up = l.change >= 0;
-  const color = up ? '#10b981' : '#ef4444';
+  const color = up ? '#ef4444' : '#10b981';  // 台灣慣例：漲紅跌綠
 
   // ── 股票代碼、中文名、英文名分開顯示 ──────────────────────────────
   const zhName  = getStockNameZh(data.ticker);
@@ -2059,21 +2059,28 @@ function renderGoodinfo(items) {
     return;
   }
   el.innerHTML = items.map(a => {
-    // 格式化時間
-    let timeStr = '';
+    // 格式化時間：支援 ISO、RFC、MM/DD HH:MM 等多種格式
+    let timeStr = a.pubDate || '';
     try {
-      const d = new Date(a.pubDate);
-      if (!isNaN(d.getTime())) {
-        timeStr = d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) + ' ' +
-                  d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+      // Goodinfo 回傳格式為 "MM/DD HH:MM"，直接顯示即可
+      if (/^\d{2}\/\d{2}\s+\d{2}:\d{2}$/.test(timeStr)) {
+        // 已是 MM/DD HH:MM，直接使用
+      } else {
+        const d = new Date(timeStr);
+        if (!isNaN(d.getTime())) {
+          timeStr = d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) + ' ' +
+                    d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+        }
       }
-    } catch(e) { timeStr = a.pubDate?.slice(0, 16) || ''; }
+    } catch(e) { /* 保留原始字串 */ }
 
     // 以關鍵字簡單分類公告類型
     const typeLabel = _giAnnoType(a.title);
+    // 安全處理連結（避免 javascript: 協議）
+    const safeLink = (a.link || '#').startsWith('http') ? a.link : '#';
 
     return `
-    <div class="news-card flex items-start gap-3" onclick="window.open('${a.link}','_blank')" style="cursor:pointer">
+    <div class="news-card flex items-start gap-3" onclick="window.open('${safeLink}','_blank')" style="cursor:pointer">
       <div class="shrink-0 mt-0.5">${typeLabel}</div>
       <div class="flex-1 min-w-0">
         <div class="font-bold text-sm text-white leading-snug hover:text-yellow-300 transition mb-1">${a.title}</div>

@@ -1318,13 +1318,16 @@ def get_stock_news(ticker):
 @app.route('/api/goodinfo/<ticker>', methods=['GET'])
 def get_goodinfo_news(ticker):
     """
-    從 Goodinfo RSS 取得個股最新訊息
-    RSS URL: https://goodinfo.tw/rss/StockNews.asp?STOCK_ID={ticker}
+    從 Goodinfo 公告列表頁面爬取個股最新訊息
+    目標頁面: https://goodinfo.tw/tw/StockAnnouncementList.asp?STOCK_ID={ticker}
+    使用 html.parser（Python 內建）解析，不依賴 BeautifulSoup
     """
     try:
         import requests as req
-        import xml.etree.ElementTree as ET
+        import html
+        import re as _re
         import time
+        from html.parser import HTMLParser
 
         ticker = ticker.strip().upper()
 
@@ -1334,56 +1337,109 @@ def get_goodinfo_news(ticker):
         if cached and (time.time() - cached.get('ts', 0)) < 300:
             return jsonify({'status': 'success', 'items': cached['data']})
 
-        rss_url = f'https://goodinfo.tw/rss/StockNews.asp?STOCK_ID={ticker}'
+        # ── 取得頁面 ─────────────────────────────────────────────
+        url = f'https://goodinfo.tw/tw/StockAnnouncementList.asp?STOCK_ID={ticker}'
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                           'AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/120.0.0.0 Safari/537.36',
-            'Referer':    'https://goodinfo.tw/',
-            'Accept':     'application/rss+xml, application/xml, text/xml, */*',
+                          'Chrome/124.0.0.0 Safari/537.36',
+            'Referer':    'https://goodinfo.tw/tw/index.asp',
+            'Accept':     'text/html,application/xhtml+xml,*/*',
+            'Accept-Language': 'zh-TW,zh;q=0.9',
         }
 
-        resp = req.get(rss_url, headers=headers, timeout=12)
+        resp = req.get(url, headers=headers, timeout=15)
+        resp.encoding = 'utf-8'
+
         if not resp.ok:
             return jsonify({
                 'status':  'error',
-                'message': f'Goodinfo 回應 HTTP {resp.status_code}'
+                'message': f'Goodinfo 回應 HTTP {resp.status_code}，可能封鎖了伺服器 IP'
             }), 502
 
-        root  = ET.fromstring(resp.content)
-        items = []
-        for item in root.findall('.//item')[:20]:
-            title = (item.findtext('title')   or '').strip()
-            link  = (item.findtext('link')    or '#').strip()
-            pub   = (item.findtext('pubDate') or '').strip()
-            desc  = (item.findtext('description') or '').strip()
-            import re as _re
-            desc = _re.sub(r'<[^>]+>', '', desc).strip()
-            if title:
-                items.append({
-                    'title':   title,
-                    'link':    link,
-                    'pubDate': pub,
-                    'desc':    desc[:150],
-                })
+        page_html = resp.text
 
-        # 依時間排序
-        def parse_dt(s):
-            try:
-                from email.utils import parsedate_to_datetime
-                return parsedate_to_datetime(s).timestamp()
-            except Exception:
-                return 0
-        items.sort(key=lambda a: parse_dt(a['pubDate']), reverse=True)
+        # ── 解析右側「最新訊息」區塊 ─────────────────────────────
+        # Goodinfo 最新訊息在 id="divAnnounceList" 或類似的 <table> 中
+        # 每筆格式：時間 | 標題（含連結）
+        items = []
+
+        # 先嘗試提取 <a> 連結中的公告標題（最新訊息區塊）
+        # 找出含有公告連結的 <tr> 行
+        # 典型格式: <tr>...<td>01/02 10:22</td><td><a href="...">標題</a></td></tr>
+        row_pattern = _re.compile(
+            r'<tr[^>]*>.*?'
+            r'<td[^>]*>\s*(\d{2}/\d{2}\s+\d{2}:\d{2})\s*</td>\s*'  # 時間
+            r'<td[^>]*>.*?<a\s+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>.*?</td>'  # 連結+標題
+            r'.*?</tr>',
+            _re.DOTALL | _re.IGNORECASE
+        )
+
+        seen = set()
+        for m in row_pattern.finditer(page_html):
+            time_str = m.group(1).strip()
+            href     = m.group(2).strip()
+            title    = _re.sub(r'<[^>]+>', '', m.group(3)).strip()
+            title    = html.unescape(title)
+
+            if not title or title in seen:
+                continue
+            seen.add(title)
+
+            # 補全相對連結
+            if href.startswith('http'):
+                link = href
+            else:
+                link = 'https://goodinfo.tw/tw/' + href.lstrip('/')
+
+            items.append({
+                'title':   title,
+                'link':    link,
+                'pubDate': time_str,   # 格式 MM/DD HH:MM
+                'desc':    '',
+            })
+
+        # ── 備援：若上述正則沒匹配到，改用更寬鬆的方式 ──────────
+        if not items:
+            # 找所有含 Anue/goodinfo 公告的 <a> 連結
+            loose = _re.compile(
+                r'(\d{2}/\d{2}\s+\d{2}:\d{2}).*?'
+                r'<a\s+href=["\']([^"\']*StockAnnounce[^"\']*)["\'][^>]*>(.*?)</a>',
+                _re.DOTALL | _re.IGNORECASE
+            )
+            for m in loose.finditer(page_html):
+                time_str = m.group(1).strip()
+                href     = m.group(2).strip()
+                title    = _re.sub(r'<[^>]+>', '', m.group(3)).strip()
+                title    = html.unescape(title)
+                if not title or title in seen:
+                    continue
+                seen.add(title)
+                link = href if href.startswith('http') else 'https://goodinfo.tw/tw/' + href.lstrip('/')
+                items.append({'title': title, 'link': link, 'pubDate': time_str, 'desc': ''})
+
+        if not items:
+            return jsonify({
+                'status':  'error',
+                'message': 'Goodinfo 頁面結構無法解析，可能已變更或被封鎖'
+            }), 502
+
+        # 最多回傳 20 筆
+        items = items[:20]
 
         analysis_cache[cache_key] = {'data': items, 'ts': time.time()}
         return jsonify({'status': 'success', 'items': items})
 
-    except ET.ParseError as e:
+    except req.exceptions.ConnectionError:
         return jsonify({
             'status':  'error',
-            'message': f'RSS 格式解析失敗，Goodinfo 可能封鎖此請求: {e}'
+            'message': 'Goodinfo 連線失敗（Render IP 可能被封鎖），請點右上角按鈕直接查看'
         }), 502
+    except req.exceptions.Timeout:
+        return jsonify({
+            'status':  'error',
+            'message': 'Goodinfo 連線逾時，請稍後再試'
+        }), 504
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
