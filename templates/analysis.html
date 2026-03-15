@@ -1859,7 +1859,27 @@ function drawCandleChartPeriod(data, period) {
           grid: { color:'rgba(255,255,255,.04)' }
         },
         y: {
-          ticks: { color:'#64748b', font:{size:10} },
+          // 依可見K棒的最高/最低價自動調整，加5%邊距，不從零開始
+          min: (function() {
+            const visLows  = lows.filter(v => v != null && v > 0);
+            if (!visLows.length) return undefined;
+            const minVal = Math.min(...visLows);
+            const maxVal = Math.max(...highs.filter(v => v != null));
+            const pad = (maxVal - minVal) * 0.05 || minVal * 0.02;
+            return Math.floor((minVal - pad) * 10) / 10;
+          })(),
+          max: (function() {
+            const visHighs = highs.filter(v => v != null && v > 0);
+            if (!visHighs.length) return undefined;
+            const minVal = Math.min(...lows.filter(v => v != null));
+            const maxVal = Math.max(...visHighs);
+            const pad = (maxVal - minVal) * 0.05 || maxVal * 0.02;
+            return Math.ceil((maxVal + pad) * 10) / 10;
+          })(),
+          ticks: {
+            color:'#64748b', font:{size:10},
+            callback: v => v.toLocaleString()   // 千位分隔，適合高價股
+          },
           grid:  { color:'rgba(255,255,255,.06)' }
         }
       }
@@ -2155,7 +2175,24 @@ function drawCandleChart(data) {
       scales: {
         x: { ticks:{ color:'#64748b', font:{size:10}, maxRotation:0, maxTicksLimit:12, autoSkip:true },
              grid:{ color:'rgba(255,255,255,.04)' } },
-        y: { ticks:{ color:'#64748b', font:{size:10} }, grid:{ color:'rgba(255,255,255,.06)' } }
+        y: {
+          min: (function() {
+            const vals = [...lows, ...closes].filter(v => v != null && v > 0);
+            if (!vals.length) return undefined;
+            const minVal = Math.min(...vals), maxVal = Math.max(...vals);
+            const pad = (maxVal - minVal) * 0.05 || minVal * 0.02;
+            return Math.floor((minVal - pad) * 10) / 10;
+          })(),
+          max: (function() {
+            const vals = [...highs, ...closes].filter(v => v != null && v > 0);
+            if (!vals.length) return undefined;
+            const minVal = Math.min(...vals), maxVal = Math.max(...vals);
+            const pad = (maxVal - minVal) * 0.05 || maxVal * 0.02;
+            return Math.ceil((maxVal + pad) * 10) / 10;
+          })(),
+          ticks:{ color:'#64748b', font:{size:10}, callback: v => v.toLocaleString() },
+          grid:{ color:'rgba(255,255,255,.06)' }
+        }
       }
     }
   });
