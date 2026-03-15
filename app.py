@@ -747,11 +747,32 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
         rating_bg    = '#fee2e2'
         rating_icon  = '⬇⬇'
 
-    # 目標價（簡單估算）
-    if ma20 and ma60:
-        target_price = round((ma20 * 0.6 + ma60 * 0.4) * (1 + max(total_score, 0) * 0.03), 1)
+    # ── 目標價（依評級給出不同含義）─────────────────────────────
+    # 基礎估值：均線加權（MA20×0.6 + MA60×0.4），反映中短期合理中心價
+    ma_center = round(ma20 * 0.6 + ma60 * 0.4, 1) if (ma20 and ma60) else None
+
+    if ma_center:
+        if total_score >= 3:
+            # 買進/強力買進：以均線中心向上估算，每多1分+3%
+            target_price = round(ma_center * (1 + (total_score - 2) * 0.03), 1)
+            target_type  = 'upside'    # 上漲目標
+            target_desc  = '上漲目標（均線+趨勢溢價）'
+        elif total_score >= 0:
+            # 持有：直接取均線中心，代表合理均衡價
+            target_price = ma_center
+            target_type  = 'fair'      # 合理估值
+            target_desc  = '合理估值（均線中心）'
+        else:
+            # 減碼/賣出：以均線中心向下估算，反映下行風險位
+            # total_score 為負，每少1分-2.5%，最多-15%
+            downside_pct = max(total_score * 0.025, -0.15)
+            target_price = round(ma_center * (1 + downside_pct), 1)
+            target_type  = 'downside'  # 下行風險目標
+            target_desc  = '下行風險位（均線-弱勢折價）'
     else:
         target_price = None
+        target_type  = 'none'
+        target_desc  = ''
 
     summary = _build_summary(ticker, close, trend, rating, reasons_buy, reasons_sell,
                               risks, div_yield, info)
@@ -768,6 +789,8 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
         'reasons_sell': reasons_sell,
         'risks':        risks,
         'target_price': target_price,
+        'target_type':  target_type,
+        'target_desc':  target_desc,
         'support':      support,
         'resist':       resist,
         'price_position': pos_pct,

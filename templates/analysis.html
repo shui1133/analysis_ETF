@@ -527,9 +527,10 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               <div class="text-2xl font-black" id="rec-total-score">--</div>
             </div>
           </div>
-          <div class="text-sm">
-            <div class="text-slate-400 mb-1">目標價（均線估算）</div>
-            <div class="text-2xl font-black text-yellow-400 mono" id="rec-target">--</div>
+          <div class="ind-card text-center px-5">
+            <div class="text-slate-400 text-xs mb-1" id="rec-target-label">均線估算目標</div>
+            <div class="text-2xl font-black mono" id="rec-target" style="color:#f59e0b">--</div>
+            <div class="text-xs mt-1" id="rec-target-desc" style="color:#64748b">元</div>
           </div>
         </div>
       </div>
@@ -1395,8 +1396,42 @@ function renderRecommendation(data) {
   document.getElementById('rec-fund-score').style.color  = rec.fund_score >= 0 ? '#10b981' : '#ef4444';
   document.getElementById('rec-total-score').style.color = rec.total_score >= 0 ? '#10b981' : '#ef4444';
 
-  document.getElementById('rec-target').textContent =
-    rec.target_price ? rec.target_price + ' 元' : 'N/A';
+  // ── 目標價（依 target_type 顯示不同顏色與標籤）────────────
+  const targetEl    = document.getElementById('rec-target');
+  const targetLabel = document.getElementById('rec-target-label');
+  const targetDesc  = document.getElementById('rec-target-desc');
+  if (rec.target_price) {
+    targetEl.textContent = rec.target_price + ' 元';
+    const tType = rec.target_type || 'fair';
+    if (tType === 'upside') {
+      targetEl.style.color   = '#10b981';
+      targetLabel.textContent = '⬆ 上漲目標價';
+      targetLabel.style.color = '#10b981';
+      const upPct = ((rec.target_price - close) / close * 100).toFixed(1);
+      targetDesc.textContent  = `潛在漲幅 +${upPct}%`;
+      targetDesc.style.color  = '#6ee7b7';
+    } else if (tType === 'downside') {
+      targetEl.style.color   = '#ef4444';
+      targetLabel.textContent = '⬇ 下行風險估值';
+      targetLabel.style.color = '#ef4444';
+      const dnPct = ((rec.target_price - close) / close * 100).toFixed(1);
+      targetDesc.textContent  = `下行空間 ${dnPct}%`;
+      targetDesc.style.color  = '#fca5a5';
+    } else {
+      targetEl.style.color   = '#f59e0b';
+      targetLabel.textContent = '➡ 合理估值';
+      targetLabel.style.color = '#f59e0b';
+      const diffPct = ((rec.target_price - close) / close * 100).toFixed(1);
+      targetDesc.textContent  = `均線中心 ${diffPct >= 0 ? '+' : ''}${diffPct}%`;
+      targetDesc.style.color  = '#fde68a';
+    }
+    // tooltip說明
+    targetEl.title = rec.target_desc || '';
+  } else {
+    targetEl.textContent = 'N/A';
+    targetEl.style.color = '#64748b';
+    if (targetDesc) targetDesc.textContent = '資料不足';
+  }
 
   const buyEl = document.getElementById('reasons-buy');
   buyEl.innerHTML = (rec.reasons_buy.length ? rec.reasons_buy : ['暫無明確買進訊號']).map(r =>
