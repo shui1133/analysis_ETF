@@ -1114,7 +1114,7 @@ function renderAll(data) {
 function renderHeader(data) {
   const l = data.latest;
   const up = l.change >= 0;
-  const color = up ? '#10b981' : '#ef4444';
+  const color = up ? '#ef4444' : '#10b981';  // 台灣慣例：漲紅跌綠
 
   // ── 股票代碼、中文名、英文名分開顯示 ──────────────────────────────
   const zhName  = getStockNameZh(data.ticker);
