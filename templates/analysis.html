@@ -356,7 +356,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <div class="flex gap-3 text-xs text-slate-400">
             <span><span class="text-blue-400">─</span> MACD線</span>
             <span><span class="text-orange-400">─</span> Signal線</span>
-            <span>柱狀：差值×2</span>
+            <span>柱狀：差值（OSC）</span>
           </div>
         </div>
         <div class="chart-wrap" style="height:160px">
@@ -2237,23 +2237,38 @@ function drawMACDChart(data) {
     data: {
       labels: data.chart.dates,
       datasets: [
-        { type:'line', label:'MACD', data: data.chart.macd, borderColor:'#3b82f6',
+        { type:'line', label:'MACD(DIF)', data: data.chart.macd, borderColor:'#3b82f6',
           borderWidth:1.5, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        { type:'line', label:'Signal', data: data.chart.macd_signal, borderColor:'#f97316',
+        { type:'line', label:'Signal(DEA)', data: data.chart.macd_signal, borderColor:'#f97316',
           borderWidth:1.5, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:2 },
-        { type:'bar',  label:'Histogram', data: hist, backgroundColor: histColors,
+        { type:'bar',  label:'OSC(柱狀)', data: hist, backgroundColor: histColors,
           borderWidth:0, order:3 },
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation:{duration:200},
       interaction:{mode:'index',intersect:false},
-      plugins:{ legend:{labels:{color:'#94a3b8',font:{size:10},boxWidth:16}},
-        tooltip:{ callbacks:{ label: ctx => ctx.dataset.label+': '+(ctx.parsed.y?.toFixed(4)??'--') } }
+      plugins:{
+        legend:{ labels:{ color:'#94a3b8', font:{size:10}, boxWidth:16 } },
+        tooltip:{
+          callbacks:{
+            label: ctx => {
+              const v = ctx.parsed.y;
+              return ctx.dataset.label + ': ' + (v != null ? v.toFixed(4) : '--');
+            }
+          }
+        }
       },
       scales: {
         x: { display:false },
-        y: { ticks:{ color:'#64748b', font:{size:9} }, grid:{ color:'rgba(255,255,255,.05)' } }
+        y: {
+          ticks:{ color:'#64748b', font:{size:9} },
+          grid:{
+            color: ctx => ctx.tick.value === 0
+              ? 'rgba(255,255,255,0.25)'   // 零軸加亮顯示
+              : 'rgba(255,255,255,.05)'
+          }
+        }
       }
     }
   });
@@ -2278,8 +2293,14 @@ function drawRSIChart(data) {
       },
       scales: {
         x: { display:false },
-        y: { min:0, max:100, ticks:{ color:'#64748b',font:{size:9}, stepSize:20 },
-             grid:{ color:'rgba(255,255,255,.04)' } }
+        y: { min:0, max:100,
+             ticks:{ color:'#64748b', font:{size:9}, stepSize:20 },
+             grid:{
+               color: ctx => ctx.tick.value === 50
+                 ? 'rgba(255,255,255,0.2)'   // RSI 50 中線加亮
+                 : 'rgba(255,255,255,.04)'
+             }
+           }
       }
     }
   });
