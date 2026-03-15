@@ -55,18 +55,6 @@
         /* ETF明細表動畫 */
         #cashflowSection {
             transition: all 0.3s ease-in-out;
-            overflow: hidden;
-        }
-        #cashflowSection.collapsed {
-            max-height: 0;
-            padding: 0;
-            margin: 0;
-            border: none;
-            opacity: 0;
-        }
-        #cashflowSection.expanded {
-            max-height: 5000px;
-            opacity: 1;
         }
         
         /* 重複標頭列 */
@@ -452,6 +440,16 @@
                 <div id="reportDetailSection" style="overflow:hidden;max-height:0;opacity:0;transition:max-height .45s ease,opacity .3s ease;">
 
                 <div class="px-6 pb-6">
+
+                <!-- 下載回測及推估CSV報表按鈕（展開後頂部） -->
+                <div id="downloadBacktestWrapper" class="hidden mb-4">
+                    <button onclick="downloadCSV()"
+                            class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-5 rounded-xl shadow transition flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv"></i>
+                        下載回測及推估CSV報表
+                    </button>
+                </div>
+
                 <!-- Tab 0：持續投入推估（原有） -->
                 <div id="reportTab0">
                     <div class="flex gap-2 mb-3 flex-wrap items-center">
@@ -541,36 +539,36 @@
                 </div><!-- /reportDetailSection -->
             </div>
 
-            <!-- 下載回測及推估CSV報表按鈕 -->
-            <div id="downloadBacktestWrapper" class="mb-2 text-center hidden">
-                <button onclick="downloadCSV()"
-                        class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
-                    <i class="fa-solid fa-file-csv mr-2"></i>
-                    下載回測及推估CSV報表
-                </button>
-            </div>
+            <!-- 完整現金流分析報表（與年度投資報表同樣 toggle 風格） -->
+            <div id="cashflowSection" class="bg-white rounded-2xl border border-slate-200" style="display:none;">
+                <!-- 標題列（預設顯示，點擊展開/收合） -->
+                <div class="flex flex-wrap justify-between items-center p-6 pb-4 gap-3">
+                    <h2 class="font-bold text-lg text-slate-800 flex items-center cursor-pointer select-none" onclick="toggleCashflowSection()">
+                        <i class="fa-solid fa-money-bill-trend-up mr-2 text-pink-600"></i>
+                        <span>完整現金流分析</span>
+                        <i id="cashflowToggleIcon" class="fa-solid fa-chevron-down ml-2 text-sm text-slate-400 transition-transform duration-300"></i>
+                    </h2>
+                    <button class="flex items-center gap-1.5 bg-pink-50 hover:bg-pink-100 text-pink-700 font-bold text-xs px-3 py-1.5 rounded-lg border border-pink-200 transition"
+                            onclick="toggleCashflowSection()">
+                        <span id="cashflowToggleText">展開明細</span>
+                    </button>
+                </div>
 
-            <!-- 完整現金流分析按鈕 -->
-            <div id="cashflowBtnWrapper" class="mb-4" style="display:none;">
-                <button id="btnCashflowAnalysis"
-                        onclick="toggleCashflowAnalysis()"
-                        class="bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
-                    <i class="fa-solid fa-money-bill-wave mr-2"></i>
-                    完整現金流分析
-                </button>
-            </div>
+                <!-- 可折疊區 -->
+                <div id="cashflowDetailSection" style="overflow:hidden;max-height:0;opacity:0;transition:max-height .45s ease,opacity .3s ease;">
+                <div class="px-6 pb-6">
 
-            <!-- 完整現金流分析報表 -->
-            <div id="cashflowSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed">
-                <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
-                    <i class="fa-solid fa-money-bill-trend-up mr-2 text-purple-600"></i>
-                    <span>完整現金流分析報表</span>
-                </h2>
-                
-                <!-- ETF選擇器 -->
-                <div class="mb-4">
-                    <label class="block text-sm font-bold text-slate-700 mb-2">選擇ETF查看詳細記錄：</label>
-                    <div class="flex gap-2" id="cashflowETFSelector"></div>
+                <!-- 頂部工具列：ETF選擇器 + 下載按鈕 -->
+                <div class="flex flex-wrap justify-between items-end gap-3 mb-4">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">選擇ETF查看詳細記錄：</label>
+                        <div class="flex gap-2 flex-wrap" id="cashflowETFSelector"></div>
+                    </div>
+                    <button onclick="downloadCashflowCSV()"
+                            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-5 rounded-xl shadow transition flex items-center gap-2 shrink-0">
+                        <i class="fa-solid fa-download"></i>
+                        下載現金流CSV
+                    </button>
                 </div>
 
                 <!-- 現金流分析表格 -->
@@ -629,14 +627,9 @@
                     </div>
                 </div>
 
-                <!-- 下載按鈕 -->
-                <div class="mt-4 text-center">
-                    <button onclick="downloadCashflowCSV()"
-                            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
-                        <i class="fa-solid fa-download mr-2"></i>
-                        下載現金流CSV
-                    </button>
-                </div>
+
+            </div><!-- /cashflowDetailSection inner -->
+                </div><!-- /cashflowDetailSection -->
             </div>
 
             <!-- 退休後情境比較摘要（獨立區塊） -->
@@ -724,6 +717,28 @@
     function getStockNameZh(ticker) {
         return STOCK_NAMES_ZH[ticker] || null;
     }
+
+    // ── 完整現金流分析折疊 ─────────────────────────────────────────
+    let _cashflowOpen = false;
+    function toggleCashflowSection() {
+        const section = document.getElementById('cashflowDetailSection');
+        const icon    = document.getElementById('cashflowToggleIcon');
+        const text    = document.getElementById('cashflowToggleText');
+        _cashflowOpen = !_cashflowOpen;
+        if (_cashflowOpen) {
+            section.style.maxHeight = section.scrollHeight + 5000 + 'px';
+            section.style.opacity   = '1';
+            if (icon) icon.style.transform = 'rotate(180deg)';
+            if (text) text.textContent = '收合明細';
+        } else {
+            section.style.maxHeight = '0';
+            section.style.opacity   = '0';
+            if (icon) icon.style.transform = 'rotate(0deg)';
+            if (text) text.textContent = '展開明細';
+        }
+    }
+    // 舊的 toggleCashflowAnalysis 保留作 alias，避免其他地方呼叫出錯
+    function toggleCashflowAnalysis() { toggleCashflowSection(); }
 
     // ── 年度投資報表折疊 ─────────────────────────────────────────
     let _reportOpen = false;
@@ -1275,13 +1290,13 @@
             updateScenarioSection(result.scenarios);
         }
 
-        // 現金流按鈕顯示
-        const btnWrapper = document.getElementById('cashflowBtnWrapper');
-        if (btnWrapper) btnWrapper.style.display = 'block';
+        // 現金流區塊顯示（整合式 toggle 標題列）
+        const cfSection = document.getElementById('cashflowSection');
+        if (cfSection) cfSection.style.display = 'block';
 
         // 年度報表預設折疊，使用者手動展開
 
-        // 顯示下載回測CSV按鈕
+        // 顯示年度報表內容區頂部的下載回測CSV按鈕
         const dlWrapper = document.getElementById('downloadBacktestWrapper');
         if (dlWrapper) dlWrapper.classList.remove('hidden');
 
@@ -1821,8 +1836,7 @@
                 : '<tr><td colspan="7" class="p-4 text-center text-slate-400">尚未達到退休門檻</td></tr>');
         }
 
-        // 資料更新後自動展開摘要區塊
-        openRetireSummarySection();
+        // 退休後情境比較摘要：預設保持折疊，使用者手動展開
     }
 
     // ── 更新年度報表表格 ──────────────────────────────────────────
@@ -1922,18 +1936,7 @@
         window.location.href = '/api/download_csv/' + currentStrategy;
     }
 
-    // ── 切換現金流分析顯示 ───────────────────────────────────────
-    function toggleCashflowAnalysis() {
-        const section = document.getElementById('cashflowSection');
-        if (section.classList.contains('collapsed')) {
-            section.classList.remove('collapsed');
-            section.classList.add('expanded');
-            setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
-        } else {
-            section.classList.remove('expanded');
-            section.classList.add('collapsed');
-        }
-    }
+
 
     // ══════════════════════════════════════════════════════════════
     // updateCashflowAnalysis - 新版（對應 etf_tracking 欄位名稱）
@@ -1954,8 +1957,6 @@
         const etfKeys = (currentStrategy === 'custom' && backtestResult.etf_weights)
             ? Object.keys(backtestResult.etf_weights)
             : Object.keys(config.etfs);
-        const btnWrapper = document.getElementById('cashflowBtnWrapper');
-        if (btnWrapper) btnWrapper.style.display = 'block';
 
         // ETF 選擇器
         let selectorHTML = '';
