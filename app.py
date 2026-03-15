@@ -1219,6 +1219,176 @@ def sim_analysis(ticker):
         return jsonify({'status':'error','message': str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════
+# 新聞 API（後端爬取，避免前端 CORS 問題）
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/news/<ticker>', methods=['GET'])
+def get_stock_news(ticker):
+    """
+    從 Google News RSS 取得個股新聞
+    後端爬取後回傳 JSON，解決 Render 環境前端 CORS Proxy 失敗問題
+    """
+    try:
+        import requests as req
+        import xml.etree.ElementTree as ET
+        import time
+
+        ticker  = ticker.strip().upper()
+
+        # 快取 5 分鐘
+        cache_key = f'news_{ticker}'
+        cached    = analysis_cache.get(cache_key)
+        if cached and (time.time() - cached.get('ts', 0)) < 300:
+            return jsonify({'status': 'success', 'articles': cached['data']})
+
+        from data_fetcher import STOCK_NAMES_ZH_BACKEND
+        zh_name = STOCK_NAMES_ZH_BACKEND.get(ticker, '')
+
+        # 依序嘗試多個查詢詞
+        query_terms = []
+        if zh_name:
+            query_terms.append(zh_name)
+        query_terms.append(f'{ticker} 台灣股票')
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+        }
+
+        articles = []
+        seen_titles = set()
+
+        for q in query_terms:
+            try:
+                rss_url = (
+                    f'https://news.google.com/rss/search'
+                    f'?q={req.utils.quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant'
+                )
+                resp = req.get(rss_url, headers=headers, timeout=12)
+                if not resp.ok:
+                    continue
+
+                root = ET.fromstring(resp.content)
+                for item in root.findall('.//item')[:15]:
+                    title   = (item.findtext('title')   or '').strip()
+                    link    = (item.findtext('link')    or '#').strip()
+                    pub     = (item.findtext('pubDate') or '').strip()
+                    source  = (item.findtext('source')  or 'Google News').strip()
+                    desc    = (item.findtext('description') or '').strip()
+                    # 移除 HTML 標籤
+                    import re as _re
+                    desc = _re.sub(r'<[^>]+>', '', desc).strip()
+
+                    if title and title not in seen_titles:
+                        seen_titles.add(title)
+                        articles.append({
+                            'title':   title,
+                            'link':    link,
+                            'pubDate': pub,
+                            'source':  source,
+                            'desc':    desc[:150],
+                        })
+
+                if len(articles) >= 20:
+                    break
+            except Exception as e:
+                print(f'  Google News 查詢「{q}」失敗: {e}')
+                continue
+
+        # 依時間排序（最新在前）
+        def parse_dt(s):
+            try:
+                from email.utils import parsedate_to_datetime
+                return parsedate_to_datetime(s).timestamp()
+            except Exception:
+                return 0
+        articles.sort(key=lambda a: parse_dt(a['pubDate']), reverse=True)
+
+        analysis_cache[cache_key] = {'data': articles, 'ts': time.time()}
+        return jsonify({'status': 'success', 'articles': articles})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/goodinfo/<ticker>', methods=['GET'])
+def get_goodinfo_news(ticker):
+    """
+    從 Goodinfo RSS 取得個股最新訊息
+    RSS URL: https://goodinfo.tw/rss/StockNews.asp?STOCK_ID={ticker}
+    """
+    try:
+        import requests as req
+        import xml.etree.ElementTree as ET
+        import time
+
+        ticker = ticker.strip().upper()
+
+        # 快取 5 分鐘
+        cache_key = f'goodinfo_{ticker}'
+        cached    = analysis_cache.get(cache_key)
+        if cached and (time.time() - cached.get('ts', 0)) < 300:
+            return jsonify({'status': 'success', 'items': cached['data']})
+
+        rss_url = f'https://goodinfo.tw/rss/StockNews.asp?STOCK_ID={ticker}'
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/120.0.0.0 Safari/537.36',
+            'Referer':    'https://goodinfo.tw/',
+            'Accept':     'application/rss+xml, application/xml, text/xml, */*',
+        }
+
+        resp = req.get(rss_url, headers=headers, timeout=12)
+        if not resp.ok:
+            return jsonify({
+                'status':  'error',
+                'message': f'Goodinfo 回應 HTTP {resp.status_code}'
+            }), 502
+
+        root  = ET.fromstring(resp.content)
+        items = []
+        for item in root.findall('.//item')[:20]:
+            title = (item.findtext('title')   or '').strip()
+            link  = (item.findtext('link')    or '#').strip()
+            pub   = (item.findtext('pubDate') or '').strip()
+            desc  = (item.findtext('description') or '').strip()
+            import re as _re
+            desc = _re.sub(r'<[^>]+>', '', desc).strip()
+            if title:
+                items.append({
+                    'title':   title,
+                    'link':    link,
+                    'pubDate': pub,
+                    'desc':    desc[:150],
+                })
+
+        # 依時間排序
+        def parse_dt(s):
+            try:
+                from email.utils import parsedate_to_datetime
+                return parsedate_to_datetime(s).timestamp()
+            except Exception:
+                return 0
+        items.sort(key=lambda a: parse_dt(a['pubDate']), reverse=True)
+
+        analysis_cache[cache_key] = {'data': items, 'ts': time.time()}
+        return jsonify({'status': 'success', 'items': items})
+
+    except ET.ParseError as e:
+        return jsonify({
+            'status':  'error',
+            'message': f'RSS 格式解析失敗，Goodinfo 可能封鎖此請求: {e}'
+        }), 502
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("=" * 60)

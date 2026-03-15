@@ -2023,46 +2023,30 @@ async function loadGoodinfo() {
   document.getElementById('giList').innerHTML = '';
   document.getElementById('giEmpty').classList.add('hidden');
 
-  const rssUrl = `https://goodinfo.tw/rss/StockNews.asp?STOCK_ID=${ticker}`;
-  let items = [];
-
   try {
-    const xmlStr = await fetchRssWithFallback(rssUrl);
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
+    // ── 呼叫後端 API（後端直接爬 Goodinfo RSS，避免 CORS 問題）──
+    const resp = await fetch(`/api/goodinfo/${encodeURIComponent(ticker)}`,
+                             { signal: AbortSignal.timeout(15000) });
+    const json = await resp.json();
 
-    // 檢查是否為有效 RSS（Goodinfo 封鎖時會回傳非 XML）
-    const parseErr = xmlDoc.querySelector('parsererror');
-    if (parseErr) throw new Error('RSS 格式解析失敗（可能被封鎖）');
+    document.getElementById('giLoading').classList.add('hidden');
 
-    Array.from(xmlDoc.querySelectorAll('item')).slice(0, 20).forEach(item => {
-      const title   = item.querySelector('title')?.textContent?.trim()   || '';
-      const link    = item.querySelector('link')?.textContent?.trim()    || '#';
-      const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
-      const desc    = item.querySelector('description')?.textContent
-                        ?.replace(/<[^>]*>/g, '')?.trim() || '';
-      if (title) items.push({ title, link, pubDate, desc });
-    });
+    if (json.status !== 'success' || !json.items || json.items.length === 0) {
+      document.getElementById('giError').classList.remove('hidden');
+      document.getElementById('giErrorMsg').textContent =
+        `無法載入 ${ticker} 的 Goodinfo 訊息，請點右上角按鈕直接查看`;
+      return;
+    }
+
+    renderGoodinfo(json.items);
+
   } catch (e) {
-    console.warn('Goodinfo RSS 載入失敗:', e.message);
-  }
-
-  document.getElementById('giLoading').classList.add('hidden');
-
-  if (items.length === 0) {
-    // 顯示錯誤提示（附直接連結）
+    document.getElementById('giLoading').classList.add('hidden');
     document.getElementById('giError').classList.remove('hidden');
     document.getElementById('giErrorMsg').textContent =
-      `無法自動載入 ${ticker} 的 Goodinfo 訊息，請點右上角按鈕直接查看`;
-    return;
+      `Goodinfo 訊息載入逾時，請點右上角按鈕直接查看`;
+    console.warn('loadGoodinfo 失敗:', e.message);
   }
-
-  // 依時間排序（最新在前）
-  items.sort((a, b) => {
-    return (new Date(b.pubDate).getTime() || 0) - (new Date(a.pubDate).getTime() || 0);
-  });
-
-  renderGoodinfo(items);
 }
 
 /**
@@ -2179,65 +2163,36 @@ async function loadNews() {
   document.getElementById('newsList').innerHTML = '';
   document.getElementById('newsEmpty').classList.add('hidden');
 
-  // 查詢詞：用中文名（若有）+ 代碼
-  const queryTerms = [];
-  if (zhName) queryTerms.push(zhName);
-  queryTerms.push(`${ticker} 台灣股票`);
-  if (engName && engName !== ticker) queryTerms.push(engName.split(' ')[0]);
+  try {
+    // ── 呼叫後端 API（後端直接爬 Google News RSS，避免 CORS 問題）──
+    const resp = await fetch(`/api/news/${encodeURIComponent(ticker)}`,
+                             { signal: AbortSignal.timeout(20000) });
+    const json = await resp.json();
 
-  let articles = [];
+    document.getElementById('newsLoading').classList.add('hidden');
 
-  for (const q of queryTerms) {
-    try {
-      const encoded = encodeURIComponent(q);
-      const rssUrl  = `https://news.google.com/rss/search?q=${encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-
-      // 使用多備援 Proxy 取得 RSS
-      const xmlStr = await fetchRssWithFallback(rssUrl);
-
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
-      const items  = Array.from(xmlDoc.querySelectorAll('item'));
-
-      items.slice(0, 15).forEach(item => {
-        const title   = item.querySelector('title')?.textContent?.trim()  || '';
-        const link    = item.querySelector('link')?.textContent?.trim()   || '#';
-        const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
-        const source  = item.querySelector('source')?.textContent?.trim() || 'Google News';
-        const desc    = item.querySelector('description')?.textContent?.replace(/<[^>]*>/g,'')?.trim() || '';
-
-        // 避免重複
-        if (title && !articles.find(a => a.title === title)) {
-          articles.push({ title, link, pubDate, source, desc,
-            sentiment: classifySentiment(title + ' ' + desc) });
-        }
-      });
-
-      if (articles.length >= 20) break;
-    } catch (e) {
-      console.warn(`新聞查詢「${q}」失敗:`, e.message);
+    if (json.status !== 'success' || !json.articles || json.articles.length === 0) {
+      document.getElementById('newsError').classList.remove('hidden');
+      document.getElementById('newsErrorMsg').textContent =
+        json.message || '目前無法取得新聞，請稍後再試。';
+      return;
     }
-  }
 
-  document.getElementById('newsLoading').classList.add('hidden');
+    // 加上情緒分類後渲染
+    const articles = json.articles.map(a => ({
+      ...a,
+      sentiment: classifySentiment(a.title + ' ' + (a.desc || ''))
+    }));
 
-  if (articles.length === 0) {
-    // 顯示錯誤提示（而非無聲的「無新聞」）
+    allNewsData = articles;
+    renderNews(articles);
+
+  } catch (e) {
+    document.getElementById('newsLoading').classList.add('hidden');
     document.getElementById('newsError').classList.remove('hidden');
-    document.getElementById('newsErrorMsg').textContent =
-      '無法連線到新聞來源，請檢查網路或稍後重試。';
-    return;
+    document.getElementById('newsErrorMsg').textContent = '新聞載入逾時，請稍後重試。';
+    console.warn('loadNews 失敗:', e.message);
   }
-
-  // 依時間排序（最新在前）
-  articles.sort((a, b) => {
-    const ta = new Date(a.pubDate).getTime() || 0;
-    const tb = new Date(b.pubDate).getTime() || 0;
-    return tb - ta;
-  });
-
-  allNewsData = articles;
-  renderNews(articles);
 }
 
 function renderNews(articles) {
