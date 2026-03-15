@@ -1,6 +1,8 @@
 """
-Flask Web應用主程式 V3
-台灣ETF投資分析系統 - 整合個股效益分析V3
+Flask Web應用主程式 V4
+台灣ETF/股票投資分析系統
+新增：股票分析頁 API（OHLCV、技術指標、投資建議）
+調整：蒙地卡羅/情境分析資料仍由後端計算，由新頁面 analysis.html 呈現
 """
 
 from flask import Flask, render_template, request, jsonify, send_file
@@ -10,11 +12,12 @@ import json
 import os
 import platform
 import numpy as np
-from data_fetcher import ETFDataFetcher, get_data_dir
+from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
 import io
 
 app = Flask(__name__)
+
 
 # 修復 numpy int32/float32/ndarray 無法 JSON 序列化的問題（Flask 3.x）
 class NumpyJSONProvider(DefaultJSONProvider):
@@ -27,6 +30,7 @@ class NumpyJSONProvider(DefaultJSONProvider):
             return obj.tolist()
         return super().default(obj)
 
+
 app.json_provider_class = NumpyJSONProvider
 app.json = NumpyJSONProvider(app)
 
@@ -35,59 +39,67 @@ DATA_DIR = get_data_dir()
 print(f"資料目錄: {DATA_DIR}")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# 全域變數
-cached_results = {}
-etf_memory_cache = {}
+# 全域快取
+cached_results    = {}
+etf_memory_cache  = {}
+analysis_cache    = {}   # 股票分析快取（key=ticker）
 
+
+# ═══════════════════════════════════════════════════════════════
+# 頁面路由
+# ═══════════════════════════════════════════════════════════════
 
 @app.route('/')
 def index():
-    """首頁"""
+    """主頁（退休規劃回測）"""
     return render_template('index.html')
 
+
+@app.route('/analysis')
+def analysis():
+    """股票分析頁"""
+    return render_template('analysis.html')
+
+
+# ═══════════════════════════════════════════════════════════════
+# 原有 API（回測系統）
+# ═══════════════════════════════════════════════════════════════
 
 @app.route('/api/fetch_data', methods=['POST'])
 def fetch_data():
     """爬取ETF資料API"""
     try:
-        data = request.json
+        data         = request.json
         portfolio_type = data.get('portfolio_type', 'conservative')
 
         portfolio_etfs = {
             'conservative': ['00878', '00713', '00679B'],
-            'balanced': ['00919', '00929', '0056'],
-            'aggressive': ['006208', '00929', '00915']
+            'balanced':     ['00919', '00929', '0056'],
+            'aggressive':   ['006208', '00929', '00915']
         }
-
         etf_list = portfolio_etfs.get(portfolio_type, [])
+        fetcher  = ETFDataFetcher(output_dir=DATA_DIR)
+        results  = fetcher.fetch_all_etfs(etf_list)
 
-        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
-        results = fetcher.fetch_all_etfs(etf_list)
-
-        for etf_code, etf_data in results.items():
+        for code, etf_data in results.items():
             if etf_data is not None:
-                etf_memory_cache[etf_code] = etf_data
+                etf_memory_cache[code] = etf_data
 
         success_count = sum(1 for r in results.values() if r is not None)
-
         return jsonify({
-            'status': 'success',
+            'status':  'success',
             'message': f'成功爬取 {success_count}/{len(etf_list)} 支ETF資料',
             'results': {k: (v is not None) for k, v in results.items()}
         })
-
     except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/fetch_custom', methods=['POST'])
 def fetch_custom():
-    """爬取自訂台灣上市股票/ETF資料（2~5支，一次性批量取得）"""
+    """爬取自訂台灣上市股票/ETF資料"""
     try:
-        data = request.json
+        data        = request.json
         tickers_raw = data.get('tickers', [])
 
         if not tickers_raw or len(tickers_raw) < 2:
@@ -101,11 +113,9 @@ def fetch_custom():
 
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
 
-        # ── 一次性批量取得所有股票資料，避免各自取得過程中發生失敗 ──
         try:
             batch_results = fetcher.fetch_all_etfs(tickers)
-        except Exception as batch_err:
-            # 若 fetch_all_etfs 不支援，退回逐一取得
+        except Exception:
             batch_results = {}
             for ticker in tickers:
                 try:
@@ -129,30 +139,29 @@ def fetch_custom():
             failed_codes = [f['ticker'] for f in failed]
             is_network = any('網路連線失敗' in (f['reason'] or '') for f in failed)
             if is_network:
-                hint = '⚠️ 伺服器無法連接 Yahoo Finance，請確認 Render 環境允許對外連線，或稍後再試。'
+                hint = '⚠️ 伺服器無法連接 Yahoo Finance，請確認網路環境或稍後再試。'
             else:
                 details = '、'.join(
                     f"{f['ticker']}（{f['reason'][:40]}）" if f['reason'] else f['ticker']
                     for f in failed
                 )
-                hint = f"無法取得股價資料：{details}。請確認代碼格式正確（台灣上市輸入如 2330、00878，不含 .TW）"
+                hint = f"無法取得股價資料：{details}。請確認代碼格式正確（台灣上市輸入如 2330、00878）"
             return jsonify({
-                'status': 'error',
+                'status':  'error',
                 'message': hint,
-                'failed': failed_codes,
+                'failed':  failed_codes,
                 'success': list(results.keys())
             }), 422
 
         return jsonify({
-            'status': 'success',
+            'status':  'success',
             'message': f'成功取得 {len(results)} 支股票資料',
             'tickers': tickers,
             'results': {k: True for k in results}
         })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
@@ -160,53 +169,47 @@ def restore_cache_to_disk():
     """從記憶體快取還原資料到磁碟"""
     if not etf_memory_cache:
         return 0
-
     restored = 0
-    for etf_code, etf_data in etf_memory_cache.items():
+    for code, etf_data in etf_memory_cache.items():
         try:
             if etf_data.get('price_data'):
                 price_df = pd.DataFrame(etf_data['price_data'])
                 price_df = price_df.rename(columns={'date': '日期', 'close': '收盤價'})
-                price_path = os.path.join(DATA_DIR, f"{etf_code}_price.csv")
-                price_df.to_csv(price_path, index=False, encoding='utf-8-sig')
-
+                price_df.to_csv(
+                    os.path.join(DATA_DIR, f"{code}_price.csv"),
+                    index=False, encoding='utf-8-sig'
+                )
             if etf_data.get('dividend_data'):
                 div_df = pd.DataFrame(etf_data['dividend_data'])
                 div_df = div_df.rename(columns={'date': '除息日', 'dividend': '股利'})
-                div_path = os.path.join(DATA_DIR, f"{etf_code}_hist_配息.csv")
-                div_df.to_csv(div_path, index=False, encoding='utf-8-sig')
-
-            json_path = os.path.join(DATA_DIR, f"{etf_code}_data.json")
+                div_df.to_csv(
+                    os.path.join(DATA_DIR, f"{code}_hist_配息.csv"),
+                    index=False, encoding='utf-8-sig'
+                )
+            json_path = os.path.join(DATA_DIR, f"{code}_data.json")
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(etf_data, f, ensure_ascii=False, indent=2)
-
-            print(f"✅ 已從記憶體還原 {etf_code} 資料到磁碟")
             restored += 1
-
         except Exception as e:
-            print(f"⚠️ 還原 {etf_code} 失敗: {e}")
-
+            print(f"⚠️ 還原 {code} 失敗: {e}")
     return restored
 
 
 @app.route('/api/backtest', methods=['POST'])
 def run_backtest():
-    """執行回測API（使用V3版本）"""
+    """執行回測API（V3版本）"""
     try:
         data = request.json
 
-        portfolio_type = data.get('portfolio_type', 'conservative')
-        initial_capital = int(data.get('initial_capital', 100)) * 10000
-        monthly_investment = int(data.get('monthly_investment', 3)) * 10000
-        current_age = int(data.get('current_age', 30))
-        target_monthly_spend = int(data.get('target_monthly_spend', 4)) * 10000
+        portfolio_type        = data.get('portfolio_type', 'conservative')
+        initial_capital       = int(data.get('initial_capital', 100)) * 10000
+        monthly_investment    = int(data.get('monthly_investment', 3)) * 10000
+        current_age           = int(data.get('current_age', 30))
+        target_monthly_spend  = int(data.get('target_monthly_spend', 4)) * 10000
+        custom_tickers        = data.get('custom_tickers', None)
+        custom_weights        = data.get('custom_weights', None)
+        custom_withdrawal_rate= float(data.get('custom_withdrawal_rate', 0.04))
 
-        # 自訂模式
-        custom_tickers = data.get('custom_tickers', None)
-        custom_weights = data.get('custom_weights', None)
-        custom_withdrawal_rate = float(data.get('custom_withdrawal_rate', 0.04))
-
-        # 決定需要的 ETF 清單
         if portfolio_type == 'custom':
             if not custom_tickers or len(custom_tickers) < 2:
                 return jsonify({'status': 'error', 'message': '自訂模式需提供至少2支股票代碼'}), 400
@@ -214,8 +217,8 @@ def run_backtest():
         else:
             portfolio_etfs = {
                 'conservative': ['00878', '00713', '00679B'],
-                'balanced': ['00919', '00929', '0056'],
-                'aggressive': ['006208', '00929', '00915']
+                'balanced':     ['00919', '00929', '0056'],
+                'aggressive':   ['006208', '00929', '00915']
             }
             needed_etfs = portfolio_etfs.get(portfolio_type, [])
 
@@ -223,23 +226,18 @@ def run_backtest():
             etf for etf in needed_etfs
             if not os.path.exists(os.path.join(DATA_DIR, f"{etf}_price.csv"))
         ]
-
         if missing:
-            print(f"⚠️ 磁碟缺少資料: {missing}，嘗試從記憶體還原...")
             restore_cache_to_disk()
-
             still_missing = [
                 etf for etf in needed_etfs
                 if not os.path.exists(os.path.join(DATA_DIR, f"{etf}_price.csv"))
             ]
-
             if still_missing:
                 return jsonify({
-                    'status': 'error',
+                    'status':  'error',
                     'message': f'找不到 {still_missing} 的資料，請先點擊「查詢股票資料」'
                 }), 400
 
-        # 執行回測（使用V3）
         backtester = PortfolioBacktestV3(data_dir=DATA_DIR)
         result = backtester.backtest_portfolio(
             portfolio_type=portfolio_type,
@@ -254,20 +252,14 @@ def run_backtest():
 
         if result is None:
             return jsonify({
-                'status': 'error',
+                'status':  'error',
                 'message': '回測失敗，請先點擊「爬取資料」後再執行回測'
             }), 400
 
-        # 快取結果
         cached_results[portfolio_type] = result
-
-        # 準備圖表資料（簡化版，用年度摘要）
         chart_data = prepare_chart_data_from_annual(result)
-
-        # 準備表格資料
         table_data = prepare_table_data(result)
 
-        # ── 蒙地卡羅 & 情境分析資料 ──────────────────────────
         mc_data        = result.get('monte_carlo', {})
         scenarios_data = result.get('scenarios', {})
         fp_data        = result.get('forecast_params', {})
@@ -275,49 +267,43 @@ def run_backtest():
         return jsonify({
             'status': 'success',
             'result': {
-                'portfolio_name': result['portfolio_name'],
-                'finish_year': result['finish_year'],
-                'finish_age': result['finish_age'],
-                'final_assets': round(result['final_assets']),
-                'actual_invested': round(result['actual_invested']),
-                'actual_dividend': round(result['actual_dividend']),
-                'forecast_assets': round(result['forecast_assets']),
-                'total_invested': round(result['total_invested']),
-                'total_dividend': round(result['total_dividend']),
-                'chart_data': chart_data,
-                'table_data': table_data,
-                'etf_weights': result['etf_weights'],
-                'etf_details': [],
-                'etf_tracking': result['etf_annual_tracking'],
+                'portfolio_name':    result['portfolio_name'],
+                'finish_year':       result['finish_year'],
+                'finish_age':        result['finish_age'],
+                'final_assets':      round(result['final_assets']),
+                'actual_invested':   round(result['actual_invested']),
+                'actual_dividend':   round(result['actual_dividend']),
+                'forecast_assets':   round(result['forecast_assets']),
+                'total_invested':    round(result['total_invested']),
+                'total_dividend':    round(result['total_dividend']),
+                'chart_data':        chart_data,
+                'table_data':        table_data,
+                'etf_weights':       result['etf_weights'],
+                'etf_details':       [],
+                'etf_tracking':      result['etf_annual_tracking'],
                 'hist_stats': {
                     t: {
-                        'cagr': round(v['cagr'] * 100, 2),
-                        'avg_div_per_share': round(v['avg_div_per_share'], 4),
-                        'avg_div_times': round(v['avg_div_times'], 1),
-                        'avg_price': round(v['avg_price'], 2),
-                        'last_price': round(v['last_price'], 2)
+                        'cagr':            round(v['cagr'] * 100, 2),
+                        'avg_div_per_share':round(v['avg_div_per_share'], 4),
+                        'avg_div_times':   round(v['avg_div_times'], 1),
+                        'avg_price':       round(v['avg_price'], 2),
+                        'last_price':      round(v['last_price'], 2)
                     }
                     for t, v in result['hist_stats'].items()
                 },
-                # ── 新功能 ──────────────────────────────────────
-                'monte_carlo': mc_data,
-                'scenarios': scenarios_data,
-                'forecast_params': fp_data,
-                # ── 退休後情境 ──────────────────────────────────
-                'retirement_stop':     result.get('retirement_stop', []),
+                'monte_carlo':      mc_data,
+                'scenarios':        scenarios_data,
+                'forecast_params':  fp_data,
+                'retirement_stop':  result.get('retirement_stop', []),
                 'retirement_continue': result.get('retirement_continue', []),
-                'retire_yr_idx':       result.get('retire_yr_idx'),
-                'withdrawal_rate':     result.get('withdrawal_rate', 0.04),
+                'retire_yr_idx':    result.get('retire_yr_idx'),
+                'withdrawal_rate':  result.get('withdrawal_rate', 0.04),
             }
         })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/download_csv/<portfolio_type>')
@@ -325,159 +311,589 @@ def download_csv(portfolio_type):
     """下載CSV報表"""
     try:
         if portfolio_type not in cached_results:
-            return jsonify({
-                'status': 'error',
-                'message': '請先執行回測'
-            }), 400
-
+            return jsonify({'status': 'error', 'message': '請先執行回測'}), 400
         result = cached_results[portfolio_type]
-
-        # 建立DataFrame
-        df = pd.DataFrame(result['results']['annual_summary'])
-
-        # 轉換為CSV
+        df     = pd.DataFrame(result['results']['annual_summary'])
         output = io.StringIO()
         df.to_csv(output, index=False, encoding='utf-8-sig')
         output.seek(0)
-
-        # 建立response
         return send_file(
             io.BytesIO(output.getvalue().encode('utf-8-sig')),
             mimetype='text/csv',
             as_attachment=True,
             download_name=f'{result["portfolio_name"]}_回測報表.csv'
         )
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# 股票分析頁 API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/popular_stocks')
+def get_popular_stocks():
+    """回傳熱門股票清單"""
+    return jsonify({'status': 'success', 'stocks': POPULAR_STOCKS})
+
+
+@app.route('/api/stock_analysis/<ticker>', methods=['GET'])
+def get_stock_analysis(ticker):
+    """
+    取得單支股票完整分析資料
+    回傳：OHLCV、技術指標、基本面、籌碼估算、投資建議
+    """
+    ticker = ticker.strip().upper()
+
+    # 快取（5分鐘）
+    import time
+    cache_entry = analysis_cache.get(ticker)
+    if cache_entry and (time.time() - cache_entry.get('ts', 0)) < 300:
+        return jsonify({'status': 'success', 'data': cache_entry['data']})
+
+    try:
+        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+        raw = fetcher.fetch_stock_analysis(ticker)
+
+        if not raw or not raw.get('ohlcv'):
+            return jsonify({
+                'status':  'error',
+                'message': f'無法取得 {ticker} 資料，請確認股票代碼正確（台灣上市如：2330、00878）'
+            }), 404
+
+        ohlcv      = raw['ohlcv']
+        indicators = raw.get('indicators', {})
+        info       = raw.get('info', {})
+        divs       = raw.get('dividend_data', [])
+
+        # ── 最新資料 ────────────────────────────────────────────
+        last = ohlcv[-1]
+        prev = ohlcv[-2] if len(ohlcv) >= 2 else last
+        change     = round(last['close'] - prev['close'], 2)
+        change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
+
+        # ── 殖利率計算（近12個月配息合計）────────────────────
+        annual_div = 0
+        if divs:
+            one_yr_ago = (pd.Timestamp.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
+            annual_div = sum(d['dividend'] for d in divs if d['date'] >= one_yr_ago)
+        div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
+
+        # ── 技術指標最新值 ─────────────────────────────────────
+        def last_val(lst):
+            if not lst:
+                return None
+            return next((v for v in reversed(lst) if v is not None), None)
+
+        latest_ind = {
+            'ma5':         last_val(indicators.get('ma5')),
+            'ma10':        last_val(indicators.get('ma10')),
+            'ma20':        last_val(indicators.get('ma20')),
+            'ma60':        last_val(indicators.get('ma60')),
+            'macd':        last_val(indicators.get('macd')),
+            'macd_signal': last_val(indicators.get('macd_signal')),
+            'macd_hist':   last_val(indicators.get('macd_hist')),
+            'rsi':         last_val(indicators.get('rsi')),
+            'k':           last_val(indicators.get('k')),
+            'd':           last_val(indicators.get('d')),
+        }
+
+        # ── 支撐/壓力（近60日最高/最低）──────────────────────
+        recent60 = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
+        support  = round(min(r['low']  for r in recent60), 2)
+        resist   = round(max(r['high'] for r in recent60), 2)
+
+        # ── 趨勢判斷 ─────────────────────────────────────────
+        trend = _calc_trend(last['close'], latest_ind)
+
+        # ── 法人籌碼估算（根據成交量及趨勢模擬）──────────────
+        chip = _estimate_chip(ohlcv, trend)
+
+        # ── 投資建議與評級 ─────────────────────────────────────
+        recommendation = _generate_recommendation(
+            ticker, last['close'], latest_ind, trend, chip,
+            info, div_yield, support, resist
+        )
+
+        # ── 圖表資料（最近180個交易日）────────────────────────
+        chart_ohlcv = ohlcv[-180:]
+        chart_len   = len(chart_ohlcv)
+        offset      = len(ohlcv) - chart_len  # 對齊指標陣列
+
+        def slice_ind(key):
+            lst = indicators.get(key, [])
+            return lst[offset:offset + chart_len] if len(lst) >= offset + chart_len else lst[-chart_len:]
+
+        data_out = {
+            'ticker':    ticker,
+            'name':      raw.get('name', ticker),
+            'source':    raw.get('source', 'yfinance'),
+            'is_simulated': raw.get('is_simulated', False),
+            # 最新行情
+            'latest': {
+                'date':       last['date'],
+                'open':       last['open'],
+                'high':       last['high'],
+                'low':        last['low'],
+                'close':      last['close'],
+                'volume':     last['volume'],
+                'change':     change,
+                'change_pct': change_pct,
+            },
+            # 基本面
+            'fundamentals': {
+                'pe_ratio':      info.get('pe_ratio'),
+                'pb_ratio':      info.get('pb_ratio'),
+                'div_yield':     div_yield,
+                'annual_div':    round(annual_div, 4),
+                'eps':           info.get('eps'),
+                'roe':           info.get('roe'),
+                'profit_margin': info.get('profit_margin'),
+                'market_cap':    info.get('market_cap'),
+                'sector':        info.get('sector', ''),
+                'industry':      info.get('industry', ''),
+                '52w_high':      info.get('52w_high'),
+                '52w_low':       info.get('52w_low'),
+                'description':   info.get('description', ''),
+            },
+            # 技術分析
+            'technical': {
+                'latest':   latest_ind,
+                'support':  support,
+                'resist':   resist,
+                'trend':    trend,
+            },
+            # 籌碼面
+            'chip': chip,
+            # 投資建議
+            'recommendation': recommendation,
+            # 配息歷史
+            'dividends': divs[-20:] if divs else [],
+            # 圖表資料
+            'chart': {
+                'dates':        [r['date']   for r in chart_ohlcv],
+                'opens':        [r['open']   for r in chart_ohlcv],
+                'highs':        [r['high']   for r in chart_ohlcv],
+                'lows':         [r['low']    for r in chart_ohlcv],
+                'closes':       [r['close']  for r in chart_ohlcv],
+                'volumes':      [r['volume'] for r in chart_ohlcv],
+                'ma5':          slice_ind('ma5'),
+                'ma10':         slice_ind('ma10'),
+                'ma20':         slice_ind('ma20'),
+                'ma60':         slice_ind('ma60'),
+                'macd':         slice_ind('macd'),
+                'macd_signal':  slice_ind('macd_signal'),
+                'macd_hist':    slice_ind('macd_hist'),
+                'rsi':          slice_ind('rsi'),
+                'k':            slice_ind('k'),
+                'd':            slice_ind('d'),
+            }
+        }
+
+        analysis_cache[ticker] = {'data': data_out, 'ts': time.time()}
+        return jsonify({'status': 'success', 'data': data_out})
 
     except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
+def _calc_trend(close, ind):
+    """根據均線關係判斷趨勢"""
+    ma5  = ind.get('ma5')
+    ma20 = ind.get('ma20')
+    ma60 = ind.get('ma60')
+    macd = ind.get('macd')
+    rsi  = ind.get('rsi')
+
+    score = 0
+    signals = []
+
+    # 均線多頭排列
+    if ma5 and ma20 and ma5 > ma20:
+        score += 2
+        signals.append('MA5>MA20（短線偏多）')
+    elif ma5 and ma20 and ma5 < ma20:
+        score -= 2
+        signals.append('MA5<MA20（短線偏空）')
+
+    if ma20 and ma60 and ma20 > ma60:
+        score += 2
+        signals.append('MA20>MA60（中線偏多）')
+    elif ma20 and ma60 and ma20 < ma60:
+        score -= 2
+        signals.append('MA20<MA60（中線偏空）')
+
+    # 價格與均線關係
+    if ma20 and close > ma20:
+        score += 1
+        signals.append('價格站上MA20')
+    elif ma20 and close < ma20:
+        score -= 1
+        signals.append('價格跌破MA20')
+
+    # MACD 多空
+    if macd and macd > 0:
+        score += 1
+        signals.append('MACD>0（多方）')
+    elif macd and macd < 0:
+        score -= 1
+        signals.append('MACD<0（空方）')
+
+    # RSI 超買超賣
+    rsi_note = ''
+    if rsi:
+        if rsi > 70:
+            score -= 1
+            rsi_note = f'RSI={rsi:.1f}（超買警示）'
+            signals.append(rsi_note)
+        elif rsi < 30:
+            score += 1
+            rsi_note = f'RSI={rsi:.1f}（超賣反彈機會）'
+            signals.append(rsi_note)
+        else:
+            signals.append(f'RSI={rsi:.1f}（中性）')
+
+    if score >= 4:
+        label = '強勢上漲'
+        color = '#10b981'
+    elif score >= 1:
+        label = '偏多整理'
+        color = '#6ee7b7'
+    elif score <= -4:
+        label = '弱勢下跌'
+        color = '#ef4444'
+    elif score <= -1:
+        label = '偏空整理'
+        color = '#fca5a5'
+    else:
+        label = '盤整'
+        color = '#94a3b8'
+
+    return {'label': label, 'color': color, 'score': score, 'signals': signals}
+
+
+def _estimate_chip(ohlcv, trend):
+    """
+    法人籌碼估算（基於成交量分布與趨勢推估）
+    注意：此為統計模型估算，非真實申報資料
+    """
+    if len(ohlcv) < 20:
+        return {'note': '資料不足，無法估算籌碼', 'estimated': True}
+
+    recent20 = ohlcv[-20:]
+    avg_vol  = np.mean([r['volume'] for r in ohlcv[-60:]] or [1])
+
+    # 近5日相對成交量
+    recent5_vol = np.mean([r['volume'] for r in ohlcv[-5:]])
+    vol_ratio   = round(recent5_vol / avg_vol, 2) if avg_vol > 0 else 1.0
+
+    trend_score = trend.get('score', 0)
+
+    # 法人方向估算（趨勢偏多且量增 → 法人偏買；趨勢偏空且量增 → 法人偏賣）
+    if trend_score >= 2 and vol_ratio >= 1.2:
+        foreign_dir = '偏向買超'
+        trust_dir   = '偏向買超'
+    elif trend_score <= -2 and vol_ratio >= 1.2:
+        foreign_dir = '偏向賣超'
+        trust_dir   = '偏向賣超'
+    elif trend_score >= 1:
+        foreign_dir = '小幅買超'
+        trust_dir   = '中性偏多'
+    elif trend_score <= -1:
+        foreign_dir = '小幅賣超'
+        trust_dir   = '中性偏空'
+    else:
+        foreign_dir = '觀望中性'
+        trust_dir   = '觀望中性'
+
+    # 近20日漲跌家數估算（量縮上漲 vs 量增下跌）
+    up_days   = sum(1 for r in recent20 if r['close'] >= r['open'])
+    down_days = len(recent20) - up_days
+    up_vol    = sum(r['volume'] for r in recent20 if r['close'] >= r['open'])
+    down_vol  = sum(r['volume'] for r in recent20 if r['close'] < r['open'])
+
+    return {
+        'foreign_dir':    foreign_dir,
+        'trust_dir':      trust_dir,
+        'vol_ratio':      vol_ratio,
+        'avg_volume':     int(avg_vol),
+        'recent5_volume': int(recent5_vol),
+        'up_days_20':     up_days,
+        'down_days_20':   down_days,
+        'up_vol_20':      int(up_vol),
+        'down_vol_20':    int(down_vol),
+        'estimated':      True,
+        'note':           '⚠ 籌碼資料為統計模型估算，僅供參考，非真實法人申報數據'
+    }
+
+
+def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, support, resist):
+    """
+    綜合評估產生投資建議與評級
+    評級：強力買進 / 買進 / 持有 / 減碼 / 賣出
+    """
+    score = trend.get('score', 0)
+    rsi   = ind.get('rsi')
+    macd  = ind.get('macd')
+    macd_signal = ind.get('macd_signal')
+    k     = ind.get('k')
+    d     = ind.get('d')
+    ma20  = ind.get('ma20')
+    ma60  = ind.get('ma60')
+
+    reasons_buy  = []
+    reasons_sell = []
+    risks        = []
+
+    # ── 技術面評分 ─────────────────────────────────────────────
+    tech_score = score  # -6 ~ +6
+
+    # MACD 黃金/死亡交叉
+    if macd and macd_signal:
+        if macd > macd_signal:
+            reasons_buy.append('MACD 黃金交叉，多方動能增強')
+            tech_score += 1
+        else:
+            reasons_sell.append('MACD 死亡交叉，多方動能減弱')
+            tech_score -= 1
+
+    # KD 超買超賣
+    if k and d:
+        if k < 20 and d < 20:
+            reasons_buy.append(f'KD 超賣區（K={k:.1f}），有反彈機會')
+            tech_score += 1
+        elif k > 80 and d > 80:
+            reasons_sell.append(f'KD 超買區（K={k:.1f}），注意短線壓力')
+            risks.append('KD 處於超買，短線漲幅受限')
+            tech_score -= 1
+
+    # 支撐/壓力
+    price_range = resist - support
+    if price_range > 0:
+        pos_pct = round((close - support) / price_range * 100, 1)
+    else:
+        pos_pct = 50
+
+    if pos_pct < 20:
+        reasons_buy.append(f'接近近期支撐（{support}），風險相對低')
+    elif pos_pct > 80:
+        reasons_sell.append(f'接近近期壓力（{resist}），上漲空間受限')
+        risks.append(f'股價已在近期高點附近（支撐/壓力位置：{pos_pct}%）')
+
+    # ── 基本面加分/減分 ────────────────────────────────────────
+    fund_score = 0
+    pe = info.get('pe_ratio')
+    pb = info.get('pb_ratio')
+    roe = info.get('roe')
+
+    if pe:
+        if pe < 15:
+            reasons_buy.append(f'本益比 {pe:.1f}x，估值相對合理')
+            fund_score += 1
+        elif pe > 30:
+            risks.append(f'本益比 {pe:.1f}x，估值偏高')
+            fund_score -= 1
+
+    if pb and pb < 1.5:
+        reasons_buy.append(f'股價淨值比 {pb:.2f}x，低於1.5倍')
+        fund_score += 1
+
+    if roe and roe > 0.15:
+        reasons_buy.append(f'ROE {roe*100:.1f}%，獲利能力優異')
+        fund_score += 1
+
+    if div_yield:
+        if div_yield >= 5:
+            reasons_buy.append(f'殖利率 {div_yield:.2f}%，配息豐厚（高股息）')
+            fund_score += 1
+        elif div_yield >= 3:
+            reasons_buy.append(f'殖利率 {div_yield:.2f}%，配息穩定')
+        elif div_yield < 1:
+            risks.append(f'殖利率 {div_yield:.2f}%，配息偏低')
+
+    # ── 綜合評分 ───────────────────────────────────────────────
+    total_score = tech_score + fund_score
+
+    if total_score >= 6:
+        rating = '強力買進'
+        rating_color = '#065f46'
+        rating_bg    = '#d1fae5'
+        rating_icon  = '⬆⬆'
+    elif total_score >= 3:
+        rating = '買進'
+        rating_color = '#15803d'
+        rating_bg    = '#dcfce7'
+        rating_icon  = '⬆'
+    elif total_score >= 0:
+        rating = '持有'
+        rating_color = '#0369a1'
+        rating_bg    = '#dbeafe'
+        rating_icon  = '➡'
+    elif total_score >= -3:
+        rating = '減碼'
+        rating_color = '#b45309'
+        rating_bg    = '#fef3c7'
+        rating_icon  = '⬇'
+    else:
+        rating = '賣出'
+        rating_color = '#b91c1c'
+        rating_bg    = '#fee2e2'
+        rating_icon  = '⬇⬇'
+
+    # 目標價（簡單估算）
+    if ma20 and ma60:
+        target_price = round((ma20 * 0.6 + ma60 * 0.4) * (1 + max(total_score, 0) * 0.03), 1)
+    else:
+        target_price = None
+
+    summary = _build_summary(ticker, close, trend, rating, reasons_buy, reasons_sell,
+                              risks, div_yield, info)
+
+    return {
+        'rating':       rating,
+        'rating_color': rating_color,
+        'rating_bg':    rating_bg,
+        'rating_icon':  rating_icon,
+        'total_score':  total_score,
+        'tech_score':   tech_score,
+        'fund_score':   fund_score,
+        'reasons_buy':  reasons_buy,
+        'reasons_sell': reasons_sell,
+        'risks':        risks,
+        'target_price': target_price,
+        'support':      support,
+        'resist':       resist,
+        'price_position': pos_pct,
+        'summary':      summary,
+    }
+
+
+def _build_summary(ticker, close, trend, rating, reasons_buy, reasons_sell, risks, div_yield, info):
+    """產生投資分析摘要文字"""
+    name    = info.get('name', ticker)
+    sector  = info.get('sector', '')
+    trend_l = trend.get('label', '盤整')
+
+    lines = [f"📊 **{name}（{ticker}）投資分析摘要**\n"]
+    lines.append(f"目前股價 **{close}** 元，技術面呈 **{trend_l}** 態勢，綜合評級為「**{rating}**」。\n")
+
+    if sector:
+        lines.append(f"所屬產業：{sector}。")
+
+    if reasons_buy:
+        lines.append("\n✅ **買進/持有理由：**")
+        for r in reasons_buy[:4]:
+            lines.append(f"• {r}")
+
+    if reasons_sell:
+        lines.append("\n⚠️ **賣出/觀望考量：**")
+        for r in reasons_sell[:3]:
+            lines.append(f"• {r}")
+
+    if risks:
+        lines.append("\n🔴 **主要風險：**")
+        for r in risks[:3]:
+            lines.append(f"• {r}")
+
+    if div_yield:
+        lines.append(f"\n💰 近12個月殖利率約 **{div_yield:.2f}%**，{'適合存股領息。' if div_yield >= 4 else '配息穩定。'}")
+
+    lines.append("\n⚠️ *以上分析僅供參考，投資有風險，決策前請自行審慎評估。*")
+    return '\n'.join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 回測圖表/表格輔助函式（原有，保持不變）
+# ═══════════════════════════════════════════════════════════════
 
 def prepare_chart_data_from_annual(result):
-    """從年度摘要準備圖表資料（含退休後兩條情境線）"""
     annual_summary     = result['results']['annual_summary']
     retirement_stop    = result.get('retirement_stop', [])
     retirement_cont    = result.get('retirement_continue', [])
-    retire_yr_idx      = result.get('retire_yr_idx')   # 0-based in all_rows
+    retire_yr_idx      = result.get('retire_yr_idx')
     initial_capital    = result['initial_capital']
     monthly_investment = result['monthly_investment']
     inflation_target   = result.get('inflation_target', 0)
 
-    # ── 時間軸長度 ────────────────────────────────────────────
     total_all = len(annual_summary)
-    # 退休後情境的最大年序（以 stop 為準，stop/cont 長度相同）
     max_retire_seq = retirement_stop[-1]['年序'] if retirement_stop else 0
     total_points = max(total_all, max_retire_seq + 1)
 
-    # ── 取樣策略（最多 20 個點，但必須含退休點）────────────────
     sample_interval = max(1, total_points // 20)
     sampled_set = set(range(0, total_points, sample_interval))
-    sampled_set.add(0)
-    sampled_set.add(total_points - 1)
+    sampled_set |= {0, total_points - 1}
     if retire_yr_idx is not None:
         sampled_set.add(retire_yr_idx)
     sorted_idx = sorted(sampled_set)
 
-    # ── 退休後情境 lookup（key = 年序）────────────────────────
     stop_lk = {r['年序']: r for r in retirement_stop}
     cont_lk = {r['年序']: r for r in retirement_cont}
-
-    # 找最後一筆 actual 行的 index
     last_actual_idx = max((i for i, r in enumerate(annual_summary)
                            if r['資料類型'] == 'actual'), default=-1)
 
     labels = []
-    actual_series     = []
-    forecast_series   = []
-    stop_series       = []
-    cont_series       = []
-    threshold_series  = []
+    actual_series = []; forecast_series = []; stop_series = []
+    cont_series = []; threshold_series = []
 
     for idx in sorted_idx:
         labels.append(f"第{idx}年")
-
-        # actual（實際歷史行）
-        if idx < total_all and idx <= last_actual_idx:
-            actual_series.append(round(annual_summary[idx]['年末資產']))
-        else:
-            actual_series.append(None)
-
-        # forecast（推估行，只到退休點）
-        if (idx < total_all
-                and idx > last_actual_idx
-                and (retire_yr_idx is None or idx <= retire_yr_idx)):
-            forecast_series.append(round(annual_summary[idx]['年末資產']))
-        else:
-            forecast_series.append(None)
-
-        # 退休後-停止投入（退休點開始，含退休點本身作連線起點）
+        actual_series.append(
+            round(annual_summary[idx]['年末資產']) if idx < total_all and idx <= last_actual_idx else None)
+        forecast_series.append(
+            round(annual_summary[idx]['年末資產'])
+            if (idx < total_all and idx > last_actual_idx
+                and (retire_yr_idx is None or idx <= retire_yr_idx)) else None)
         if retire_yr_idx is not None and idx == retire_yr_idx:
             base = round(annual_summary[idx]['年末資產'])
-            stop_series.append(base)
-            cont_series.append(base)
+            stop_series.append(base); cont_series.append(base)
         elif retire_yr_idx is not None and idx > retire_yr_idx:
             stop_series.append(stop_lk[idx]['年末資產'] if idx in stop_lk else None)
             cont_series.append(cont_lk[idx]['年末資產'] if idx in cont_lk else None)
         else:
-            stop_series.append(None)
-            cont_series.append(None)
-
-        # 通膨門檻
+            stop_series.append(None); cont_series.append(None)
         if idx < total_all:
             threshold_series.append(round(annual_summary[idx]['通膨門檻']))
         else:
             threshold_series.append(round(inflation_target * (1 + 0.03) ** idx))
 
-    # ── 8% 年化報酬參考線 ─────────────────────────────────────
-    r8 = (1 + 0.08) ** (1 / 12) - 1
+    r8 = (1 + 0.08) ** (1/12) - 1
     return_8_series = []
     for label in labels:
-        year_num = int(label.replace('第', '').replace('年', ''))
+        year_num = int(label.replace('第','').replace('年',''))
         wealth = float(initial_capital)
         for _ in range(year_num * 12):
             wealth = (wealth + monthly_investment) * (1 + r8)
         return_8_series.append(round(wealth))
 
     return {
-        'labels':               labels,
-        'actual_assets':        actual_series,
-        'forecast_assets':      forecast_series,
-        'retire_stop_assets':   stop_series,
-        'retire_cont_assets':   cont_series,
-        'inflation_threshold':  threshold_series,
-        'return_8_assets':      return_8_series,
-        'start_year':           annual_summary[0]['年份'] if annual_summary else 2023,
+        'labels':              labels,
+        'actual_assets':       actual_series,
+        'forecast_assets':     forecast_series,
+        'retire_stop_assets':  stop_series,
+        'retire_cont_assets':  cont_series,
+        'inflation_threshold': threshold_series,
+        'return_8_assets':     return_8_series,
+        'start_year':          annual_summary[0]['年份'] if annual_summary else 2023,
     }
 
 
 def prepare_table_data(result):
-    """準備表格資料（與 backtest 計算邏輯完全一致）"""
     table_data = []
     annual_summary = result['results']['annual_summary']
     prev_end_assets = 0
-    for i, row in enumerate(annual_summary):
+    for row in annual_summary:
         year_return_val = row['年度報酬']
         year_invested   = row['年度投入']
         year_end        = row['年末資產']
         year_dividend   = row['年度股利']
-
-        # 年度投資報酬率 = 年度報酬 / (期初資產 + 年度投入)
-        # 勾稽：年度報酬 = 年末資產 - 期初資產 - 年度投入
         base = prev_end_assets + year_invested
-        if base > 0:
-            year_return_rate = round(year_return_val / base * 100, 2)
-        else:
-            year_return_rate = 0.0
-
-        # 前年末資產（期初資產），用於前端驗算勾稽
-        beg_assets      = prev_end_assets
-        prev_end_assets = year_end   # 更新為本年末，供下一年使用
-
+        year_return_rate = round(year_return_val / base * 100, 2) if base > 0 else 0.0
+        beg_assets = prev_end_assets
+        prev_end_assets = year_end
         table_data.append({
-            'year': row['年份'],
-            'data_type': row['資料類型'],
+            'year':               row['年份'],
+            'data_type':          row['資料類型'],
             'year_invested':      f"{year_invested:,}",
             'year_dividend':      f"{year_dividend:,}",
             'year_return':        f"{year_return_val:,}",
@@ -486,19 +902,17 @@ def prepare_table_data(result):
             'remaining_cash':     f"{row.get('剩餘現金', 0):,}",
             'inflation_threshold':f"{row['通膨門檻']:,}",
             'year_return_raw':    year_return_val,
-            'beg_assets':         f"{beg_assets:,}",   # 期初資產，供勾稽用
+            'beg_assets':         f"{beg_assets:,}",
         })
     return table_data
 
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-
-    print("="*60)
-    print("台灣ETF投資分析系統啟動 (V3 - 個股效益分析版 / backtest.py)")
+    print("=" * 60)
+    print("台灣ETF/股票投資分析系統啟動 (V4)")
     print(f"執行環境: {'Render (Production)' if os.environ.get('RENDER') else 'Local Development'}")
     print(f"Port: {port}")
-    print("="*60)
-
+    print("=" * 60)
     host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
     app.run(debug=False, host=host, port=port)

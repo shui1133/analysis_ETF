@@ -100,9 +100,20 @@
     <div class="header-bg p-8 text-white text-center">
         <h1 class="text-3xl font-black italic tracking-tighter">
             FIRE-AI  財務自由，提早退休理財規劃
-            <span class="text-blue-400 text-sm font-normal not-italic ml-2">v3.0</span>
+            <span class="text-blue-400 text-sm font-normal not-italic ml-2">v4.0</span>
         </h1>
         <p class="text-blue-100 mt-2 text-sm">真實歷史回測 ▸ 歷史統計推估 ▸ 通膨修正分析</p>
+        <!-- 頁面導覽 -->
+        <div class="flex justify-center gap-3 mt-4">
+            <span class="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-bold bg-white/20 text-white border border-white/30">
+                <i class="fa-solid fa-house mr-1.5"></i>退休規劃回測
+            </span>
+            <a href="/analysis"
+               class="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-bold bg-emerald-500/80 hover:bg-emerald-400 text-white border border-emerald-400/50 transition-all duration-200 hover:scale-105">
+                <i class="fa-solid fa-chart-candlestick mr-1.5"></i>股票分析中心
+                <span class="ml-1.5 bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]">NEW</span>
+            </a>
+        </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 p-8">
@@ -336,8 +347,8 @@
                 </div>
             </div>
 
-            <!-- ═══ 蒙地卡羅模擬區塊 ═══ -->
-            <div id="mcSection" class="mc-section p-6 hidden">
+            <!-- 蒙地卡羅模擬已移至「股票分析中心」頁面 -->
+            <div id="mcSection" class="hidden" style="display:none!important">
                 <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
                     <h2 class="font-bold text-lg text-white flex items-center">
                         <i class="fa-solid fa-dice mr-2 text-blue-400"></i>
@@ -382,24 +393,27 @@
                 </div>
             </div>
 
-            <!-- ═══ 情境分析區塊 ═══ -->
-            <div id="scenarioSection" class="hidden">
-                <div class="bg-white p-6 rounded-2xl border border-slate-200">
-                    <h2 class="font-bold text-lg text-slate-800 flex items-center mb-5">
-                        <i class="fa-solid fa-layer-group mr-2 text-purple-600"></i>
-                        市場情境分析
-                        <span class="ml-3 text-xs font-normal text-slate-400">牛市 / 基準 / 熊市 / 盤整</span>
-                    </h2>
+            <!-- 情境分析已移至「股票分析中心」頁面 -->
+            <div id="scenarioSection" class="hidden" style="display:none!important">
+                <canvas id="scenarioChart" style="display:none"></canvas>
+                <div id="scenarioCards"></div>
+            </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6" id="scenarioCards">
-                        <!-- JS 填入 -->
+            <!-- 進階分析導覽提示 -->
+            <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4">
+                <div class="flex-1">
+                    <div class="font-bold text-emerald-800 flex items-center gap-2 mb-1">
+                        <i class="fa-solid fa-chart-candlestick text-emerald-600"></i>
+                        想要更深入的個股分析？
                     </div>
-
-                    <!-- 情境比較圖表 -->
-                    <div style="position:relative; height:360px;">
-                        <canvas id="scenarioChart"></canvas>
-                    </div>
+                    <p class="text-sm text-emerald-700">
+                        前往「股票分析中心」查看個股K線圖、MACD、蒙地卡羅模擬、市場情境分析，以及技術面、基本面、籌碼面完整投資建議。
+                    </p>
                 </div>
+                <a href="/analysis"
+                   class="shrink-0 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-5 rounded-xl shadow transition-all duration-200 hover:scale-105 text-sm">
+                    <i class="fa-solid fa-arrow-right"></i>前往股票分析中心
+                </a>
             </div>
 
             <!-- 年度投資報表 -->
