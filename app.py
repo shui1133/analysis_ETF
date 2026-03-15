@@ -415,8 +415,8 @@ def get_stock_analysis(ticker):
             info, div_yield, support, resist
         )
 
-        # ── 圖表資料（最近180個交易日）────────────────────────
-        chart_ohlcv = ohlcv[-180:]
+        # ── 圖表資料（全部 OHLCV，前端依週期聚合）────────────
+        chart_ohlcv = ohlcv  # 回傳全部供前端聚合年線等長週期
         chart_len   = len(chart_ohlcv)
         offset      = len(ohlcv) - chart_len  # 對齊指標陣列
 
@@ -427,7 +427,6 @@ def get_stock_analysis(ticker):
         data_out = {
             'ticker':    ticker,
             'name':      raw.get('name', ticker),
-            'eng_name':  raw.get('eng_name', ''),
             'source':    raw.get('source', 'yfinance'),
             'is_simulated': raw.get('is_simulated', False),
             # 最新行情
@@ -441,7 +440,7 @@ def get_stock_analysis(ticker):
                 'change':     change,
                 'change_pct': change_pct,
             },
-            # 基本面（補充 OHLCV 計算備援）
+            # 基本面
             'fundamentals': {
                 'pe_ratio':      info.get('pe_ratio'),
                 'pb_ratio':      info.get('pb_ratio'),
@@ -450,14 +449,12 @@ def get_stock_analysis(ticker):
                 'eps':           info.get('eps'),
                 'roe':           info.get('roe'),
                 'profit_margin': info.get('profit_margin'),
-                'market_cap':    info.get('market_cap') or 0,
+                'market_cap':    info.get('market_cap'),
                 'sector':        info.get('sector', ''),
                 'industry':      info.get('industry', ''),
-                '52w_high':      info.get('52w_high') or (max(r['high'] for r in ohlcv[-252:]) if len(ohlcv) >= 10 else None),
-                '52w_low':       info.get('52w_low')  or (min(r['low']  for r in ohlcv[-252:]) if len(ohlcv) >= 10 else None),
+                '52w_high':      info.get('52w_high'),
+                '52w_low':       info.get('52w_low'),
                 'description':   info.get('description', ''),
-                'avg_volume':    info.get('avg_volume'),
-                'debt_ratio':    info.get('debt_ratio'),
             },
             # 技術分析
             'technical': {
@@ -908,6 +905,311 @@ def prepare_table_data(result):
             'beg_assets':         f"{beg_assets:,}",
         })
     return table_data
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# 效益邊緣線 (Efficient Frontier) API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/efficient_frontier', methods=['POST'])
+def efficient_frontier():
+    """
+    計算效益邊緣線
+    輸入: { tickers: ['2330','2317',...], n_sim: 5000 }
+    輸出: 隨機模擬點、效率前緣、最小變異組合、最大夏普組合
+    """
+    try:
+        import yfinance as yf
+        from functools import reduce
+
+        data      = request.json or {}
+        tickers   = [t.strip().upper() for t in data.get('tickers', [])]
+        n_sim     = min(int(data.get('n_sim', 3000)), 10000)
+        period    = data.get('period', '2y')
+
+        if len(tickers) < 2:
+            return jsonify({'status':'error','message':'請至少輸入2支股票代碼'}), 400
+        if len(tickers) > 15:
+            return jsonify({'status':'error','message':'最多支援15支股票'}), 400
+
+        # ── 取得股價資料 ─────────────────────────────────────
+        prices = {}
+        failed = []
+        for tk in tickers:
+            for suffix in ['.TW', '.TWO']:
+                try:
+                    hist = yf.Ticker(f"{tk}{suffix}").history(period=period, timeout=12)
+                    if hist is not None and not hist.empty:
+                        prices[tk] = hist['Close'].dropna()
+                        break
+                except Exception:
+                    continue
+            if tk not in prices:
+                failed.append(tk)
+
+        if failed:
+            return jsonify({'status':'error',
+                           'message': f'無法取得以下股票資料：{", ".join(failed)}'}), 422
+
+        # ── 對齊日期、計算報酬率 ─────────────────────────────
+        df = pd.DataFrame(prices).dropna()
+        if len(df) < 30:
+            return jsonify({'status':'error','message':'歷史資料不足（需至少30個交易日）'}), 422
+
+        returns    = df.pct_change().dropna()
+        mu         = (returns.mean() * 252).values          # 年化期望報酬
+        cov        = (returns.cov() * 252).values            # 年化共變異數矩陣
+        n          = len(tickers)
+
+        # ── 蒙地卡羅隨機模擬 ─────────────────────────────────
+        sim_ret, sim_risk, sim_sharpe, sim_weights = [], [], [], []
+        risk_free = 0.02  # 無風險利率假設 2%
+
+        np.random.seed(42)
+        for _ in range(n_sim):
+            w = np.random.dirichlet(np.ones(n))
+            r = float(np.dot(w, mu))
+            v = float(np.sqrt(reduce(np.dot, [w, cov, w.T])))
+            s = (r - risk_free) / v if v > 0 else 0
+            sim_ret.append(round(r, 6))
+            sim_risk.append(round(v, 6))
+            sim_sharpe.append(round(s, 4))
+            sim_weights.append([round(x, 4) for x in w])
+
+        # ── 最小變異組合（MVP）────────────────────────────────
+        from scipy.optimize import minimize as sp_minimize
+
+        def port_std(w):
+            return float(np.sqrt(reduce(np.dot, [w, cov, w.T])))
+
+        def port_ret(w):
+            return float(np.dot(w, mu))
+
+        def neg_sharpe(w):
+            r = port_ret(w)
+            s = port_std(w)
+            return -(r - risk_free) / s if s > 0 else 0
+
+        bounds      = tuple((0, 1) for _ in range(n))
+        w0          = np.array([1/n] * n)
+        eq_con      = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+
+        mvp_res     = sp_minimize(port_std, w0, bounds=bounds, constraints=[eq_con])
+        mvp_risk    = round(mvp_res.fun, 6)
+        mvp_ret     = round(port_ret(mvp_res.x), 6)
+        mvp_weights = [round(x, 4) for x in mvp_res.x]
+
+        msp_res     = sp_minimize(neg_sharpe, w0, bounds=bounds, constraints=[eq_con])
+        msp_risk    = round(port_std(msp_res.x), 6)
+        msp_ret     = round(port_ret(msp_res.x), 6)
+        msp_sharpe  = round(-msp_res.fun, 4)
+        msp_weights = [round(x, 4) for x in msp_res.x]
+
+        # ── 效率前緣曲線（最小化風險，固定報酬率）───────────
+        ret_range  = np.linspace(mvp_ret, max(sim_ret) * 0.98, 40)
+        ef_risks, ef_rets = [], []
+        for target_r in ret_range:
+            constraints = [eq_con, {'type':'eq','fun': lambda w,r=target_r: port_ret(w) - r}]
+            res = sp_minimize(port_std, w0, bounds=bounds, constraints=constraints)
+            if res.success:
+                ef_risks.append(round(res.fun, 6))
+                ef_rets.append(round(target_r, 6))
+
+        # ── 各股個別風險報酬 ─────────────────────────────────
+        stock_stats = []
+        for i, tk in enumerate(tickers):
+            from data_fetcher import STOCK_NAMES_ZH_BACKEND
+            zh = STOCK_NAMES_ZH_BACKEND.get(tk, '')
+            stock_stats.append({
+                'ticker': tk,
+                'name':   zh or tk,
+                'ret':    round(float(mu[i]), 6),
+                'risk':   round(float(np.sqrt(cov[i][i])), 6),
+            })
+
+        return jsonify({
+            'status':      'success',
+            'tickers':     tickers,
+            'n_sim':       n_sim,
+            'risk_free':   risk_free,
+            'sim': {
+                'risk':    sim_risk,
+                'ret':     sim_ret,
+                'sharpe':  sim_sharpe,
+            },
+            'ef': {
+                'risk':    ef_risks,
+                'ret':     ef_rets,
+            },
+            'mvp': {
+                'risk':    mvp_risk,
+                'ret':     mvp_ret,
+                'weights': dict(zip(tickers, mvp_weights)),
+            },
+            'msp': {
+                'risk':    msp_risk,
+                'ret':     msp_ret,
+                'sharpe':  msp_sharpe,
+                'weights': dict(zip(tickers, msp_weights)),
+            },
+            'stocks':      stock_stats,
+            'mu':          [round(float(x),6) for x in mu],
+            'cov_diag':    [round(float(np.sqrt(cov[i][i])),6) for i in range(n)],
+        })
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status':'error','message': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# SIM 單一指數模型分析 API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/sim_analysis/<ticker>', methods=['GET'])
+def sim_analysis(ticker):
+    """
+    單一指數模型分析
+    以台灣加權指數 ^TWII 為市場指標
+    回傳: alpha, beta, R², 系統性風險, 非系統性風險, SML資料, 回歸散點
+    """
+    try:
+        import yfinance as yf
+        from scipy import stats as sp_stats
+
+        ticker  = ticker.strip().upper()
+        period  = request.args.get('period', '2y')
+
+        # 快取5分鐘
+        import time
+        cache_key = f'sim_{ticker}'
+        cached    = analysis_cache.get(cache_key)
+        if cached and (time.time() - cached.get('ts', 0)) < 300:
+            return jsonify({'status':'success', 'data': cached['data']})
+
+        # ── 取得個股資料 ─────────────────────────────────────
+        stock_df = None
+        for suffix in ['.TW', '.TWO']:
+            try:
+                h = yf.Ticker(f"{ticker}{suffix}").history(period=period, timeout=12)
+                if h is not None and not h.empty:
+                    stock_df = h['Close'].dropna()
+                    break
+            except Exception:
+                continue
+
+        if stock_df is None or len(stock_df) < 30:
+            return jsonify({'status':'error',
+                           'message': f'無法取得 {ticker} 資料，請確認代碼正確'}), 404
+
+        # ── 取得台灣加權指數 ^TWII ────────────────────────────
+        try:
+            mkt_df = yf.Ticker('^TWII').history(period=period, timeout=12)['Close'].dropna()
+        except Exception as e:
+            return jsonify({'status':'error','message': f'無法取得加權指數資料: {e}'}), 500
+
+        # ── 對齊日期計算日報酬率 ─────────────────────────────
+        combined = pd.DataFrame({'stock': stock_df, 'market': mkt_df}).dropna()
+        if len(combined) < 30:
+            return jsonify({'status':'error','message':'資料對齊後筆數不足（需至少30筆）'}), 422
+
+        ret_s = combined['stock'].pct_change().dropna()
+        ret_m = combined['market'].pct_change().dropna()
+
+        common_idx = ret_s.index.intersection(ret_m.index)
+        ret_s = ret_s.loc[common_idx].values
+        ret_m = ret_m.loc[common_idx].values
+
+        # ── 線性迴歸：r_i = alpha + beta * r_m + epsilon ─────
+        slope, intercept, r_value, p_value, std_err = sp_stats.linregress(ret_m, ret_s)
+        beta       = round(float(slope), 4)
+        alpha      = round(float(intercept) * 252, 4)   # 年化 alpha
+        alpha_d    = round(float(intercept), 6)          # 日度 alpha
+        r_squared  = round(float(r_value ** 2), 4)
+
+        # ── 風險分解 ─────────────────────────────────────────
+        sigma_m2   = float(np.var(ret_m)) * 252           # 市場年化變異數
+        sigma_i2   = float(np.var(ret_s)) * 252           # 個股年化變異數
+        sys_risk2  = (beta ** 2) * sigma_m2               # 系統性風險（變異數）
+        idio_risk2 = max(sigma_i2 - sys_risk2, 0)         # 非系統性風險（變異數）
+        total_risk = round(float(np.sqrt(sigma_i2)), 4)
+        sys_risk   = round(float(np.sqrt(sys_risk2)), 4)
+        idio_risk  = round(float(np.sqrt(idio_risk2)), 4)
+
+        # ── SML（證券市場線）資料點 ──────────────────────────
+        ret_m_annual   = float(np.mean(ret_m)) * 252
+        risk_free      = 0.02
+        market_premium = ret_m_annual - risk_free
+        sml_betas      = [round(b * 0.1, 1) for b in range(0, 26)]  # 0 ~ 2.5
+        sml_rets       = [round(risk_free + b * market_premium, 4) for b in sml_betas]
+
+        # 個股在SML上的預期報酬 vs 實際報酬
+        stock_annual_ret   = round(float(np.mean(ret_s)) * 252, 4)
+        expected_ret_capm  = round(risk_free + beta * market_premium, 4)
+        alpha_sml          = round(stock_annual_ret - expected_ret_capm, 4)  # Jensen's alpha
+
+        # ── 散點資料（縮減至最多 200 點）────────────────────
+        n_pts = len(ret_m)
+        step  = max(1, n_pts // 200)
+        scatter_m = [round(float(x), 5) for x in ret_m[::step]]
+        scatter_s = [round(float(x), 5) for x in ret_s[::step]]
+        # 迴歸線（兩端點）
+        rm_min, rm_max = float(min(ret_m)), float(max(ret_m))
+        reg_x = [round(rm_min, 5), round(rm_max, 5)]
+        reg_y = [round(alpha_d + beta * rm_min, 5), round(alpha_d + beta * rm_max, 5)]
+
+        # ── 殘差（epsilon）統計 ──────────────────────────────
+        residuals    = ret_s - (alpha_d + beta * ret_m)
+        resid_std    = round(float(np.std(residuals)) * np.sqrt(252), 4)
+
+        data_out = {
+            'ticker':           ticker,
+            'period':           period,
+            'n_obs':            len(ret_s),
+            # SIM 核心參數
+            'beta':             beta,
+            'alpha':            alpha,            # 年化 alpha (%)
+            'alpha_daily':      alpha_d,
+            'r_squared':        r_squared,
+            'p_value':          round(float(p_value), 6),
+            'std_err':          round(float(std_err), 6),
+            # 風險分解
+            'total_risk':       total_risk,
+            'sys_risk':         sys_risk,
+            'idio_risk':        idio_risk,
+            'sys_pct':          round(sys_risk2 / sigma_i2 * 100, 1) if sigma_i2 > 0 else 0,
+            'idio_pct':         round(idio_risk2 / sigma_i2 * 100, 1) if sigma_i2 > 0 else 0,
+            # 報酬率統計
+            'stock_annual_ret': stock_annual_ret,
+            'market_annual_ret':round(ret_m_annual, 4),
+            'risk_free':        risk_free,
+            'market_premium':   round(market_premium, 4),
+            'expected_ret_capm':expected_ret_capm,
+            'alpha_sml':        alpha_sml,        # Jensen's alpha
+            'resid_std':        resid_std,
+            # SML 資料
+            'sml': {
+                'betas': sml_betas,
+                'rets':  sml_rets,
+            },
+            # 回歸散點
+            'scatter': {
+                'market': scatter_m,
+                'stock':  scatter_s,
+            },
+            'regression_line': {
+                'x': reg_x,
+                'y': reg_y,
+            },
+        }
+
+        analysis_cache[cache_key] = {'data': data_out, 'ts': time.time()}
+        return jsonify({'status':'success', 'data': data_out})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status':'error','message': str(e)}), 500
 
 
 if __name__ == '__main__':

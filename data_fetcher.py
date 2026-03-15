@@ -304,79 +304,31 @@ class ETFDataFetcher:
                 except Exception:
                     pass
 
-                # 基本資訊（多重 key 備援，解決 yfinance N/A 問題）
+                # 基本資訊
                 info = {}
                 try:
                     raw = tk.info or {}
-
-                    # ── 本益比：多重來源 ──────────────────────────────
-                    pe = (raw.get('trailingPE') or raw.get('forwardPE')
-                          or raw.get('currentPrice', 0) / raw.get('trailingEps', 0)
-                          if raw.get('trailingEps') and raw.get('trailingEps') > 0 else None)
-                    if pe and (pe < 0 or pe > 5000):
-                        pe = None  # 過濾異常值
-
-                    # ── 股價淨值比 ────────────────────────────────────
-                    pb = raw.get('priceToBook')
-                    if pb and pb < 0:
-                        pb = None
-
-                    # ── 殖利率 ────────────────────────────────────────
-                    div_yld = raw.get('dividendYield') or raw.get('trailingAnnualDividendYield')
-
-                    # ── EPS ───────────────────────────────────────────
-                    eps = raw.get('trailingEps') or raw.get('forwardEps')
-
-                    # ── ROE ───────────────────────────────────────────
-                    roe = raw.get('returnOnEquity') or raw.get('returnOnAssets')
-
-                    # ── 市值 ──────────────────────────────────────────
-                    mktcap = (raw.get('marketCap') or
-                              raw.get('enterpriseValue') or
-                              (raw.get('currentPrice', 0) * raw.get('sharesOutstanding', 0)) or 0)
-
-                    # ── 淨利率 ────────────────────────────────────────
-                    profit_margin = raw.get('profitMargins') or raw.get('grossMargins')
-
-                    # ── 52週高低（備援：從 ohlcv 計算）──────────────
-                    w52h = raw.get('fiftyTwoWeekHigh') or raw.get('regularMarketDayHigh')
-                    w52l = raw.get('fiftyTwoWeekLow')  or raw.get('regularMarketDayLow')
-                    # 若 yfinance 無法取得，從已收集的 ohlcv 計算
-                    if (not w52h or not w52l) and ohlcv:
-                        recent252 = ohlcv[-252:] if len(ohlcv) >= 252 else ohlcv
-                        if not w52h:
-                            w52h = max(r['high'] for r in recent252)
-                        if not w52l:
-                            w52l = min(r['low'] for r in recent252)
-
                     info = {
                         'name':           raw.get('longName') or raw.get('shortName', ticker),
-                        'eng_name':       raw.get('longName') or raw.get('shortName', ''),
-                        'sector':         raw.get('sector', '') or raw.get('categoryName', ''),
-                        'industry':       raw.get('industry', '') or raw.get('fundFamily', ''),
-                        'market_cap':     mktcap,
-                        'pe_ratio':       pe,
-                        'pb_ratio':       pb,
-                        'dividend_yield': div_yld,
-                        'eps':            eps,
-                        'revenue':        raw.get('totalRevenue') or raw.get('totalAssets'),
-                        'profit_margin':  profit_margin,
-                        'roe':            roe,
+                        'sector':         raw.get('sector', ''),
+                        'industry':       raw.get('industry', ''),
+                        'market_cap':     raw.get('marketCap', 0),
+                        'pe_ratio':       raw.get('trailingPE') or raw.get('forwardPE'),
+                        'pb_ratio':       raw.get('priceToBook'),
+                        'dividend_yield': raw.get('dividendYield'),
+                        'eps':            raw.get('trailingEps'),
+                        'revenue':        raw.get('totalRevenue'),
+                        'profit_margin':  raw.get('profitMargins'),
+                        'roe':            raw.get('returnOnEquity'),
                         'debt_ratio':     raw.get('debtToEquity'),
-                        '52w_high':       w52h,
-                        '52w_low':        w52l,
-                        'avg_volume':     raw.get('averageVolume') or raw.get('averageDailyVolume10Day'),
+                        '52w_high':       raw.get('fiftyTwoWeekHigh'),
+                        '52w_low':        raw.get('fiftyTwoWeekLow'),
+                        'avg_volume':     raw.get('averageVolume'),
                         'description':    raw.get('longBusinessSummary', ''),
                     }
                 except Exception as e:
                     print(f"  取得 info 失敗（非致命）: {e}")
-                    # 即使 info 取得失敗，仍從 ohlcv 補充 52w 高低
-                    recent252 = ohlcv[-252:] if len(ohlcv) >= 252 else ohlcv
-                    info = {
-                        'name': ticker, 'eng_name': '',
-                        '52w_high': max(r['high'] for r in recent252) if recent252 else None,
-                        '52w_low':  min(r['low'] for r in recent252) if recent252 else None,
-                    }
+                    info = {'name': ticker}
 
                 # 計算技術指標
                 indicators = calc_technical_indicators(ohlcv)
@@ -385,7 +337,6 @@ class ETFDataFetcher:
                     'ticker':        ticker,
                     'yf_ticker':     yf_ticker,
                     'name':          info.get('name', ticker),
-                    'eng_name':      info.get('eng_name', ''),
                     'ohlcv':         ohlcv,
                     'price_data':    price_data,
                     'dividend_data': dividend_data,
@@ -752,3 +703,30 @@ if __name__ == "__main__":
         if ind.get('macd'):
             last_macd = next((v for v in reversed(ind['macd']) if v is not None), None)
             print(f"MACD: {last_macd}")
+
+
+# ─────────────────────────────────────────────────────────────
+# 後端中文名稱對照表（供 app.py efficient_frontier API 使用）
+# ─────────────────────────────────────────────────────────────
+STOCK_NAMES_ZH_BACKEND = {
+    '2330':'台積電','2317':'鴻海','2454':'聯發科','2382':'廣達',
+    '2308':'台達電','2881':'富邦金','2882':'國泰金','2891':'中信金',
+    '2886':'兆豐金','2303':'聯電','2412':'中華電','1301':'台塑',
+    '1303':'南亞','2002':'中鋼','2357':'華碩','3008':'大立光',
+    '2395':'研華','4938':'和碩','2603':'長榮','2615':'萬海',
+    '2609':'陽明','2880':'華南金','2884':'玉山金','2885':'元大金',
+    '2887':'台新金','2888':'新光金','2890':'永豐金','3045':'台灣大',
+    '4904':'遠傳','2376':'技嘉','3711':'日月光投控','2379':'瑞昱',
+    '2409':'友達','2408':'南亞科','6505':'台塑化','1326':'台化',
+    '2207':'和泰車','2474':'可成','3481':'群創','2345':'智邦',
+    '5880':'合庫金','2892':'第一金','2883':'開發金','2834':'臺企銀',
+    '5871':'中租-KY','6669':'緯穎','3034':'聯詠','2301':'光寶科',
+    '2317':'鴻海','2542':'興富發','2881':'富邦金','2324':'仁寶',
+    '2535':'達欣工','5880':'合庫金','1101':'台泥','2330':'台積電',
+    '2301':'光寶科',
+    '0050':'元大台灣50','0056':'元大高股息',
+    '006208':'富邦台50','00878':'國泰永續高股息',
+    '00713':'元大台灣高息低波','00679B':'元大美債20年',
+    '00919':'群益台灣精選高息','00929':'復華台灣科技優息',
+    '00915':'凱基優選高股息30',
+}

@@ -206,14 +206,10 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <!-- ── 行情標題列 ─────────────────────────────────────────── -->
     <div class="card p-5 flex flex-wrap gap-4 items-center justify-between">
       <div>
-        <div class="flex flex-wrap items-start gap-x-3 gap-y-0.5 mb-1">
-          <!-- 代碼 -->
-          <span class="text-slate-400 mono text-base font-bold self-center" id="stockTicker">--</span>
-          <!-- 中文名（有則顯示，無則隱藏） -->
+        <div class="flex items-center gap-3 mb-1">
           <h2 class="text-2xl font-black text-white" id="stockName">--</h2>
-          <!-- 英文名 -->
-          <span class="text-slate-400 text-sm self-end pb-0.5" id="stockEngName" style="display:none"></span>
-          <span id="simulatedBadge" class="hidden text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-300 border border-amber-700 self-center">模擬資料</span>
+          <span class="text-slate-400 mono text-sm" id="stockTicker">--</span>
+          <span id="simulatedBadge" class="hidden text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-300 border border-amber-700">模擬資料</span>
         </div>
         <div class="text-slate-400 text-xs" id="stockSector">--</div>
       </div>
@@ -254,6 +250,12 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       </button>
       <button class="tab-btn" onclick="switchTab('news')" id="tab-news">
         <i class="fa-solid fa-newspaper mr-1"></i>個股新聞
+      </button>
+      <button class="tab-btn" onclick="switchTab('frontier')" id="tab-frontier">
+        <i class="fa-solid fa-chart-scatter mr-1"></i>效益邊緣線
+      </button>
+      <button class="tab-btn" onclick="switchTab('sim')" id="tab-sim">
+        <i class="fa-solid fa-chart-line mr-1"></i>SIM分析
       </button>
     </div>
 
@@ -399,14 +401,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <!-- 52週高低 & 市值 -->
       <div class="card p-5">
         <h3 class="font-bold text-white mb-4"><i class="fa-solid fa-chart-simple mr-2 text-blue-400"></i>市場表現</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4 text-sm" id="market-metrics"></div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm" id="market-metrics"></div>
       </div>
-      <!-- 資料說明提示 -->
-      <div class="rounded-xl bg-slate-800/40 border border-slate-700/30 px-4 py-2 text-xs text-slate-500 flex items-center gap-2">
-        <i class="fa-solid fa-circle-info text-blue-400 shrink-0"></i>
-        基本面資料來源：Yahoo Finance (yfinance)。部分欄位（本益比、ROE等）需上市公司定期財報揭露後方可取得，若暫無資料顯示「暫無」屬正常現象。52週高低點若 yfinance 未提供則由歷史K線計算補充。
-      </div>
-
       <!-- 公司描述 -->
       <div class="card p-5" id="descCard">
         <h3 class="font-bold text-white mb-3"><i class="fa-solid fa-building mr-2 text-slate-400"></i>公司簡介</h3>
@@ -687,54 +683,293 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       </div>
     </div>
 
+
+    <!-- ═══ Tab: 效益邊緣線 Efficient Frontier ══════════════════ -->
+    <div id="panel-frontier" class="hidden space-y-4">
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-1 flex items-center gap-2">
+          <i class="fa-solid fa-chart-scatter text-yellow-400"></i>效益邊緣線分析
+          <span class="text-slate-400 text-sm font-normal">（Efficient Frontier）</span>
+        </h3>
+        <p class="text-slate-500 text-xs mb-4">輸入2~15支股票代碼，系統從 yfinance 取得歷史資料，計算最佳投資組合邊緣。</p>
+
+        <!-- 股票輸入區 -->
+        <div class="flex flex-wrap gap-3 items-end mb-4">
+          <div class="flex-1 min-w-56">
+            <label class="text-xs text-slate-400 mb-1 block">股票代碼（逗號或空格分隔）</label>
+            <input id="efTickers" type="text" placeholder="例：2330 2317 2881 2454 2308"
+                   class="search-input text-sm" value="2330 2317 2881 2454 2308 5880 2382 2891 2603 4938">
+          </div>
+          <div class="shrink-0">
+            <label class="text-xs text-slate-400 mb-1 block">歷史期間</label>
+            <select id="efPeriod" class="search-input text-sm w-28">
+              <option value="1y">1年</option>
+              <option value="2y" selected>2年</option>
+              <option value="3y">3年</option>
+              <option value="5y">5年</option>
+            </select>
+          </div>
+          <div class="shrink-0">
+            <label class="text-xs text-slate-400 mb-1 block">模擬次數</label>
+            <select id="efSims" class="search-input text-sm w-28">
+              <option value="2000">2,000</option>
+              <option value="5000" selected>5,000</option>
+              <option value="10000">10,000</option>
+            </select>
+          </div>
+          <button onclick="runEfficientFrontier()"
+                  class="shrink-0 bg-yellow-600 hover:bg-yellow-500 text-white font-bold text-sm px-4 py-2.5 rounded-xl transition flex items-center gap-2">
+            <i class="fa-solid fa-play"></i>計算
+          </button>
+        </div>
+
+        <!-- 載入狀態 -->
+        <div id="efLoading" class="hidden py-6 text-center">
+          <div class="spinner mb-2" style="margin:auto"></div>
+          <div class="text-slate-400 text-sm" id="efLoadingText">計算中，請稍候...</div>
+        </div>
+        <div id="efError" class="hidden rounded-xl bg-red-900/20 border border-red-700/40 p-3 text-sm text-red-300 mb-3">
+          <i class="fa-solid fa-circle-exclamation mr-2"></i><span id="efErrorMsg"></span>
+        </div>
+
+        <!-- 摘要指標 -->
+        <div id="efSummary" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">最小變異組合 報酬率</div>
+            <div class="text-xl font-black text-red-400 mono" id="ef-mvp-ret">--</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">最小變異組合 風險</div>
+            <div class="text-xl font-black text-red-400 mono" id="ef-mvp-risk">--</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">最大夏普組合 報酬率</div>
+            <div class="text-xl font-black text-emerald-400 mono" id="ef-msp-ret">--</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">最大夏普比率</div>
+            <div class="text-xl font-black text-emerald-400 mono" id="ef-msp-sharpe">--</div>
+          </div>
+        </div>
+
+        <!-- 效益邊緣線圖表 -->
+        <div id="efChartWrap" class="hidden">
+          <div class="chart-wrap" style="height:480px">
+            <canvas id="efChart"></canvas>
+          </div>
+        </div>
+
+        <!-- 最佳組合權重表 -->
+        <div id="efWeightsWrap" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- 最小變異組合 -->
+          <div class="card p-4">
+            <h4 class="font-bold text-red-400 mb-3 text-sm flex items-center gap-2">
+              <span class="text-lg">★</span> 最小變異組合（MVP）
+            </h4>
+            <div id="efMvpWeights" class="space-y-2 text-sm"></div>
+          </div>
+          <!-- 最大夏普比率組合 -->
+          <div class="card p-4">
+            <h4 class="font-bold text-emerald-400 mb-3 text-sm flex items-center gap-2">
+              <span class="text-lg">◆</span> 最大夏普比率組合（MSP）
+            </h4>
+            <div id="efMspWeights" class="space-y-2 text-sm"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 說明 -->
+      <div class="rounded-xl bg-slate-800/40 border border-slate-700/30 p-3 text-xs text-slate-500">
+        <i class="fa-solid fa-circle-info mr-1 text-blue-400"></i>
+        效益邊緣線顯示在給定報酬率下風險最小的投資組合軌跡。
+        顏色深淺代表夏普比率（Sharpe Ratio），★ 為最小變異組合（MVP），◆ 為最大夏普比率組合（MSP）。
+        計算基於歷史資料，不代表未來績效保證。
+      </div>
+    </div>
+
+    <!-- ═══ Tab: SIM 單一指數模型分析 ════════════════════════════ -->
+    <div id="panel-sim" class="hidden space-y-4">
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-1 flex items-center gap-2">
+          <i class="fa-solid fa-chart-line text-blue-400"></i>單一指數模型分析
+          <span class="text-slate-400 text-sm font-normal">（Single Index Model, SIM）</span>
+        </h3>
+        <p class="text-slate-500 text-xs mb-4">以台灣加權指數（^TWII）為市場指標，計算個股 Beta、Alpha、R²，分解系統性與非系統性風險，並繪製證券市場線（SML）。</p>
+
+        <!-- 期間選擇 -->
+        <div class="flex flex-wrap gap-3 items-end mb-5">
+          <div class="shrink-0">
+            <label class="text-xs text-slate-400 mb-1 block">分析期間</label>
+            <div class="flex gap-1" id="simPeriodBtns">
+              <button class="period-btn" onclick="changeSIMPeriod('1y','1年')"  id="simP-1y">1年</button>
+              <button class="period-btn active" onclick="changeSIMPeriod('2y','2年')" id="simP-2y">2年</button>
+              <button class="period-btn" onclick="changeSIMPeriod('3y','3年')"  id="simP-3y">3年</button>
+              <button class="period-btn" onclick="changeSIMPeriod('5y','5年')"  id="simP-5y">5年</button>
+            </div>
+          </div>
+          <div class="text-xs text-slate-500 self-end pb-1">
+            分析對象：<span id="simTickerLabel" class="text-white font-bold">--</span>
+            &nbsp;|&nbsp; 市場指數：台灣加權指數 (^TWII)
+          </div>
+        </div>
+
+        <!-- 載入狀態 -->
+        <div id="simLoading" class="hidden py-6 text-center">
+          <div class="spinner mb-2" style="margin:auto"></div>
+          <div class="text-slate-400 text-sm">計算中，請稍候...</div>
+        </div>
+        <div id="simError" class="hidden rounded-xl bg-red-900/20 border border-red-700/40 p-3 text-sm text-red-300 mb-3">
+          <i class="fa-solid fa-circle-exclamation mr-2"></i><span id="simErrorMsg"></span>
+        </div>
+
+        <!-- SIM 核心指標 -->
+        <div id="simMetrics" class="hidden">
+          <!-- 核心數字 -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">Beta（β）</div>
+              <div class="text-2xl font-black mono" id="sim-beta">--</div>
+              <div class="text-xs text-slate-600 mt-1" id="sim-beta-note">--</div>
+            </div>
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">年化 Alpha（α）</div>
+              <div class="text-2xl font-black mono" id="sim-alpha">--</div>
+              <div class="text-xs text-slate-600 mt-1">超額報酬</div>
+            </div>
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">R²（決定係數）</div>
+              <div class="text-2xl font-black mono" id="sim-r2">--</div>
+              <div class="text-xs text-slate-600 mt-1">市場解釋力</div>
+            </div>
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">Jensen's Alpha</div>
+              <div class="text-2xl font-black mono" id="sim-jensen">--</div>
+              <div class="text-xs text-slate-600 mt-1">vs CAPM預期</div>
+            </div>
+          </div>
+
+          <!-- 風險分解 -->
+          <div class="card p-4 mb-4">
+            <h4 class="font-bold text-sm text-white mb-3">風險分解（年化標準差）</h4>
+            <div class="grid grid-cols-3 gap-4 mb-3">
+              <div class="text-center">
+                <div class="text-xs text-slate-400 mb-1">總風險 (σ)</div>
+                <div class="text-lg font-black text-white mono" id="sim-total-risk">--</div>
+              </div>
+              <div class="text-center">
+                <div class="text-xs text-slate-400 mb-1">系統性風險 (β·σm)</div>
+                <div class="text-lg font-black text-blue-400 mono" id="sim-sys-risk">--</div>
+                <div class="text-xs text-slate-500" id="sim-sys-pct">--</div>
+              </div>
+              <div class="text-center">
+                <div class="text-xs text-slate-400 mb-1">非系統性風險 (ε)</div>
+                <div class="text-lg font-black text-orange-400 mono" id="sim-idio-risk">--</div>
+                <div class="text-xs text-slate-500" id="sim-idio-pct">--</div>
+              </div>
+            </div>
+            <!-- 風險分解進度條 -->
+            <div class="text-xs text-slate-500 mb-1">系統性 vs 非系統性風險比例</div>
+            <div class="flex h-5 rounded-lg overflow-hidden">
+              <div id="sim-sys-bar"  class="bg-blue-500 transition-all flex items-center justify-center text-white text-xs font-bold" style="width:50%"></div>
+              <div id="sim-idio-bar" class="bg-orange-500 transition-all flex items-center justify-center text-white text-xs font-bold" style="width:50%"></div>
+            </div>
+            <div class="flex justify-between text-xs mt-1">
+              <span class="text-blue-400">系統性（可分散風險：無法透過分散投資消除）</span>
+              <span class="text-orange-400">非系統性（個別風險：可透過分散投資消除）</span>
+            </div>
+          </div>
+
+          <!-- 報酬率比較 -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">個股年化報酬</div>
+              <div class="text-base font-black mono" id="sim-stock-ret">--</div>
+            </div>
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">市場年化報酬</div>
+              <div class="text-base font-black mono" id="sim-mkt-ret">--</div>
+            </div>
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">CAPM預期報酬</div>
+              <div class="text-base font-black mono" id="sim-capm-ret">--</div>
+            </div>
+            <div class="ind-card text-center">
+              <div class="text-xs text-slate-500 mb-1">P值（顯著性）</div>
+              <div class="text-base font-black mono" id="sim-pvalue">--</div>
+            </div>
+          </div>
+
+          <!-- 兩張圖表並排 -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- 回歸散點圖 -->
+            <div class="card p-4">
+              <h4 class="font-bold text-sm text-white mb-2">
+                回歸散點圖（個股 vs 市場日報酬）
+              </h4>
+              <div class="chart-wrap" style="height:280px">
+                <canvas id="simScatterChart"></canvas>
+              </div>
+            </div>
+            <!-- SML 證券市場線 -->
+            <div class="card p-4">
+              <h4 class="font-bold text-sm text-white mb-2">
+                證券市場線（SML）
+                <span class="text-slate-400 text-xs font-normal ml-1">以 β 為橫軸</span>
+              </h4>
+              <div class="chart-wrap" style="height:280px">
+                <canvas id="simSMLChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- 模型解釋 -->
+          <div class="card p-4 mt-4" id="simInterpretation">
+            <h4 class="font-bold text-sm text-white mb-2">
+              <i class="fa-solid fa-circle-info mr-2 text-blue-400"></i>模型解讀
+            </h4>
+            <div id="simInterpText" class="text-sm text-slate-300 space-y-2 leading-relaxed"></div>
+          </div>
+        </div><!-- /simMetrics -->
+
+        <!-- 未查詢提示 -->
+        <div id="simNoData" class="py-10 text-center text-slate-500">
+          <i class="fa-solid fa-chart-line text-3xl mb-3 opacity-30"></i>
+          <div class="text-sm">請先在上方查詢個股，再切換到此Tab</div>
+        </div>
+      </div>
+
+      <!-- 公式說明 -->
+      <div class="card p-5">
+        <h4 class="font-bold text-sm text-white mb-3">
+          <i class="fa-solid fa-square-root-variable mr-2 text-slate-400"></i>SIM 模型公式
+        </h4>
+        <div class="space-y-2 text-sm text-slate-300">
+          <div class="ind-card font-mono text-center py-3">
+            r<sub>i,t</sub> = α<sub>i</sub> + β<sub>i</sub> × r<sub>m,t</sub> + ε<sub>i,t</sub>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-400">
+            <div class="ind-card">
+              <span class="text-blue-300 font-bold">β (Beta)</span>：個股對市場的敏感度。β&gt;1 代表波動大於市場；β&lt;1 代表較為防禦性；β=1 跟隨市場。
+            </div>
+            <div class="ind-card">
+              <span class="text-emerald-300 font-bold">α (Alpha)</span>：扣除市場貢獻後的超額報酬。正值表現優於市場預期，負值則低於預期。
+            </div>
+            <div class="ind-card">
+              <span class="text-orange-300 font-bold">R² (決定係數)</span>：市場報酬可解釋個股報酬變異的比例。高R²代表個股與市場高度連動。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl bg-slate-800/40 border border-slate-700/30 p-3 text-xs text-slate-500">
+        <i class="fa-solid fa-triangle-exclamation mr-1 text-amber-400"></i>
+        SIM分析結果基於歷史資料計算，Beta值會隨市場環境變動。本分析僅供學術研究與參考，不構成投資建議。
+      </div>
+    </div>
   </div><!-- /analysisSection -->
 </div><!-- /main -->
 
 <script>
-// ════════════════════════════════════════════════════════════════
-// 台灣股票/ETF 中文名稱對照表
-// ════════════════════════════════════════════════════════════════
-const STOCK_NAMES_ZH = {
-    '2330':'台積電','2317':'鴻海','2454':'聯發科','2382':'廣達',
-    '2308':'台達電','2881':'富邦金','2882':'國泰金','2891':'中信金',
-    '2886':'兆豐金','2303':'聯電','2412':'中華電','1301':'台塑',
-    '1303':'南亞','2002':'中鋼','2357':'華碩','3008':'大立光',
-    '2395':'研華','4938':'和碩','2603':'長榮','2615':'萬海',
-    '2609':'陽明','2880':'華南金','2884':'玉山金','2885':'元大金',
-    '2887':'台新金','2888':'新光金','2890':'永豐金','3045':'台灣大',
-    '4904':'遠傳','2376':'技嘉','3711':'日月光投控','2379':'瑞昱',
-    '2409':'友達','2408':'南亞科','6505':'台塑化','1326':'台化',
-    '2207':'和泰車','2474':'可成','3481':'群創','2345':'智邦',
-    '5880':'合庫金','2892':'第一金','2883':'開發金','2834':'臺企銀',
-    '5871':'中租-KY','6669':'緯穎','3034':'聯詠','2301':'光寶科',
-    '2347':'聯強','2352':'佳世達','2354':'鴻準','2356':'英業達',
-    '2360':'致茂','2363':'矽統','2367':'燿華','2368':'金像電',
-    '2371':'大同','2373':'震旦行','2374':'佳能','2375':'智寶',
-    '2377':'微星','2383':'台光電','2385':'群光','2386':'金利科技',
-    '2392':'正崴','2393':'億光','2397':'友通','2399':'映泰',
-    '2401':'凌陽','2404':'漢唐','2406':'國碩','2413':'環科',
-    '2414':'精技','2417':'圓剛','2421':'建準','2423':'固緯',
-    '2426':'鼎元','2429':'銘異','2431':'聯昌','2436':'偉詮電',
-    '2441':'超豐','2443':'史欽','2448':'晶電','2449':'京元電子',
-    '2450':'神腦','2451':'創見','2453':'凌群','2456':'奇力新',
-    '2457':'飛宏','2458':'義隆','2459':'敦吉','2461':'光群雷',
-    '2462':'實錄','2463':'揚德','2464':'盟立','2465':'麗臺',
-    '0050':'元大台灣50','0056':'元大高股息',
-    '006208':'富邦台50','00878':'國泰永續高股息',
-    '00713':'元大台灣高息低波','00679B':'元大美債20年',
-    '00919':'群益台灣精選高息','00929':'復華台灣科技優息',
-    '00915':'凱基優選高股息30','00757':'統一MSCI台灣',
-    '00850':'元大臺灣ESG永續','00692':'富邦公司治理',
-    '00900':'富邦特選高股息30','00907':'永豐優息存股',
-    '00930':'永豐ESG低碳高息','00934':'中信成長高股息',
-    '00939':'統一台灣高息動能','00940':'元大台灣價值高息',
-};
-
-function getStockNameZh(ticker) {
-    if (!ticker) return null;
-    return STOCK_NAMES_ZH[ticker.toUpperCase()] || null;
-}
-
 // ════════════════════════════════════════════════════════════════
 // 全域狀態
 // ════════════════════════════════════════════════════════════════
@@ -765,14 +1000,11 @@ async function loadPopular() {
     const d = await r.json();
     if (d.status !== 'success') return;
     const el = document.getElementById('popularList');
-    el.innerHTML = d.stocks.map(s => {
-      const zh = getStockNameZh(s.code);
-      const dispName = zh || s.name;
-      return `<button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
-        <span class="text-slate-400 text-xs">${s.code}</span>
-        <span>${dispName}</span>
-      </button>`;
-    }).join('');
+    el.innerHTML = d.stocks.map(s => `
+      <button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
+        <span class="text-slate-400">${s.code}</span>
+        <span>${s.name}</span>
+      </button>`).join('');
   } catch(e) { console.error('載入熱門清單失敗', e); }
 }
 
@@ -847,32 +1079,8 @@ function renderHeader(data) {
   const up = l.change >= 0;
   const color = up ? '#10b981' : '#ef4444';
 
-  // ── 三層名稱顯示：代碼 / 中文名 / 英文名 ──────────────────
-  const zhName  = getStockNameZh(data.ticker);
-  const engName = data.eng_name || data.name || '';
-
-  // 代碼
-  document.getElementById('stockTicker').textContent = data.ticker;
-
-  // 中文名（優先顯示，若無則隱藏）
-  const nameEl = document.getElementById('stockName');
-  if (zhName) {
-    nameEl.textContent = zhName;
-    nameEl.style.display = '';
-  } else {
-    // 無中文名時，改以英文名填充主標題
-    nameEl.textContent = engName || data.ticker;
-    nameEl.style.display = '';
-  }
-
-  // 英文名（有中文名 且 英文名不同才顯示）
-  const engEl = document.getElementById('stockEngName');
-  if (engEl) {
-    const showEng = zhName && engName && engName !== data.ticker && engName !== zhName;
-    engEl.textContent = showEng ? engName : '';
-    engEl.style.display = showEng ? '' : 'none';
-  }
-
+  document.getElementById('stockName').textContent   = data.name;
+  document.getElementById('stockTicker').textContent = `${data.ticker}`;
   document.getElementById('stockSector').textContent =
     [data.fundamentals.sector, data.fundamentals.industry].filter(Boolean).join(' · ') || '台灣上市';
 
@@ -979,51 +1187,25 @@ function setIndCard(id, val, close) {
 function renderFundamental(data) {
   const f = data.fundamentals;
 
-  // ── 估值指標（智慧顯示，N/A 給予說明）──────────────────────
-  const peDisp  = f.pe_ratio  != null ? f.pe_ratio  : null;
-  const pbDisp  = f.pb_ratio  != null ? f.pb_ratio  : null;
-  const epsDisp = f.eps       != null ? f.eps       : null;
-  const dyDisp  = f.div_yield != null ? f.div_yield : null;
-
   document.getElementById('valuation-metrics').innerHTML = [
-    metricRow('本益比 (P/E)', peDisp, 'x',
-              pe => pe < 15 ? 'up' : pe > 30 ? 'down' : 'flat',
-              'yfinance 暫未提供此數據'),
-    metricRow('股價淨值比 (P/B)', pbDisp, 'x',
-              pb => pb < 1.5 ? 'up' : pb > 3 ? 'down' : 'flat',
-              'yfinance 暫未提供此數據'),
-    metricRow('近12月殖利率', dyDisp != null ? dyDisp : (f.annual_div > 0 && data.latest.close > 0 ? round2(f.annual_div / data.latest.close * 100) : null),
-              '%', dy => dy >= 5 ? 'up' : dy >= 3 ? 'flat' : 'down'),
-    metricRow('每股盈餘 (EPS)', epsDisp, '元', null, 'yfinance 暫未提供此數據'),
+    metricRow('本益比 (P/E)', f.pe_ratio, 'x', pe => pe < 15 ? 'up' : pe > 30 ? 'down' : 'flat'),
+    metricRow('股價淨值比 (P/B)', f.pb_ratio, 'x', pb => pb < 1.5 ? 'up' : pb > 3 ? 'down' : 'flat'),
+    metricRow('近12月殖利率', f.div_yield, '%', dy => dy >= 5 ? 'up' : dy >= 3 ? 'flat' : 'down'),
+    metricRow('每股盈餘 (EPS)', f.eps, '元'),
   ].join('');
-
-  const roeDisp = f.roe           != null ? (f.roe * 100)           : null;
-  const pmDisp  = f.profit_margin != null ? (f.profit_margin * 100) : null;
-  const drDisp  = f.debt_ratio    != null ? f.debt_ratio            : null;
 
   document.getElementById('profit-metrics').innerHTML = [
-    metricRow('股東權益報酬率 (ROE)', roeDisp, '%',
-              v => v > 15 ? 'up' : v > 5 ? 'flat' : 'down',
-              'yfinance 暫未提供此數據'),
-    metricRow('淨利率', pmDisp, '%',
-              v => v > 20 ? 'up' : v > 5 ? 'flat' : 'down',
-              'yfinance 暫未提供此數據'),
-    metricRow('負債比率 (D/E)', drDisp, '',
-              v => v < 50 ? 'up' : v > 150 ? 'down' : 'flat',
-              'yfinance 暫未提供此數據'),
+    metricRow('股東權益報酬率 (ROE)', f.roe != null ? (f.roe * 100) : null, '%',
+              v => v > 15 ? 'up' : v > 5 ? 'flat' : 'down'),
+    metricRow('淨利率', f.profit_margin != null ? (f.profit_margin * 100) : null, '%',
+              v => v > 20 ? 'up' : v > 5 ? 'flat' : 'down'),
   ].join('');
 
-  const w52h = f['52w_high'];
-  const w52l = f['52w_low'];
-  const mktcap = (f.market_cap && f.market_cap > 0) ? fmtMktCap(f.market_cap) : null;
-  const avgVol = f.avg_volume ? fmtVol(f.avg_volume) : null;
-
   document.getElementById('market-metrics').innerHTML = [
-    mCard('52週高點',  w52h != null ? w52h.toFixed(2) : null, '元', '#ef4444', true),
-    mCard('52週低點',  w52l != null ? w52l.toFixed(2) : null, '元', '#10b981', true),
-    mCard('市值',      mktcap,  '', '#3b82f6', true),
-    mCard('近12月配息',f.annual_div > 0 ? f.annual_div.toFixed(4) : null, '元', '#f59e0b'),
-    mCard('均量',      avgVol,  '', '#8b5cf6', true),
+    mCard('52週高點', f['52w_high'], '元', '#ef4444'),
+    mCard('52週低點', f['52w_low'],  '元', '#10b981'),
+    mCard('市值',      f.market_cap != null ? fmtMktCap(f.market_cap) : null, '', '#3b82f6', true),
+    mCard('近12月配息', f.annual_div > 0 ? f.annual_div.toFixed(4) : null, '元', '#f59e0b'),
   ].join('');
 
   // 公司描述
@@ -1045,11 +1227,8 @@ function renderFundamental(data) {
     divHtml || '<tr><td colspan="2" class="py-4 text-center text-slate-500">無配息紀錄</td></tr>';
 }
 
-function metricRow(label, val, unit, colorFn, naNote) {
-  if (val == null) {
-    const note = naNote ? `<span class="text-slate-600 text-xs ml-1" title="${naNote}">暫無</span>` : '<span class="text-slate-600">—</span>';
-    return `<div class="flex justify-between py-2 border-b border-slate-800"><span class="text-slate-400">${label}</span>${note}</div>`;
-  }
+function metricRow(label, val, unit, colorFn) {
+  if (val == null) return `<div class="flex justify-between py-2 border-b border-slate-800"><span class="text-slate-400">${label}</span><span class="text-slate-600">N/A</span></div>`;
   const display = typeof val === 'number' ? val.toFixed(2) : val;
   const cls = colorFn ? colorFn(parseFloat(display)) : 'flat';
   const clsMap = {up:'text-green-400', down:'text-red-400', flat:'text-white'};
@@ -1058,8 +1237,6 @@ function metricRow(label, val, unit, colorFn, naNote) {
     <span class="font-bold mono ${clsMap[cls]||'text-white'}">${display}${unit}</span>
   </div>`;
 }
-
-function round2(n) { return n != null ? Math.round(n * 100) / 100 : null; }
 
 function mCard(label, val, unit, color, raw=false) {
   const display = val != null ? (raw ? val : `${val}${unit}`) : 'N/A';
@@ -1640,104 +1817,47 @@ async function loadNews() {
   document.getElementById('newsList').innerHTML = '';
   document.getElementById('newsEmpty').classList.add('hidden');
 
-  // 查詢詞：優先中文名，多組輪流嘗試提高命中率
+  // 查詢詞：用中文名（若有）+ 代碼
   const queryTerms = [];
-  // 最優先：中文名（最精準）
   if (zhName) queryTerms.push(zhName);
-  // 中文名 + 股票關鍵字
-  if (zhName) queryTerms.push(`${zhName} 股票`);
-  // 代碼 + 台股
-  queryTerms.push(`${ticker} 台股`);
-  // 英文公司名（取前一個詞）
-  if (engName && engName !== ticker) {
-    const firstWord = engName.split(/[\s,\.]/)[0];
-    if (firstWord.length > 2) queryTerms.push(firstWord);
-  }
+  queryTerms.push(`${ticker} 台灣股票`);
+  if (engName && engName !== ticker) queryTerms.push(engName.split(' ')[0]);
 
   let articles = [];
 
-  // ── 多重 proxy 備援策略 ───────────────────────────────────
-  // proxy1: rss2json（穩定，支援 RSS 解析）
-  // proxy2: allorigins（備援）
-  async function fetchRSSviaProxy(q) {
-    const encoded = encodeURIComponent(q);
-    const rssUrl  = `https://news.google.com/rss/search?q=${encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-
-    // 方法1: rss2json API（直接回傳 JSON，最穩定）
-    try {
-      const r2jUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=15`;
-      const r2j    = await fetch(r2jUrl, { signal: AbortSignal.timeout(8000) });
-      if (r2j.ok) {
-        const d = await r2j.json();
-        if (d.status === 'ok' && d.items && d.items.length > 0) {
-          return d.items.map(it => ({
-            title:   (it.title || '').trim(),
-            link:    it.link || it.guid || '#',
-            pubDate: it.pubDate || '',
-            source:  it.author || (it.source?.title) || 'Google News',
-            desc:    (it.description || it.content || '').replace(/<[^>]*>/g,'').trim(),
-          }));
-        }
-      }
-    } catch(e) { console.warn('rss2json 失敗:', e.message); }
-
-    // 方法2: allorigins proxy（備援）
-    try {
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-      if (resp.ok) {
-        const json   = await resp.json();
-        const xmlStr = json.contents || '';
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
-        const items  = Array.from(xmlDoc.querySelectorAll('item'));
-        if (items.length > 0) {
-          return items.slice(0,15).map(item => ({
-            title:   (item.querySelector('title')?.textContent || '').trim(),
-            link:    (item.querySelector('link')?.textContent  || '#').trim(),
-            pubDate: (item.querySelector('pubDate')?.textContent || '').trim(),
-            source:  (item.querySelector('source')?.textContent || 'Google News').trim(),
-            desc:    (item.querySelector('description')?.textContent || '').replace(/<[^>]*>/g,'').trim(),
-          }));
-        }
-      }
-    } catch(e) { console.warn('allorigins 失敗:', e.message); }
-
-    // 方法3: corsproxy.io（第三備援）
-    try {
-      const cpUrl = `https://corsproxy.io/?${encodeURIComponent(rssUrl)}`;
-      const resp  = await fetch(cpUrl, { signal: AbortSignal.timeout(8000) });
-      if (resp.ok) {
-        const xmlStr = await resp.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
-        const items  = Array.from(xmlDoc.querySelectorAll('item'));
-        if (items.length > 0) {
-          return items.slice(0,15).map(item => ({
-            title:   (item.querySelector('title')?.textContent || '').trim(),
-            link:    (item.querySelector('link')?.textContent  || '#').trim(),
-            pubDate: (item.querySelector('pubDate')?.textContent || '').trim(),
-            source:  (item.querySelector('source')?.textContent || 'Google News').trim(),
-            desc:    (item.querySelector('description')?.textContent || '').replace(/<[^>]*>/g,'').trim(),
-          }));
-        }
-      }
-    } catch(e) { console.warn('corsproxy 失敗:', e.message); }
-
-    return [];
-  }
-
   for (const q of queryTerms) {
     try {
-      const items = await fetchRSSviaProxy(q);
-      items.forEach(it => {
-        if (it.title && !articles.find(a => a.title === it.title)) {
-          articles.push({ ...it, sentiment: classifySentiment(it.title + ' ' + it.desc) });
+      const encoded = encodeURIComponent(q);
+      // 使用 allorigins 作為 CORS proxy 存取 Google News RSS
+      const rssUrl  = `https://news.google.com/rss/search?q=${encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) continue;
+      const json = await resp.json();
+      const xmlStr = json.contents || '';
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
+      const items  = Array.from(xmlDoc.querySelectorAll('item'));
+
+      items.slice(0, 15).forEach(item => {
+        const title   = item.querySelector('title')?.textContent?.trim()  || '';
+        const link    = item.querySelector('link')?.textContent?.trim()   || '#';
+        const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
+        const source  = item.querySelector('source')?.textContent?.trim() || 'Google News';
+        const desc    = item.querySelector('description')?.textContent?.replace(/<[^>]*>/g,'')?.trim() || '';
+
+        // 避免重複
+        if (!articles.find(a => a.title === title)) {
+          articles.push({ title, link, pubDate, source, desc,
+            sentiment: classifySentiment(title + ' ' + desc) });
         }
       });
+
       if (articles.length >= 20) break;
     } catch (e) {
-      console.warn('新聞查詢失敗:', e.message);
+      console.warn('新聞載入失敗:', e.message);
     }
   }
 
@@ -2033,15 +2153,19 @@ function drawKDChart(data) {
 // ════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  const tabs = ['chart','fundamental','chip','recommendation','montecarlo','scenario','news'];
+  const tabs = ['chart','fundamental','chip','recommendation','montecarlo','scenario','news','frontier','sim'];
   tabs.forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn   = document.getElementById(`tab-${t}`);
     if (panel) panel.classList.toggle('hidden', t !== tab);
     if (btn)   btn.classList.toggle('active', t === tab);
   });
-  // 切換到新聞 Tab 時自動載入
   if (tab === 'news' && currentData) loadNews();
+  // 切換到 SIM 時自動執行（若已有股票資料）
+  if (tab === 'sim' && currentData && !document.getElementById('simMetrics').classList.contains('hidden') === false) {
+    runSIMAnalysis();
+  }
+  if (tab === 'sim' && currentData) runSIMAnalysis();
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -2049,6 +2173,7 @@ function switchTab(tab) {
 // ════════════════════════════════════════════════════════════════
 function show(id) { const el = document.getElementById(id); if(el) el.classList.remove('hidden'); }
 function hide(id) { const el = document.getElementById(id); if(el) el.classList.add('hidden'); }
+function round2(n) { return Math.round(n * 100) / 100; }
 
 function fmtVol(n) {
   if (!n) return '0';
@@ -2090,6 +2215,436 @@ window.addEventListener('load', () => {
   const ticker = urlParams.get('ticker');
   if (ticker) loadStock(ticker);
 });
+
+// ════════════════════════════════════════════════════════════════
+// 效益邊緣線 (Efficient Frontier)
+// ════════════════════════════════════════════════════════════════
+
+async function runEfficientFrontier() {
+  const rawInput = document.getElementById('efTickers').value;
+  const tickers  = rawInput.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+  const period   = document.getElementById('efPeriod').value;
+  const nSim     = parseInt(document.getElementById('efSims').value);
+
+  if (tickers.length < 2) {
+    document.getElementById('efError').classList.remove('hidden');
+    document.getElementById('efErrorMsg').textContent = '請至少輸入2支股票代碼';
+    return;
+  }
+
+  // 清除舊結果
+  document.getElementById('efError').classList.add('hidden');
+  document.getElementById('efSummary').classList.add('hidden');
+  document.getElementById('efChartWrap').classList.add('hidden');
+  document.getElementById('efWeightsWrap').classList.add('hidden');
+  document.getElementById('efLoading').classList.remove('hidden');
+  document.getElementById('efLoadingText').textContent = `正在取得 ${tickers.join(', ')} 資料並計算（${nSim.toLocaleString()} 次模擬）...`;
+
+  try {
+    const resp = await fetch('/api/efficient_frontier', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ tickers, n_sim: nSim, period }),
+      signal: AbortSignal.timeout(180000)
+    });
+    const d = await resp.json();
+    document.getElementById('efLoading').classList.add('hidden');
+
+    if (d.status !== 'success') {
+      document.getElementById('efError').classList.remove('hidden');
+      document.getElementById('efErrorMsg').textContent = d.message || '計算失敗';
+      return;
+    }
+
+    renderEfficientFrontier(d);
+
+  } catch(e) {
+    document.getElementById('efLoading').classList.add('hidden');
+    document.getElementById('efError').classList.remove('hidden');
+    document.getElementById('efErrorMsg').textContent = '錯誤：' + e.message;
+  }
+}
+
+function renderEfficientFrontier(d) {
+  const mvp = d.mvp, msp = d.msp;
+
+  // ── 摘要指標 ────────────────────────────────────────────────
+  document.getElementById('ef-mvp-ret').textContent  = (mvp.ret * 100).toFixed(2) + '%';
+  document.getElementById('ef-mvp-risk').textContent = (mvp.risk * 100).toFixed(2) + '%';
+  document.getElementById('ef-msp-ret').textContent  = (msp.ret * 100).toFixed(2) + '%';
+  document.getElementById('ef-msp-sharpe').textContent = msp.sharpe.toFixed(3);
+  document.getElementById('efSummary').classList.remove('hidden');
+
+  // ── 效益邊緣線圖表 ──────────────────────────────────────────
+  const ctx = document.getElementById('efChart');
+  if (charts.ef) { charts.ef.destroy(); charts.ef = null; }
+  document.getElementById('efChartWrap').classList.remove('hidden');
+
+  const sim = d.sim;
+  const ef  = d.ef;
+  const maxSharpe = Math.max(...sim.sharpe);
+  const minSharpe = Math.min(...sim.sharpe);
+
+  // 夏普比率轉色（綠=高，紫=低）
+  function sharpeColor(s) {
+    const t = (s - minSharpe) / (maxSharpe - minSharpe + 1e-9);
+    const r = Math.round(139 + (16 - 139) * t);
+    const g = Math.round(92  + (185 - 92) * t);
+    const b = Math.round(246 + (129 - 246) * t);
+    return `rgba(${r},${g},${b},0.6)`;
+  }
+
+  charts.ef = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        // 模擬點（主散點，用夏普比率上色）
+        {
+          label:           '模擬投資組合',
+          data:            sim.risk.map((r,i) => ({x: r*100, y: sim.ret[i]*100})),
+          pointRadius:     2.5,
+          pointHoverRadius:5,
+          backgroundColor: sim.sharpe.map(s => sharpeColor(s)),
+          borderWidth:     0,
+          order:           3,
+        },
+        // 效率前緣曲線
+        {
+          type:            'line',
+          label:           '效益邊緣線',
+          data:            ef.risk.map((r,i) => ({x: r*100, y: ef.ret[i]*100})),
+          borderColor:     '#1e3a8a',
+          backgroundColor: 'transparent',
+          borderWidth:     2.5,
+          pointRadius:     4,
+          pointBackgroundColor: '#1e3a8a',
+          tension:         0.3,
+          order:           2,
+        },
+        // MVP（最小變異組合）
+        {
+          label:           '最小變異組合 (MVP)',
+          data:            [{x: mvp.risk*100, y: mvp.ret*100}],
+          pointStyle:      'star',
+          pointRadius:     16,
+          pointHoverRadius:20,
+          backgroundColor: '#ef4444',
+          borderColor:     '#fff',
+          borderWidth:     1.5,
+          order:           1,
+        },
+        // MSP（最大夏普組合）
+        {
+          label:           '最大夏普比率組合 (MSP)',
+          data:            [{x: msp.risk*100, y: msp.ret*100}],
+          pointStyle:      'rectRot',
+          pointRadius:     13,
+          pointHoverRadius:17,
+          backgroundColor: '#10b981',
+          borderColor:     '#fff',
+          borderWidth:     1.5,
+          order:           1,
+        },
+        // 個股單點
+        {
+          label:           '個股',
+          data:            d.stocks.map(s => ({x: s.risk*100, y: s.ret*100, label: s.ticker})),
+          pointStyle:      'circle',
+          pointRadius:     6,
+          pointHoverRadius:9,
+          backgroundColor: 'rgba(251,191,36,0.85)',
+          borderColor:     '#fff',
+          borderWidth:     1,
+          order:           1,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: { labels:{ color:'#94a3b8', font:{size:11} } },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              const pt = ctx.raw;
+              const base = `風險: ${ctx.parsed.x.toFixed(2)}%  報酬: ${ctx.parsed.y.toFixed(2)}%`;
+              if (ctx.datasetIndex === 2) return '★ MVP  ' + base;
+              if (ctx.datasetIndex === 3) return '◆ MSP  ' + base;
+              if (ctx.datasetIndex === 4 && pt.label) return `${pt.label}  ` + base;
+              const idx = ctx.dataIndex;
+              const sharpe = sim.sharpe[idx];
+              return base + (sharpe != null ? `  夏普: ${sharpe.toFixed(2)}` : '');
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display:true, text:'風險（年化標準差 %）', color:'#94a3b8', font:{size:12} },
+          ticks: { color:'#64748b', callback: v => v.toFixed(1)+'%' },
+          grid:  { color:'rgba(255,255,255,.05)' }
+        },
+        y: {
+          title: { display:true, text:'預期報酬率（年化 %）', color:'#94a3b8', font:{size:12} },
+          ticks: { color:'#64748b', callback: v => v.toFixed(1)+'%' },
+          grid:  { color:'rgba(255,255,255,.05)' }
+        }
+      }
+    }
+  });
+
+  // ── 權重表 ──────────────────────────────────────────────────
+  function renderWeights(containerId, weights, color) {
+    const sorted = Object.entries(weights).sort((a,b) => b[1]-a[1]);
+    const el = document.getElementById(containerId);
+    el.innerHTML = sorted.map(([tk, w]) => {
+      const pct  = (w * 100).toFixed(1);
+      const zh   = (typeof STOCK_NAMES_ZH !== 'undefined' && STOCK_NAMES_ZH[tk]) ? STOCK_NAMES_ZH[tk] : '';
+      return `<div class="flex items-center gap-2">
+        <span class="text-xs font-bold text-slate-300 w-16">${tk}</span>
+        <span class="text-xs text-slate-400 w-16">${zh}</span>
+        <div class="flex-1 bg-slate-800 rounded-full h-3">
+          <div class="h-3 rounded-full transition-all" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <span class="text-xs font-bold mono w-12 text-right">${pct}%</span>
+      </div>`;
+    }).join('');
+  }
+
+  renderWeights('efMvpWeights', mvp.weights, '#ef4444');
+  renderWeights('efMspWeights', msp.weights, '#10b981');
+  document.getElementById('efWeightsWrap').classList.remove('hidden');
+}
+
+// ════════════════════════════════════════════════════════════════
+// SIM 單一指數模型分析
+// ════════════════════════════════════════════════════════════════
+
+let simCurrentPeriod = '2y';
+
+function changeSIMPeriod(period, label) {
+  simCurrentPeriod = period;
+  ['1y','2y','3y','5y'].forEach(p => {
+    const btn = document.getElementById(`simP-${p}`);
+    if (btn) btn.classList.toggle('active', p === period);
+  });
+  if (currentData) runSIMAnalysis();
+}
+
+async function runSIMAnalysis() {
+  if (!currentData) {
+    document.getElementById('simNoData').classList.remove('hidden');
+    document.getElementById('simMetrics').classList.add('hidden');
+    return;
+  }
+  const ticker = currentData.ticker;
+  document.getElementById('simTickerLabel').textContent =
+    (typeof STOCK_NAMES_ZH !== 'undefined' && STOCK_NAMES_ZH[ticker])
+      ? `${ticker} ${STOCK_NAMES_ZH[ticker]}`
+      : ticker;
+
+  document.getElementById('simNoData').classList.add('hidden');
+  document.getElementById('simMetrics').classList.add('hidden');
+  document.getElementById('simError').classList.add('hidden');
+  document.getElementById('simLoading').classList.remove('hidden');
+
+  try {
+    const resp = await fetch(`/api/sim_analysis/${ticker}?period=${simCurrentPeriod}`,
+                             { signal: AbortSignal.timeout(60000) });
+    const d = await resp.json();
+    document.getElementById('simLoading').classList.add('hidden');
+
+    if (d.status !== 'success') {
+      document.getElementById('simError').classList.remove('hidden');
+      document.getElementById('simErrorMsg').textContent = d.message || '分析失敗';
+      return;
+    }
+    renderSIM(d.data);
+
+  } catch(e) {
+    document.getElementById('simLoading').classList.add('hidden');
+    document.getElementById('simError').classList.remove('hidden');
+    document.getElementById('simErrorMsg').textContent = '錯誤：' + e.message;
+  }
+}
+
+function renderSIM(d) {
+  // ── 核心指標 ─────────────────────────────────────────────────
+  const betaEl = document.getElementById('sim-beta');
+  betaEl.textContent = d.beta.toFixed(3);
+  betaEl.style.color = d.beta > 1.2 ? '#ef4444' : d.beta < 0.8 ? '#10b981' : '#e2e8f0';
+
+  const betaNote = d.beta > 1.5 ? '高波動（積極型）'
+                 : d.beta > 1.0 ? '高於市場'
+                 : d.beta > 0.8 ? '接近市場'
+                 : d.beta > 0   ? '防禦型'
+                 : '負相關';
+  document.getElementById('sim-beta-note').textContent = betaNote;
+
+  const alphaEl = document.getElementById('sim-alpha');
+  alphaEl.textContent = (d.alpha >= 0 ? '+' : '') + (d.alpha * 100).toFixed(2) + '%';
+  alphaEl.style.color = d.alpha >= 0 ? '#10b981' : '#ef4444';
+
+  document.getElementById('sim-r2').textContent = (d.r_squared * 100).toFixed(1) + '%';
+
+  const jensenEl = document.getElementById('sim-jensen');
+  jensenEl.textContent = (d.alpha_sml >= 0 ? '+' : '') + (d.alpha_sml * 100).toFixed(2) + '%';
+  jensenEl.style.color = d.alpha_sml >= 0 ? '#10b981' : '#ef4444';
+
+  // ── 風險分解 ─────────────────────────────────────────────────
+  document.getElementById('sim-total-risk').textContent = (d.total_risk * 100).toFixed(2) + '%';
+  document.getElementById('sim-sys-risk').textContent   = (d.sys_risk * 100).toFixed(2) + '%';
+  document.getElementById('sim-idio-risk').textContent  = (d.idio_risk * 100).toFixed(2) + '%';
+  document.getElementById('sim-sys-pct').textContent    = d.sys_pct + '%';
+  document.getElementById('sim-idio-pct').textContent   = d.idio_pct + '%';
+
+  document.getElementById('sim-sys-bar').style.width   = d.sys_pct + '%';
+  document.getElementById('sim-idio-bar').style.width  = d.idio_pct + '%';
+  document.getElementById('sim-sys-bar').textContent   = d.sys_pct > 10 ? d.sys_pct + '%' : '';
+  document.getElementById('sim-idio-bar').textContent  = d.idio_pct > 10 ? d.idio_pct + '%' : '';
+
+  // ── 報酬率比較 ───────────────────────────────────────────────
+  const fmtPct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+  const retEl  = document.getElementById('sim-stock-ret');
+  retEl.textContent = fmtPct(d.stock_annual_ret);
+  retEl.style.color = d.stock_annual_ret >= 0 ? '#10b981' : '#ef4444';
+
+  document.getElementById('sim-mkt-ret').textContent  = fmtPct(d.market_annual_ret);
+  document.getElementById('sim-capm-ret').textContent = fmtPct(d.expected_ret_capm);
+
+  const pvEl = document.getElementById('sim-pvalue');
+  pvEl.textContent = d.p_value < 0.001 ? '< 0.001 ***'
+                   : d.p_value < 0.01  ? d.p_value.toFixed(4) + ' **'
+                   : d.p_value < 0.05  ? d.p_value.toFixed(4) + ' *'
+                   : d.p_value.toFixed(4);
+  pvEl.style.color = d.p_value < 0.05 ? '#10b981' : '#f59e0b';
+
+  // ── 回歸散點圖 ───────────────────────────────────────────────
+  const scatterCtx = document.getElementById('simScatterChart');
+  if (charts.simScatter) { charts.simScatter.destroy(); charts.simScatter = null; }
+
+  charts.simScatter = new Chart(scatterCtx, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        {
+          label: '日報酬散點',
+          data:  d.scatter.market.map((m,i) => ({x: m*100, y: d.scatter.stock[i]*100})),
+          pointRadius: 2.5,
+          backgroundColor: 'rgba(59,130,246,0.4)',
+          borderWidth: 0,
+        },
+        {
+          type:    'line',
+          label:   `迴歸線 (β=${d.beta.toFixed(3)})`,
+          data:    d.regression_line.x.map((x,i) => ({x: x*100, y: d.regression_line.y[i]*100})),
+          borderColor: '#f59e0b',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: {duration:300},
+      plugins: {
+        legend: { labels:{ color:'#94a3b8', font:{size:10} } },
+        tooltip: { callbacks: { label: ctx => `市場: ${ctx.parsed.x.toFixed(2)}%  個股: ${ctx.parsed.y.toFixed(2)}%` } }
+      },
+      scales: {
+        x: { title:{ display:true, text:'市場日報酬率 (%)', color:'#64748b', font:{size:10} },
+             ticks:{ color:'#64748b', font:{size:9} }, grid:{ color:'rgba(255,255,255,.05)' } },
+        y: { title:{ display:true, text:'個股日報酬率 (%)', color:'#64748b', font:{size:10} },
+             ticks:{ color:'#64748b', font:{size:9} }, grid:{ color:'rgba(255,255,255,.05)' } }
+      }
+    }
+  });
+
+  // ── SML 證券市場線 ───────────────────────────────────────────
+  const smlCtx = document.getElementById('simSMLChart');
+  if (charts.simSML) { charts.simSML.destroy(); charts.simSML = null; }
+
+  charts.simSML = new Chart(smlCtx, {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label:   'SML（證券市場線）',
+          data:    d.sml.betas.map((b,i) => ({x: b, y: d.sml.rets[i]*100})),
+          borderColor: '#3b82f6',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+        },
+        {
+          type:            'scatter',
+          label:           `${d.ticker}（實際）`,
+          data:            [{x: d.beta, y: d.stock_annual_ret*100}],
+          pointStyle:      'circle',
+          pointRadius:     10,
+          pointHoverRadius:13,
+          backgroundColor: d.alpha_sml >= 0 ? '#10b981' : '#ef4444',
+          borderColor:     '#fff',
+          borderWidth:     2,
+        },
+        {
+          type:            'scatter',
+          label:           `CAPM預期`,
+          data:            [{x: d.beta, y: d.expected_ret_capm*100}],
+          pointStyle:      'triangle',
+          pointRadius:     8,
+          backgroundColor: '#f59e0b',
+          borderColor:     '#fff',
+          borderWidth:     2,
+        },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: {duration:300},
+      plugins: {
+        legend: { labels:{ color:'#94a3b8', font:{size:10} } },
+        tooltip: { callbacks: { label: ctx => `β: ${ctx.parsed.x.toFixed(2)}  E(r): ${ctx.parsed.y.toFixed(2)}%` } }
+      },
+      scales: {
+        x: { title:{ display:true, text:'Beta (β)', color:'#64748b', font:{size:10} },
+             ticks:{ color:'#64748b', font:{size:9} }, grid:{ color:'rgba(255,255,255,.05)' } },
+        y: { title:{ display:true, text:'預期報酬率 (%)', color:'#64748b', font:{size:10} },
+             ticks:{ color:'#64748b', font:{size:9}, callback: v => v.toFixed(1)+'%' },
+             grid:{ color:'rgba(255,255,255,.05)' } }
+      }
+    }
+  });
+
+  // ── 模型解讀文字 ─────────────────────────────────────────────
+  const betaType = d.beta > 1.2 ? '高 Beta 積極型股票，波動大於市場'
+                 : d.beta > 0.8 ? '中性 Beta，與市場連動程度適中'
+                 : '低 Beta 防禦型股票，波動小於市場';
+
+  const r2Desc   = d.r_squared > 0.7 ? '極高，個股走勢主要由市場驅動'
+                 : d.r_squared > 0.4 ? '中等，市場解釋力適中，個別因素也有影響'
+                 : '偏低，個股具備較強的獨立走勢';
+
+  const alphaDesc = d.alpha_sml >= 0
+    ? `正值（+${(d.alpha_sml*100).toFixed(2)}%），表示個股報酬**優於** CAPM 預期，具備超額報酬（Alpha）`
+    : `負值（${(d.alpha_sml*100).toFixed(2)}%），表示個股報酬**低於** CAPM 預期，管理者未能創造超額報酬`;
+
+  const sigDesc   = d.p_value < 0.05
+    ? `P值 = ${d.p_value.toFixed(4)}，Beta 係數在統計上顯著（95%信心水準）`
+    : `P值 = ${d.p_value.toFixed(4)}，Beta 係數在統計上不顯著，需謹慎解釋`;
+
+  document.getElementById('simInterpText').innerHTML = `
+    <p>📊 <strong>Beta 解讀</strong>：β = ${d.beta.toFixed(3)}，屬${betaType}。市場漲跌1%，理論上此股漲跌 ${(d.beta*100/100).toFixed(2)}%。</p>
+    <p>📈 <strong>R² 解讀</strong>：R² = ${(d.r_squared*100).toFixed(1)}%，${r2Desc}。系統性風險佔總風險的 ${d.sys_pct}%。</p>
+    <p>💡 <strong>Jensen's Alpha</strong>：${alphaDesc}。</p>
+    <p>📐 <strong>統計顯著性</strong>：${sigDesc}。</p>
+    <p>⚠️ <strong>風險分解</strong>：年化總風險 ${(d.total_risk*100).toFixed(2)}% = 系統性風險 ${(d.sys_risk*100).toFixed(2)}% + 非系統性風險 ${(d.idio_risk*100).toFixed(2)}%。透過分散投資可消除非系統性風險。</p>
+  `;
+
+  document.getElementById('simMetrics').classList.remove('hidden');
+}
 </script>
 </body>
 </html>
