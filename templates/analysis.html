@@ -1114,7 +1114,7 @@ function renderAll(data) {
 function renderHeader(data) {
   const l = data.latest;
   const up = l.change >= 0;
-  const color = up ? '#10b981' : '#ef4444';
+  const color = up ? '#ef4444' : '#10b981';  // 台灣慣例：漲紅跌綠
 
   // ── 股票代碼、中文名、英文名分開顯示 ──────────────────────────────
   const zhName  = getStockNameZh(data.ticker);
@@ -1950,6 +1950,47 @@ function sentimentBadge(s) {
   return '<span class="news-sentiment-neu inline-block px-2 py-0.5 rounded text-xs font-bold">中性</span>';
 }
 
+// ── CORS Proxy 清單（依序嘗試，任一成功即停止）────────────────────────
+const CORS_PROXIES = [
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+/**
+ * 透過多備援 Proxy 取得 RSS XML 字串
+ * 回傳第一個成功的 xmlStr，全部失敗則 throw
+ */
+async function fetchRssWithFallback(rssUrl) {
+  const errors = [];
+  for (const buildProxy of CORS_PROXIES) {
+    try {
+      const proxyUrl = buildProxy(rssUrl);
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) { errors.push(`HTTP ${resp.status}`); continue; }
+      const data = await resp.json().catch(() => null);
+      // allorigins / corsproxy.io 回傳 { contents: '...' }
+      // codetabs 直接回傳文字，需用 resp.text() 再試
+      const xmlStr = (data && data.contents) ? data.contents : null;
+      if (xmlStr && xmlStr.trim().length > 0) return xmlStr;
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  // codetabs 直接回傳純文字（第三備援），補一次 text() 嘗試
+  try {
+    const resp = await fetch(
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rssUrl)}`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    if (resp.ok) {
+      const txt = await resp.text();
+      if (txt && txt.includes('<item>')) return txt;
+    }
+  } catch(e) { errors.push(e.message); }
+  throw new Error('所有 Proxy 均失敗：' + errors.join(' | '));
+}
+
 async function loadNews() {
   if (!currentData) return;
   const ticker = currentData.ticker;
@@ -1978,14 +2019,10 @@ async function loadNews() {
   for (const q of queryTerms) {
     try {
       const encoded = encodeURIComponent(q);
-      // 使用 allorigins 作為 CORS proxy 存取 Google News RSS
       const rssUrl  = `https://news.google.com/rss/search?q=${encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
 
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-      if (!resp.ok) continue;
-      const json = await resp.json();
-      const xmlStr = json.contents || '';
+      // 使用多備援 Proxy 取得 RSS
+      const xmlStr = await fetchRssWithFallback(rssUrl);
 
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlStr, 'text/xml');
@@ -1999,7 +2036,7 @@ async function loadNews() {
         const desc    = item.querySelector('description')?.textContent?.replace(/<[^>]*>/g,'')?.trim() || '';
 
         // 避免重複
-        if (!articles.find(a => a.title === title)) {
+        if (title && !articles.find(a => a.title === title)) {
           articles.push({ title, link, pubDate, source, desc,
             sentiment: classifySentiment(title + ' ' + desc) });
         }
@@ -2007,14 +2044,17 @@ async function loadNews() {
 
       if (articles.length >= 20) break;
     } catch (e) {
-      console.warn('新聞載入失敗:', e.message);
+      console.warn(`新聞查詢「${q}」失敗:`, e.message);
     }
   }
 
   document.getElementById('newsLoading').classList.add('hidden');
 
   if (articles.length === 0) {
-    document.getElementById('newsEmpty').classList.remove('hidden');
+    // 顯示錯誤提示（而非無聲的「無新聞」）
+    document.getElementById('newsError').classList.remove('hidden');
+    document.getElementById('newsErrorMsg').textContent =
+      '無法連線到新聞來源，請檢查網路或稍後重試。';
     return;
   }
 
