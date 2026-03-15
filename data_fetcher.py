@@ -90,22 +90,29 @@ def calc_technical_indicators(ohlcv: list) -> dict:
     n = len(closes)
 
     def ema(data, period):
+        """
+        EMA 計算：前 period 筆用 SMA 作為初始種子（與 Goodinfo/TradingView 一致）
+        前 period-1 筆回傳 None（資料不足）
+        """
         result = [None] * len(data)
+        valid_indices = [i for i, v in enumerate(data) if v is not None]
+        if len(valid_indices) < period:
+            return result
+        first = valid_indices[0]
+        if first + period > len(data):
+            return result
+        # 用前 period 筆 SMA 當種子
+        seed_vals = [data[i] for i in range(first, first + period) if data[i] is not None]
+        if len(seed_vals) < period:
+            return result
+        seed = sum(seed_vals) / period
+        result[first + period - 1] = round(seed, 6)
         k = 2 / (period + 1)
-        seed = None
-        valid_start = 0
-        for i, v in enumerate(data):
-            if v is None:
+        for i in range(first + period, len(data)):
+            if data[i] is None:
                 continue
-            if seed is None:
-                seed = v
-                valid_start = i
-            else:
-                seed = v * k + seed * (1 - k)
-            result[i] = round(seed, 4)
-        # 前 period-1 筆視為無效
-        for i in range(valid_start, min(valid_start + period - 1, len(data))):
-            result[i] = None
+            seed = data[i] * k + seed * (1 - k)
+            result[i] = round(seed, 6)
         return result
 
     def sma(data, period):
@@ -126,12 +133,12 @@ def calc_technical_indicators(ohlcv: list) -> dict:
     ema12 = ema(closes, 12)
     ema26 = ema(closes, 26)
     macd_line = [
-        round(e12 - e26, 4) if (e12 is not None and e26 is not None) else None
+        round(e12 - e26, 6) if (e12 is not None and e26 is not None) else None
         for e12, e26 in zip(ema12, ema26)
     ]
     signal_line = ema(macd_line, 9)
     macd_hist = [
-        round((m - s) * 2, 4) if (m is not None and s is not None) else None
+        round(m - s, 6) if (m is not None and s is not None) else None
         for m, s in zip(macd_line, signal_line)
     ]
 
@@ -265,7 +272,7 @@ class ETFDataFetcher:
             yf_ticker = f"{ticker}{suffix}"
             try:
                 tk = yf.Ticker(yf_ticker)
-                hist = tk.history(period='2y', timeout=15)
+                hist = tk.history(period='max', timeout=15)
                 if hist is None or hist.empty:
                     continue
 

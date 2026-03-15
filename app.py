@@ -415,16 +415,16 @@ def get_stock_analysis(ticker):
             info, div_yield, support, resist
         )
 
-        # ── 圖表資料（全部 OHLCV，前端依週期聚合）────────────
+        # ── 圖表資料（近5年 OHLCV，指標來自全量歷史確保 EMA 收斂）──
         # yfinance 回傳的 volume 單位是「股」，台灣習慣用「張」(1張=1000股)
-        chart_ohlcv = ohlcv  # 回傳全部供前端聚合年線等長週期
+        CHART_DAYS  = 1260          # 約5年交易日（252×5）
+        chart_ohlcv = ohlcv[-CHART_DAYS:] if len(ohlcv) > CHART_DAYS else ohlcv
         chart_len   = len(chart_ohlcv)
-        offset      = len(ohlcv) - chart_len  # 對齊指標陣列
+        offset      = len(ohlcv) - chart_len   # 對齊指標陣列（指標與全量 ohlcv 等長）
 
         def to_lots(v):
             """股 → 張（÷1000，至少1張）"""
             return max(1, round(v / 1000)) if v else 0
-        offset      = len(ohlcv) - chart_len  # 對齊指標陣列
 
         def slice_ind(key):
             lst = indicators.get(key, [])
