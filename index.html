@@ -55,20 +55,16 @@
         /* ETF明細表動畫 */
         #cashflowSection {
             transition: all 0.3s ease-in-out;
-            overflow: hidden;
-        }
-        #cashflowSection.collapsed {
-            max-height: 0;
-            padding: 0;
-            margin: 0;
-            border: none;
-            opacity: 0;
-        }
-        #cashflowSection.expanded {
-            max-height: 5000px;
-            opacity: 1;
         }
         
+        /* 重複標頭列 */
+        tr.repeat-header th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        tr.repeat-header { border-top: 2px solid #94a3b8; border-bottom: 1px solid #cbd5e1; }
+
         /* 現金流分析特殊樣式 */
         .etf-selector-btn {
             padding: 8px 16px;
@@ -100,9 +96,20 @@
     <div class="header-bg p-8 text-white text-center">
         <h1 class="text-3xl font-black italic tracking-tighter">
             FIRE-AI  財務自由，提早退休理財規劃
-            <span class="text-blue-400 text-sm font-normal not-italic ml-2">v3.0</span>
+            <span class="text-blue-400 text-sm font-normal not-italic ml-2">v4.0</span>
         </h1>
         <p class="text-blue-100 mt-2 text-sm">真實歷史回測 ▸ 歷史統計推估 ▸ 通膨修正分析</p>
+        <!-- 頁面導覽 -->
+        <div class="flex justify-center gap-3 mt-4">
+            <span class="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-bold bg-white/20 text-white border border-white/30">
+                <i class="fa-solid fa-house mr-1.5"></i>退休規劃回測
+            </span>
+            <a href="/analysis"
+               class="inline-flex items-center px-4 py-1.5 rounded-full text-xs font-bold bg-emerald-500/80 hover:bg-emerald-400 text-white border border-emerald-400/50 transition-all duration-200 hover:scale-105">
+                <i class="fa-solid fa-chart-candlestick mr-1.5"></i>股票分析中心
+                <span class="ml-1.5 bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]">NEW</span>
+            </a>
+        </div>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 p-8">
@@ -223,6 +230,16 @@
                 </div>
             </div>
 
+            <!-- 前往股票分析中心（置於退休後資金提領率下方） -->
+            <a href="/analysis" id="goAnalysisBtn"
+               class="flex items-center justify-between w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 px-4 rounded-2xl shadow transition-all duration-200 hover:scale-[1.02] hover:shadow-lg">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-chart-candlestick text-emerald-200"></i>
+                    <span class="text-sm">前往股票分析中心</span>
+                </div>
+                <i class="fa-solid fa-arrow-right text-emerald-200"></i>
+            </a>
+
             <!-- 分析狀態顯示 -->
             <div id="analysisStatus" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
                 <i class="fa-solid fa-spinner fa-spin text-blue-600 mr-2"></i>
@@ -336,8 +353,8 @@
                 </div>
             </div>
 
-            <!-- ═══ 蒙地卡羅模擬區塊 ═══ -->
-            <div id="mcSection" class="mc-section p-6 hidden">
+            <!-- 蒙地卡羅模擬已移至「股票分析中心」頁面 -->
+            <div id="mcSection" class="hidden" style="display:none!important">
                 <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
                     <h2 class="font-bold text-lg text-white flex items-center">
                         <i class="fa-solid fa-dice mr-2 text-blue-400"></i>
@@ -382,47 +399,55 @@
                 </div>
             </div>
 
-            <!-- ═══ 情境分析區塊 ═══ -->
-            <div id="scenarioSection" class="hidden">
-                <div class="bg-white p-6 rounded-2xl border border-slate-200">
-                    <h2 class="font-bold text-lg text-slate-800 flex items-center mb-5">
-                        <i class="fa-solid fa-layer-group mr-2 text-purple-600"></i>
-                        市場情境分析
-                        <span class="ml-3 text-xs font-normal text-slate-400">牛市 / 基準 / 熊市 / 盤整</span>
-                    </h2>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6" id="scenarioCards">
-                        <!-- JS 填入 -->
-                    </div>
-
-                    <!-- 情境比較圖表 -->
-                    <div style="position:relative; height:360px;">
-                        <canvas id="scenarioChart"></canvas>
-                    </div>
-                </div>
+            <!-- 情境分析已移至「股票分析中心」頁面 -->
+            <div id="scenarioSection" class="hidden" style="display:none!important">
+                <canvas id="scenarioChart" style="display:none"></canvas>
+                <div id="scenarioCards"></div>
             </div>
 
             <!-- 年度投資報表 -->
-            <div class="bg-white p-6 rounded-2xl border border-slate-200">
-                <div class="flex flex-wrap justify-between items-center mb-4 gap-3">
-                    <h2 class="font-bold text-lg text-slate-800 flex items-center">
+            <div class="bg-white rounded-2xl border border-slate-200">
+                <!-- 標題列（永遠顯示，點擊展開/收合） -->
+                <div class="flex flex-wrap justify-between items-center p-6 pb-4 gap-3">
+                    <h2 class="font-bold text-lg text-slate-800 flex items-center cursor-pointer select-none" onclick="toggleReportSection()">
                         <i class="fa-solid fa-table mr-2 text-blue-600"></i><span id="reportTitle">年度投資報表</span>
+                        <i id="reportToggleIcon" class="fa-solid fa-chevron-down ml-2 text-sm text-slate-400 transition-transform duration-300"></i>
                     </h2>
-                    <!-- Tab 切換 -->
-                    <div class="flex gap-2 flex-wrap">
-                        <button id="tabBtn0" onclick="switchReportTab(0)"
-                            class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-blue-500 bg-blue-500 text-white transition">
-                            持續投入推估
-                        </button>
-                        <button id="tabBtn1" onclick="switchReportTab(1)"
-                            class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-orange-400 text-orange-500 bg-white transition">
-                            退休後－停止投入
-                        </button>
-                        <button id="tabBtn2" onclick="switchReportTab(2)"
-                            class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-purple-500 text-purple-500 bg-white transition">
-                            退休後－繼續定期定額
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <!-- Tab 切換 -->
+                        <div class="flex gap-2 flex-wrap">
+                            <button id="tabBtn0" onclick="event.stopPropagation();switchReportTab(0)"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-blue-500 bg-blue-500 text-white transition">
+                                持續投入推估
+                            </button>
+                            <button id="tabBtn1" onclick="event.stopPropagation();switchReportTab(1)"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-orange-400 text-orange-500 bg-white transition">
+                                退休後－停止投入
+                            </button>
+                            <button id="tabBtn2" onclick="event.stopPropagation();switchReportTab(2)"
+                                class="px-4 py-1.5 rounded-full text-xs font-bold border-2 border-purple-500 text-purple-500 bg-white transition">
+                                退休後－繼續定期定額
+                            </button>
+                        </div>
+                        <button class="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs px-3 py-1.5 rounded-lg border border-blue-200 transition"
+                                onclick="toggleReportSection()">
+                            <span id="reportToggleText">展開明細</span>
                         </button>
                     </div>
+                </div>
+
+                <!-- 可折疊區 -->
+                <div id="reportDetailSection" style="overflow:hidden;max-height:0;opacity:0;transition:max-height .45s ease,opacity .3s ease;">
+
+                <div class="px-6 pb-6">
+
+                <!-- 下載回測及推估CSV報表按鈕（展開後頂部） -->
+                <div id="downloadBacktestWrapper" class="hidden mb-4">
+                    <button onclick="downloadCSV()"
+                            class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-5 rounded-xl shadow transition flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv"></i>
+                        下載回測及推估CSV報表
+                    </button>
                 </div>
 
                 <!-- Tab 0：持續投入推估（原有） -->
@@ -510,38 +535,40 @@
                         </table>
                     </div>
                 </div>
+            </div><!-- /reportDetailSection inner -->
+                </div><!-- /reportDetailSection -->
             </div>
 
-            <!-- 下載回測及推估CSV報表按鈕 -->
-            <div id="downloadBacktestWrapper" class="mb-2 text-center hidden">
-                <button onclick="downloadCSV()"
-                        class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
-                    <i class="fa-solid fa-file-csv mr-2"></i>
-                    下載回測及推估CSV報表
-                </button>
-            </div>
+            <!-- 完整現金流分析報表（與年度投資報表同樣 toggle 風格） -->
+            <div id="cashflowSection" class="bg-white rounded-2xl border border-slate-200" style="display:none;">
+                <!-- 標題列（預設顯示，點擊展開/收合） -->
+                <div class="flex flex-wrap justify-between items-center p-6 pb-4 gap-3">
+                    <h2 class="font-bold text-lg text-slate-800 flex items-center cursor-pointer select-none" onclick="toggleCashflowSection()">
+                        <i class="fa-solid fa-money-bill-trend-up mr-2 text-pink-600"></i>
+                        <span>完整現金流分析</span>
+                        <i id="cashflowToggleIcon" class="fa-solid fa-chevron-down ml-2 text-sm text-slate-400 transition-transform duration-300"></i>
+                    </h2>
+                    <button class="flex items-center gap-1.5 bg-pink-50 hover:bg-pink-100 text-pink-700 font-bold text-xs px-3 py-1.5 rounded-lg border border-pink-200 transition"
+                            onclick="toggleCashflowSection()">
+                        <span id="cashflowToggleText">展開明細</span>
+                    </button>
+                </div>
 
-            <!-- 完整現金流分析按鈕 -->
-            <div id="cashflowBtnWrapper" class="mb-4" style="display:none;">
-                <button id="btnCashflowAnalysis"
-                        onclick="toggleCashflowAnalysis()"
-                        class="bg-pink-600 hover:bg-pink-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
-                    <i class="fa-solid fa-money-bill-wave mr-2"></i>
-                    完整現金流分析
-                </button>
-            </div>
+                <!-- 可折疊區 -->
+                <div id="cashflowDetailSection" style="overflow:hidden;max-height:0;opacity:0;transition:max-height .45s ease,opacity .3s ease;">
+                <div class="px-6 pb-6">
 
-            <!-- 完整現金流分析報表 -->
-            <div id="cashflowSection" class="bg-white p-6 rounded-2xl border border-slate-200 collapsed">
-                <h2 class="font-bold text-lg text-slate-800 flex items-center mb-4">
-                    <i class="fa-solid fa-money-bill-trend-up mr-2 text-purple-600"></i>
-                    <span>完整現金流分析報表</span>
-                </h2>
-                
-                <!-- ETF選擇器 -->
-                <div class="mb-4">
-                    <label class="block text-sm font-bold text-slate-700 mb-2">選擇ETF查看詳細記錄：</label>
-                    <div class="flex gap-2" id="cashflowETFSelector"></div>
+                <!-- 頂部工具列：ETF選擇器 + 下載按鈕 -->
+                <div class="flex flex-wrap justify-between items-end gap-3 mb-4">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">選擇ETF查看詳細記錄：</label>
+                        <div class="flex gap-2 flex-wrap" id="cashflowETFSelector"></div>
+                    </div>
+                    <button onclick="downloadCashflowCSV()"
+                            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-5 rounded-xl shadow transition flex items-center gap-2 shrink-0">
+                        <i class="fa-solid fa-download"></i>
+                        下載現金流CSV
+                    </button>
                 </div>
 
                 <!-- 現金流分析表格 -->
@@ -600,23 +627,30 @@
                     </div>
                 </div>
 
-                <!-- 下載按鈕 -->
-                <div class="mt-4 text-center">
-                    <button onclick="downloadCashflowCSV()"
-                            class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition">
-                        <i class="fa-solid fa-download mr-2"></i>
-                        下載現金流CSV
-                    </button>
-                </div>
+
+            </div><!-- /cashflowDetailSection inner -->
+                </div><!-- /cashflowDetailSection -->
             </div>
 
-            <!-- 退休後情境比較摘要（獨立區塊，永遠顯示於年度報表下方） -->
-            <div id="retirementSummarySection" class="bg-white p-6 rounded-2xl border border-slate-200 hidden">
-                <h3 class="font-bold text-lg text-slate-800 mb-4 flex items-center">
-                    <i class="fa-solid fa-umbrella-beach mr-2 text-orange-500"></i>
-                    退休後情境比較摘要（整體投資組合）
-                    <span id="retireSummaryLabel" class="ml-2 text-xs font-normal text-slate-400"></span>
-                </h3>
+            <!-- 退休後情境比較摘要（獨立區塊） -->
+            <div id="retirementSummarySection" class="bg-white rounded-2xl border border-slate-200 hidden">
+                <!-- 標題列 -->
+                <div class="flex flex-wrap justify-between items-center p-6 pb-4 gap-3 cursor-pointer select-none"
+                     onclick="toggleRetireSummarySection()">
+                    <h3 class="font-bold text-lg text-slate-800 flex items-center">
+                        <i class="fa-solid fa-umbrella-beach mr-2 text-orange-500"></i>
+                        退休後情境比較摘要（整體投資組合）
+                        <span id="retireSummaryLabel" class="ml-2 text-xs font-normal text-slate-400"></span>
+                        <i id="retireSummaryToggleIcon" class="fa-solid fa-chevron-down ml-2 text-sm text-slate-400 transition-transform duration-300"></i>
+                    </h3>
+                    <button class="flex items-center gap-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-xs px-3 py-1.5 rounded-lg border border-orange-200 transition"
+                            onclick="event.stopPropagation();toggleRetireSummarySection()">
+                        <span id="retireSummaryToggleText">展開明細</span>
+                    </button>
+                </div>
+                <!-- 可折疊區 -->
+                <div id="retireSummaryDetailSection" style="overflow:hidden;max-height:0;opacity:0;transition:max-height .45s ease,opacity .3s ease;">
+                <div class="px-6 pb-6">
                 <!-- 合併情境A＋B 為同一張表，共用「退休後第」與「年份」欄 -->
                 <div class="overflow-x-auto">
                     <table class="w-full text-xs border border-slate-200 rounded-xl overflow-hidden">
@@ -646,6 +680,8 @@
                         </tbody>
                     </table>
                 </div>
+            </div><!-- /retireSummaryDetailSection inner -->
+                </div><!-- /retireSummaryDetailSection -->
             </div>
 
         </div>
@@ -653,6 +689,119 @@
 </div>
 
 <script>
+    // ══════════════════════════════════════════════════════════════
+    // 台灣股票/ETF 中文名稱對照表
+    // ══════════════════════════════════════════════════════════════
+    const STOCK_NAMES_ZH = {
+        '2330':'台積電','2317':'鴻海','2454':'聯發科','2382':'廣達',
+        '2308':'台達電','2881':'富邦金','2882':'國泰金','2891':'中信金',
+        '2886':'兆豐金','2303':'聯電','2412':'中華電','1301':'台塑',
+        '1303':'南亞','2002':'中鋼','2357':'華碩','3008':'大立光',
+        '2395':'研華','4938':'和碩','2603':'長榮','2615':'萬海',
+        '2609':'陽明','2880':'華南金','2884':'玉山金','2885':'元大金',
+        '2887':'台新金','2888':'新光金','2890':'永豐金','3045':'台灣大',
+        '4904':'遠傳','2497':'宏達電','2376':'技嘉','3711':'日月光投控',
+        '2379':'瑞昱','2409':'友達','2408':'南亞科','6505':'台塑化',
+        '1326':'台化','2207':'和泰車','2474':'可成','3481':'群創',
+        '0050':'元大台灣50','0051':'元大中型100','0052':'富邦科技',
+        '0056':'元大高股息','006208':'富邦台50','00878':'國泰永續高股息',
+        '00713':'元大台灣高息低波','00679B':'元大美債20年',
+        '00919':'群益台灣精選高息','00929':'復華台灣科技優息',
+        '00915':'凱基優選高股息30','00757':'統一MSCI台灣',
+        '00850':'元大臺灣ESG永續','00692':'富邦公司治理',
+        '00900':'富邦特選高股息30','00907':'永豐優息存股',
+        '00930':'永豐ESG低碳高息','00934':'中信成長高股息',
+        '00939':'統一台灣高息動能','00940':'元大台灣價值高息',
+    };
+
+    function getStockNameZh(ticker) {
+        return STOCK_NAMES_ZH[ticker] || null;
+    }
+
+    // ── 完整現金流分析折疊 ─────────────────────────────────────────
+    let _cashflowOpen = false;
+    function toggleCashflowSection() {
+        const section = document.getElementById('cashflowDetailSection');
+        const icon    = document.getElementById('cashflowToggleIcon');
+        const text    = document.getElementById('cashflowToggleText');
+        _cashflowOpen = !_cashflowOpen;
+        if (_cashflowOpen) {
+            section.style.maxHeight = section.scrollHeight + 5000 + 'px';
+            section.style.opacity   = '1';
+            if (icon) icon.style.transform = 'rotate(180deg)';
+            if (text) text.textContent = '收合明細';
+        } else {
+            section.style.maxHeight = '0';
+            section.style.opacity   = '0';
+            if (icon) icon.style.transform = 'rotate(0deg)';
+            if (text) text.textContent = '展開明細';
+        }
+    }
+    // 舊的 toggleCashflowAnalysis 保留作 alias，避免其他地方呼叫出錯
+    function toggleCashflowAnalysis() { toggleCashflowSection(); }
+
+    // ── 年度投資報表折疊 ─────────────────────────────────────────
+    let _reportOpen = false;
+    function toggleReportSection() {
+        const section = document.getElementById('reportDetailSection');
+        const icon    = document.getElementById('reportToggleIcon');
+        const text    = document.getElementById('reportToggleText');
+        _reportOpen = !_reportOpen;
+        if (_reportOpen) {
+            section.style.maxHeight = section.scrollHeight + 5000 + 'px';
+            section.style.opacity   = '1';
+            if (icon) icon.style.transform = 'rotate(180deg)';
+            if (text) text.textContent = '收合明細';
+        } else {
+            section.style.maxHeight = '0';
+            section.style.opacity   = '0';
+            if (icon) icon.style.transform = 'rotate(0deg)';
+            if (text) text.textContent = '展開明細';
+        }
+    }
+    function openReportSection() {
+        if (!_reportOpen) toggleReportSection();
+    }
+
+    // ── 退休後情境比較摘要折疊 ──────────────────────────────────
+    let _retireSummaryOpen = false;
+    function toggleRetireSummarySection() {
+        const section = document.getElementById('retireSummaryDetailSection');
+        const icon    = document.getElementById('retireSummaryToggleIcon');
+        const text    = document.getElementById('retireSummaryToggleText');
+        _retireSummaryOpen = !_retireSummaryOpen;
+        if (_retireSummaryOpen) {
+            section.style.maxHeight = section.scrollHeight + 3000 + 'px';
+            section.style.opacity   = '1';
+            if (icon) icon.style.transform = 'rotate(180deg)';
+            if (text) text.textContent = '收合明細';
+        } else {
+            section.style.maxHeight = '0';
+            section.style.opacity   = '0';
+            if (icon) icon.style.transform = 'rotate(0deg)';
+            if (text) text.textContent = '展開明細';
+        }
+    }
+    function openRetireSummarySection() {
+        if (!_retireSummaryOpen) toggleRetireSummarySection();
+    }
+
+    // ── 每10筆插入重複標頭的輔助函式 ──────────────────────────
+    const REPEAT_HEADER_INTERVAL = 10;
+
+    function insertRepeatHeaders(rows, theadHtml, colCount) {
+        // rows: HTML字串陣列，theadHtml: <tr>...</tr>字串，colCount: 欄位數
+        // 每10筆在前面插入一個標頭列
+        const result = [];
+        for (let i = 0; i < rows.length; i++) {
+            if (i > 0 && i % REPEAT_HEADER_INTERVAL === 0) {
+                result.push(`<tr class="repeat-header">${theadHtml}</tr>`);
+            }
+            result.push(rows[i]);
+        }
+        return result.join('');
+    }
+
     // ══════════════════════════════════════════════════════════════
     // 全域變數
     // ══════════════════════════════════════════════════════════════
@@ -727,13 +876,22 @@
         } else {
             for (const [ticker, weight] of etfEntries) {
                 const pct = (weight * 100).toFixed(1);
+                const zhName = getStockNameZh(ticker);
                 html += `
-                <div class="etf-card p-4 rounded-xl">
-                    <div class="text-xs text-slate-300 mb-1">ETF代碼</div>
-                    <div class="text-2xl font-black mb-2">${ticker}</div>
-                    <div class="amount-tag-blue inline-block px-3 py-1 rounded-full text-xs font-bold">
+                <div class="etf-card p-4 rounded-xl flex flex-col gap-1">
+                    <div class="text-xs text-slate-300">ETF代碼</div>
+                    <div class="text-2xl font-black">${ticker}</div>
+                    ${zhName ? `<div class="text-sm font-bold text-blue-200">${zhName}</div>` : ''}
+                    <div class="amount-tag-blue inline-block px-3 py-1 rounded-full text-xs font-bold mt-1">
                         權重 ${pct}%
                     </div>
+                    <a href="/analysis?ticker=${ticker}" target="_blank"
+                       class="mt-2 flex items-center justify-center gap-1 text-xs font-bold py-1 px-2 rounded-lg transition"
+                       style="background:rgba(16,185,129,0.2);color:#6ee7b7;border:1px solid rgba(16,185,129,0.35);"
+                       onmouseover="this.style.background='rgba(16,185,129,0.35)'"
+                       onmouseout="this.style.background='rgba(16,185,129,0.2)'">
+                        <i class="fa-solid fa-chart-candlestick"></i> 前往分析
+                    </a>
                 </div>`;
             }
         }
@@ -1132,11 +1290,13 @@
             updateScenarioSection(result.scenarios);
         }
 
-        // 現金流按鈕顯示
-        const btnWrapper = document.getElementById('cashflowBtnWrapper');
-        if (btnWrapper) btnWrapper.style.display = 'block';
+        // 現金流區塊顯示（整合式 toggle 標題列）
+        const cfSection = document.getElementById('cashflowSection');
+        if (cfSection) cfSection.style.display = 'block';
 
-        // 顯示下載回測CSV按鈕
+        // 年度報表預設折疊，使用者手動展開
+
+        // 顯示年度報表內容區頂部的下載回測CSV按鈕
         const dlWrapper = document.getElementById('downloadBacktestWrapper');
         if (dlWrapper) dlWrapper.classList.remove('hidden');
 
@@ -1556,32 +1716,41 @@
         const finishYr = result.finish_year;
 
         // Tab1 - 停止投入
-        let htmlStop = '';
+        const theadStop = `<th class="px-3 py-2 text-center font-bold bg-orange-200 text-orange-800 text-xs">退休後年序</th>
+            <th class="px-3 py-2 text-left font-bold bg-orange-200 text-orange-800 text-xs">年份</th>
+            <th class="px-3 py-2 text-right font-bold bg-orange-200 text-orange-800 text-xs">年初資產</th>
+            <th class="px-3 py-2 text-right font-bold bg-orange-200 text-orange-800 text-xs">年度提領</th>
+            <th class="px-3 py-2 text-right font-bold bg-orange-200 text-orange-800 text-xs">年末資產</th>`;
+        const rowsStop = [];
         for (let i = 0; i < stop.length; i++) {
             const r  = stop[i];
             const delta = (i > 0) ? r['年末資產'] - stop[i-1]['年末資產'] : 0;
             const dColor = delta >= 0 ? 'text-green-600' : 'text-red-600';
             const dSign  = delta >= 0 ? '+' : '';
-            htmlStop += `
+            rowsStop.push(`
             <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-orange-50'} border-b border-orange-100">
                 <td class="px-3 py-2 text-center font-bold text-orange-700">第${i+1}年</td>
                 <td class="px-3 py-2">${r['年份'] || '-'}</td>
                 <td class="px-3 py-2 text-right">${r['年初資產'].toLocaleString()}</td>
                 <td class="px-3 py-2 text-right text-orange-600 font-bold">${r['年度提領'].toLocaleString()}</td>
                 <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
-            </tr>`;
+            </tr>`);
         }
-        document.getElementById('tableBodyStop').innerHTML = htmlStop ||
-            '<tr><td colspan="5" class="p-4 text-center text-orange-400">尚未達到退休門檻</td></tr>';
+        document.getElementById('tableBodyStop').innerHTML = rowsStop.length
+            ? insertRepeatHeaders(rowsStop, theadStop, 5)
+            : '<tr><td colspan="5" class="p-4 text-center text-orange-400">尚未達到退休門檻</td></tr>';
 
         // Tab2 - 繼續定期定額
-        let htmlCont = '';
+        const theadCont = `<th class="px-3 py-2 text-center font-bold bg-purple-200 text-purple-800 text-xs">退休後年序</th>
+            <th class="px-3 py-2 text-left font-bold bg-purple-200 text-purple-800 text-xs">年份</th>
+            <th class="px-3 py-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">年初資產</th>
+            <th class="px-3 py-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">年度投入</th>
+            <th class="px-3 py-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">年度提領</th>
+            <th class="px-3 py-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">年末資產</th>`;
+        const rowsCont = [];
         for (let i = 0; i < cont.length; i++) {
             const r  = cont[i];
-            const delta = (i > 0) ? r['年末資產'] - cont[i-1]['年末資產'] : 0;
-            const dColor = delta >= 0 ? 'text-green-600' : 'text-red-600';
-            const dSign  = delta >= 0 ? '+' : '';
-            htmlCont += `
+            rowsCont.push(`
             <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-purple-50'} border-b border-purple-100">
                 <td class="px-3 py-2 text-center font-bold text-purple-700">第${i+1}年</td>
                 <td class="px-3 py-2">${r['年份'] || '-'}</td>
@@ -1589,10 +1758,11 @@
                 <td class="px-3 py-2 text-right text-blue-600 font-bold">${r['年度投入'].toLocaleString()}</td>
                 <td class="px-3 py-2 text-right text-purple-600 font-bold">${r['年度提領'].toLocaleString()}</td>
                 <td class="px-3 py-2 text-right font-black">${r['年末資產'].toLocaleString()}</td>
-            </tr>`;
+            </tr>`);
         }
-        document.getElementById('tableBodyCont').innerHTML = htmlCont ||
-            '<tr><td colspan="6" class="p-4 text-center text-purple-400">尚未達到退休門檻</td></tr>';
+        document.getElementById('tableBodyCont').innerHTML = rowsCont.length
+            ? insertRepeatHeaders(rowsCont, theadCont, 5)
+            : '<tr><td colspan="6" class="p-4 text-center text-purple-400">尚未達到退休門檻</td></tr>';
     }
 
     // ── 更新現金流退休後情境摘要（合併單表）──────────────────
@@ -1612,11 +1782,20 @@
         const lbl = document.getElementById('retireSummaryLabel');
         if (lbl) lbl.textContent = `提領率 ${wr}%／退休後30年`;
 
-        // 合併單表：共用退休後第 / 年份，左半情境A，右半情境B
-        // 第0年：退休當年，兩情境年初資產相同，提領=0，年末資產=退休年末資產
-        const retireAssets = stop.length > 0 ? stop[0]['年初資產'] : 0;
-        const retireYear   = stop.length > 0 ? (stop[0]['年份'] ? stop[0]['年份'] - 1 : '-') : '-';
-        let htmlMerged = `
+        const retireAssets = stop[0]['年初資產'];
+        const retireYear   = stop[0]['年份'] ? stop[0]['年份'] - 1 : '-';
+
+        // 重複標頭（簡化版，7欄）
+        const theadMerged = `<th class="px-3 py-2 text-center bg-slate-300 text-slate-700 text-xs border-r border-slate-200">退休後第</th>
+            <th class="px-3 py-2 text-left bg-slate-300 text-slate-700 text-xs border-r border-slate-200">年份</th>
+            <th class="px-3 py-2 text-right bg-orange-200 text-orange-700 text-xs">年度提領(A)</th>
+            <th class="px-3 py-2 text-right bg-orange-200 font-bold text-slate-700 text-xs border-r border-slate-200">年末資產(A)</th>
+            <th class="px-3 py-2 text-right bg-purple-200 text-blue-700 text-xs">年度投入(B)</th>
+            <th class="px-3 py-2 text-right bg-purple-200 text-purple-700 text-xs">年度提領(B)</th>
+            <th class="px-3 py-2 text-right bg-purple-200 font-bold text-slate-700 text-xs">年末資產(B)</th>`;
+
+        // 第0年（退休當年）特殊行
+        const row0Html = `
         <tr class="bg-amber-50 border-b border-slate-100 font-semibold">
             <td class="px-3 py-2 text-center font-bold text-amber-700 border-r border-slate-200">第0年</td>
             <td class="px-3 py-2 text-left border-r border-slate-200">${retireYear}</td>
@@ -1627,31 +1806,37 @@
             <td class="px-3 py-2 text-right font-black">${retireAssets.toLocaleString()}</td>
         </tr>`;
 
+        // 資料列
         const maxRows = Math.max(stop.length, cont.length);
+        const dataRows = [];
         for (let i = 0; i < maxRows; i++) {
             const s = stop[i] || null;
             const c = cont[i] || null;
-            const rowBg = i % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+            const rowBg    = i % 2 === 0 ? 'bg-white' : 'bg-slate-50';
             const yearLabel = `第${i+1}年`;
             const calYear   = s ? (s['年份'] || '-') : (c ? (c['年份'] || '-') : '-');
-            htmlMerged += `
+            dataRows.push(`
             <tr class="${rowBg} border-b border-slate-100">
                 <td class="px-3 py-2 text-center font-bold text-slate-600 border-r border-slate-200">${yearLabel}</td>
                 <td class="px-3 py-2 text-left border-r border-slate-200">${calYear}</td>
-                ${s ? `
-                <td class="px-3 py-2 text-right text-orange-600 font-bold">${s['年度提領'].toLocaleString()}</td>
-                <td class="px-3 py-2 text-right font-black border-r border-slate-200">${s['年末資產'].toLocaleString()}</td>
-                ` : `<td colspan="2" class="px-3 py-2 text-center text-slate-300 border-r border-slate-200">—</td>`}
-                ${c ? `
-                <td class="px-3 py-2 text-right text-blue-600 font-bold">${c['年度投入'].toLocaleString()}</td>
+                ${s ? `<td class="px-3 py-2 text-right text-orange-600 font-bold">${s['年度提領'].toLocaleString()}</td>
+                <td class="px-3 py-2 text-right font-black border-r border-slate-200">${s['年末資產'].toLocaleString()}</td>`
+                    : `<td colspan="2" class="px-3 py-2 text-center text-slate-300 border-r border-slate-200">—</td>`}
+                ${c ? `<td class="px-3 py-2 text-right text-blue-600 font-bold">${c['年度投入'].toLocaleString()}</td>
                 <td class="px-3 py-2 text-right text-purple-600 font-bold">${c['年度提領'].toLocaleString()}</td>
-                <td class="px-3 py-2 text-right font-black">${c['年末資產'].toLocaleString()}</td>
-                ` : `<td colspan="3" class="px-3 py-2 text-center text-slate-300">—</td>`}
-            </tr>`;
+                <td class="px-3 py-2 text-right font-black">${c['年末資產'].toLocaleString()}</td>`
+                    : `<td colspan="3" class="px-3 py-2 text-center text-slate-300">—</td>`}
+            </tr>`);
         }
+
         const mergedBody = document.getElementById('cfRetireMergedBody');
-        if (mergedBody) mergedBody.innerHTML = htmlMerged ||
-            '<tr><td colspan="7" class="p-4 text-center text-slate-400">尚未達到退休門檻</td></tr>';
+        if (mergedBody) {
+            mergedBody.innerHTML = row0Html + (dataRows.length
+                ? insertRepeatHeaders(dataRows, theadMerged, 10)
+                : '<tr><td colspan="7" class="p-4 text-center text-slate-400">尚未達到退休門檻</td></tr>');
+        }
+
+        // 退休後情境比較摘要：預設保持折疊，使用者手動展開
     }
 
     // ── 更新年度報表表格 ──────────────────────────────────────────
@@ -1668,6 +1853,17 @@
         const lgd = document.getElementById('retireMarkerLegend');
         if (lgd) lgd.classList.toggle('hidden', retireYrIdx < 0);
 
+        const theadRow0 = `<th class="p-2 text-center font-bold bg-slate-200 text-slate-600 text-xs">項次</th>
+            <th class="p-2 text-left font-bold bg-slate-200 text-slate-600 text-xs">年份</th>
+            <th class="p-2 text-center font-bold bg-slate-200 text-slate-600 text-xs">類型</th>
+            <th class="p-2 text-right font-bold bg-slate-200 text-slate-600 text-xs">年度投入</th>
+            <th class="p-2 text-right font-bold bg-slate-200 text-slate-600 text-xs">年度股利</th>
+            <th class="p-2 text-right font-bold bg-slate-200 text-slate-600 text-xs">年度報酬</th>
+            <th class="p-2 text-right font-bold bg-slate-200 text-slate-600 text-xs">報酬率(%)</th>
+            <th class="p-2 text-right font-bold bg-slate-200 text-slate-600 text-xs">年末資產</th>
+            <th class="p-2 text-right font-bold bg-slate-200 text-slate-600 text-xs">通膨門檻</th>
+            <th class="p-2 text-right font-bold bg-slate-200 text-slate-600 text-xs">參考提領</th>`;
+        const rowsArr0 = [];
         let html = '';
         // 前一年末資產（供計算參考提領）
         let prevEndAssets = 0;
@@ -1716,7 +1912,7 @@
 
             prevEndAssets = parseInt(row.year_end_assets.replace(/,/g,''));
 
-            html += `
+            rowsArr0.push(`
             <tr class="${rowClass} border-b">
                 <td class="p-3 text-center font-bold text-blue-700">${yearNum}</td>
                 <td class="p-3 font-medium">${row.year}</td>
@@ -1728,9 +1924,10 @@
                 <td class="p-3 text-right font-bold">${row.year_end_assets}</td>
                 <td class="p-3 text-right text-red-600">${row.inflation_threshold}</td>
                 ${refWithdrawalCell}
-            </tr>`;
+            </tr>`);
         }
-        document.getElementById('tableBody').innerHTML = html;
+        document.getElementById('tableBody').innerHTML =
+            insertRepeatHeaders(rowsArr0, theadRow0, 10);
     }
 
     // ── 下載CSV ──────────────────────────────────────────────────
@@ -1739,18 +1936,7 @@
         window.location.href = '/api/download_csv/' + currentStrategy;
     }
 
-    // ── 切換現金流分析顯示 ───────────────────────────────────────
-    function toggleCashflowAnalysis() {
-        const section = document.getElementById('cashflowSection');
-        if (section.classList.contains('collapsed')) {
-            section.classList.remove('collapsed');
-            section.classList.add('expanded');
-            setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
-        } else {
-            section.classList.remove('expanded');
-            section.classList.add('collapsed');
-        }
-    }
+
 
     // ══════════════════════════════════════════════════════════════
     // updateCashflowAnalysis - 新版（對應 etf_tracking 欄位名稱）
@@ -1771,8 +1957,6 @@
         const etfKeys = (currentStrategy === 'custom' && backtestResult.etf_weights)
             ? Object.keys(backtestResult.etf_weights)
             : Object.keys(config.etfs);
-        const btnWrapper = document.getElementById('cashflowBtnWrapper');
-        if (btnWrapper) btnWrapper.style.display = 'block';
 
         // ETF 選擇器
         let selectorHTML = '';
@@ -1802,6 +1986,18 @@
             return;
         }
 
+        const theadCF = `<th class="p-2 text-center font-bold bg-purple-200 text-purple-800 text-xs">項次</th>
+            <th class="p-2 text-left font-bold bg-purple-200 text-purple-800 text-xs">年份</th>
+            <th class="p-2 text-center font-bold bg-purple-200 text-purple-800 text-xs">類型</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">提存金</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">配息</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">買入股數</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">累計股數</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">平均股價</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">剩餘現金</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">報酬率(%)</th>
+            <th class="p-2 text-right font-bold bg-purple-200 text-purple-800 text-xs">個股資產</th>`;
+        const rowsCF = [];
         let html = '';
         let totalInvested = 0;
         let totalDividend = 0;
@@ -1826,7 +2022,7 @@
             const roiClass  = roiValue >= 0 ? 'text-green-600' : 'text-red-600';
             const assetClass= currentAsset >= prevAsset ? 'text-purple-600' : 'text-orange-600';
 
-            html += `
+            rowsCF.push(`
                 <tr class="${rowClass}">
                     <td class="p-3 text-center font-bold text-blue-700">${yearNum}</td>
                     <td class="p-3">${row['年份']}</td>
@@ -1841,10 +2037,11 @@
                     <td class="p-3 text-right text-orange-600">${(row['當年度剩餘現金'] || 0).toLocaleString()}</td>
                     <td class="p-3 text-right font-bold ${roiClass}">${roiValue.toFixed(2)}%</td>
                     <td class="p-3 text-right font-black ${assetClass}">${Math.round(currentAsset).toLocaleString()}</td>
-                </tr>`;
+                </tr>`);
         }
 
-        document.getElementById('cashflowTableBody').innerHTML = html;
+        document.getElementById('cashflowTableBody').innerHTML =
+            insertRepeatHeaders(rowsCF, theadCF, 10);
 
         const lastRow = etfData[etfData.length - 1];
         document.getElementById('cfTotalInvested').textContent = totalInvested.toLocaleString();
