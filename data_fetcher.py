@@ -16,6 +16,19 @@ import platform
 import re
 from io import StringIO
 
+# ── GitHub 持久化快取（選用）────────────────────────────────────
+# 需在 Render 環境變數設定：GH_CACHE_TOKEN 和 GH_CACHE_REPO
+try:
+    from github_cache import GitHubCache
+    _gh_cache = GitHubCache()
+    if _gh_cache.enabled:
+        print("[GitHubCache] ✅ 已啟用 GitHub 持久化快取")
+    else:
+        print("[GitHubCache] ⚠️  未設定環境變數，快取停用（只用記憶體）")
+except ImportError:
+    _gh_cache = None
+    print("[GitHubCache] ⚠️  github_cache.py 不存在，快取停用")
+
 
 def get_data_dir():
     """
@@ -230,15 +243,42 @@ class ETFDataFetcher:
         print(f"\n開始爬取 {ticker} 的資料...")
         self.last_error = ''
 
-        # 1. yfinance（優先）
+        # ── L2：GitHub 持久化快取（跨重啟有效）──────────────
+        if _gh_cache and _gh_cache.enabled and _gh_cache.is_fresh(ticker, 'price'):
+            rows = _gh_cache.load_price(ticker)
+            if rows:
+                div_rows = _gh_cache.load_dividend(ticker) or []
+                price_data = [
+                    {'date': str(r.get('date', r.get('日期', ''))),
+                     'close': float(r.get('close', r.get('收盤價', 0)))}
+                    for r in rows
+                ]
+                dividend_data = [
+                    {'date': str(r.get('date', r.get('除息日', ''))),
+                     'dividend': float(r.get('dividend', r.get('股利', 0)))}
+                    for r in div_rows
+                ]
+                print(f"  [L2 GitHub] {ticker} 回測資料命中快取（{len(price_data)} 筆）")
+                return {'ticker': ticker, 'price_data': price_data,
+                        'dividend_data': dividend_data,
+                        'is_simulated': False, 'source': 'github_cache'}
+
+        # ── L3：yfinance 重新抓取 ─────────────────────────────
         print("嘗試 yfinance（優先）...")
         yf_data = self._fetch_from_yfinance(ticker)
         if yf_data and yf_data.get('price_data'):
             print(f"✓ yfinance 成功，{len(yf_data['price_data'])} 筆")
             self._save_data(ticker, yf_data)
+            # ★ 寫入 GitHub 快取
+            if _gh_cache and _gh_cache.enabled:
+                try:
+                    _gh_cache.save_price(ticker, yf_data['price_data'])
+                    _gh_cache.save_dividend(ticker, yf_data.get('dividend_data', []))
+                except Exception as e_gh:
+                    print(f"  [GitHubCache] 寫入失敗（非致命）: {e_gh}")
             return yf_data
 
-        # 2. GitHub（備援，僅 ETF）
+        # 2. GitHub ETF 備援（原有邏輯）
         if ticker in GITHUB_ETF_NAMES:
             print("嘗試 GitHub 備援...")
             gh_data = self._fetch_from_github(ticker)
@@ -258,7 +298,8 @@ class ETFDataFetcher:
     # ─────────────────────────────────────────────────────────────
     def fetch_stock_analysis(self, ticker):
         """
-        回傳股票分析所需完整資料：
+        回傳股票分析所需完整資料（三層快取）：
+        L1 記憶體快取 → L2 GitHub 持久化快取 → L3 yfinance 重新抓取
         {
           ticker, name, ohlcv, price_data, dividend_data,
           indicators, info, source
@@ -267,11 +308,63 @@ class ETFDataFetcher:
         print(f"\n[分析模式] 取得 {ticker} 完整資料...")
         self.last_error = ''
 
+        # ── L1：記憶體快取（最快，同一進程內）────────────────
+        import sys
+        _app = sys.modules.get('__main__') or sys.modules.get('app')
+        mem_cache = getattr(_app, 'analysis_cache', {})
+        cached = mem_cache.get(ticker)
+        if isinstance(cached, dict) and (time.time() - cached.get('_ts', 0)) < 3600:
+            print(f"  [L1 記憶體] {ticker} 命中快取")
+            return cached
+
+        # ── L2：GitHub 持久化快取（跨重啟有效）──────────────
+        if _gh_cache and _gh_cache.enabled and _gh_cache.is_fresh(ticker, 'price'):
+            rows = _gh_cache.load_price(ticker)
+            if rows:
+                div_rows  = _gh_cache.load_dividend(ticker)    or []
+                info      = _gh_cache.load_fundamental(ticker) or {'name': ticker}
+
+                ohlcv = []
+                for r in rows:
+                    c = float(r.get('close', r.get('收盤價', 0)))
+                    ohlcv.append({
+                        'date':   str(r.get('date', r.get('日期', ''))),
+                        'open':   float(r.get('open',   c)),
+                        'high':   float(r.get('high',   c)),
+                        'low':    float(r.get('low',    c)),
+                        'close':  c,
+                        'volume': int(r.get('volume', 0)),
+                    })
+
+                dividend_data = [
+                    {'date':     str(r.get('date', r.get('除息日', ''))),
+                     'dividend': float(r.get('dividend', r.get('股利', 0)))}
+                    for r in div_rows
+                ]
+                indicators = calc_technical_indicators(ohlcv)
+                result = {
+                    'ticker':        ticker,
+                    'name':          info.get('name', ticker),
+                    'ohlcv':         ohlcv,
+                    'price_data':    [{'date': r['date'], 'close': r['close']} for r in ohlcv],
+                    'dividend_data': dividend_data,
+                    'indicators':    indicators,
+                    'info':          info,
+                    'source':        'github_cache',
+                    'is_simulated':  False,
+                    '_ts':           time.time(),
+                }
+                mem_cache[ticker] = result  # 回填 L1
+                print(f"  [L2 GitHub] {ticker} 命中快取（{len(ohlcv)} 筆）")
+                return result
+
+        # ── L3：yfinance 重新抓取（最慢，但最新）────────────
+        print(f"  [L3 yfinance] {ticker} 重新抓取...")
         result = None
         for suffix in ['.TW', '.TWO']:
             yf_ticker = f"{ticker}{suffix}"
             try:
-                tk = yf.Ticker(yf_ticker)
+                tk   = yf.Ticker(yf_ticker)
                 hist = tk.history(period='max', timeout=15)
                 if hist is None or hist.empty:
                     continue
@@ -283,7 +376,7 @@ class ETFDataFetcher:
                         c = float(row['Close'])
                         o = float(row.get('Open', c))
                         h = float(row.get('High', c))
-                        l = float(row.get('Low', c))
+                        l = float(row.get('Low',  c))
                         v = float(row.get('Volume', 0))
                         if c > 0:
                             d = str(date.date())
@@ -351,9 +444,22 @@ class ETFDataFetcher:
                     'info':          info,
                     'source':        'yfinance',
                     'is_simulated':  False,
+                    '_ts':           time.time(),
                 }
                 print(f"  ✓ yfinance ({yf_ticker}) 分析資料成功：{len(ohlcv)} 筆")
                 self._save_data(ticker, result)
+
+                # ★ 寫入 GitHub 快取（持久化）
+                if _gh_cache and _gh_cache.enabled:
+                    try:
+                        _gh_cache.save_price(ticker, ohlcv)
+                        _gh_cache.save_dividend(ticker, dividend_data)
+                        _gh_cache.save_fundamental(ticker, info)
+                    except Exception as e_gh:
+                        print(f"  [GitHubCache] 寫入失敗（非致命）: {e_gh}")
+
+                # 回填 L1 記憶體快取
+                mem_cache[ticker] = result
                 return result
 
             except requests.exceptions.ConnectionError:
@@ -363,19 +469,18 @@ class ETFDataFetcher:
                 self.last_error = f"{yf_ticker}: {e}"
                 continue
 
-        # yfinance 失敗，嘗試 GitHub（ETF）
+        # yfinance 失敗，嘗試 GitHub ETF 備援（原有邏輯保留）
         if ticker in GITHUB_ETF_NAMES:
             gh_data = self._fetch_from_github(ticker)
             if gh_data and gh_data.get('price_data'):
-                # GitHub 只有收盤價，轉為 ohlcv 格式
                 ohlcv = [{'date': r['date'], 'open': r['close'], 'high': r['close'],
                           'low': r['close'], 'close': r['close'], 'volume': 0}
                          for r in gh_data['price_data']]
                 indicators = calc_technical_indicators(ohlcv)
-                gh_data['ohlcv'] = ohlcv
+                gh_data['ohlcv']      = ohlcv
                 gh_data['indicators'] = indicators
-                gh_data['info'] = {'name': GITHUB_ETF_NAMES.get(ticker, ticker)}
-                gh_data['name'] = GITHUB_ETF_NAMES.get(ticker, ticker)
+                gh_data['info']       = {'name': GITHUB_ETF_NAMES.get(ticker, ticker)}
+                gh_data['name']       = GITHUB_ETF_NAMES.get(ticker, ticker)
                 return gh_data
 
         print(f"  ✗ {ticker} 分析資料取得失敗")
