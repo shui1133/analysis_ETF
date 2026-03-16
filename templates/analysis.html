@@ -359,7 +359,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <span>柱狀：差值（OSC）</span>
           </div>
         </div>
-        <div class="chart-wrap" style="height:160px">
+        <div class="chart-wrap" style="height:240px">
           <canvas id="macdChart"></canvas>
         </div>
       </div>
@@ -2847,7 +2847,27 @@ function drawMACDChart(data) {
         }
       },
       scales: {
-        x: { display:false },
+        x: {
+          display: true,
+          ticks: {
+            color: '#64748b',
+            font: { size: 9 },
+            maxTicksLimit: 10,
+            maxRotation: 30,
+            minRotation: 0,
+            callback: function(val, index) {
+              const label = this.getLabelForValue(val);
+              if (!label) return '';
+              // 顯示 MM/DD 格式
+              const d = new Date(label);
+              if (isNaN(d)) return label;
+              const mm = String(d.getMonth()+1).padStart(2,'0');
+              const dd = String(d.getDate()).padStart(2,'0');
+              return mm + '/' + dd;
+            }
+          },
+          grid: { color: 'rgba(255,255,255,.04)' }
+        },
         y: {
           ticks:{ color:'#64748b', font:{size:9} },
           grid:{
