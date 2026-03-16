@@ -2086,87 +2086,70 @@ function setIndCard(id, val, close) {
 }
 
 // ── 基本面 ────────────────────────────────────────────────────
-// ── 公司簡介翻譯 & 基本面補充（Claude API，帶本地快取）────────
-const _descCache   = {};   // key: ticker → 繁中描述
-const _fundCache   = {};   // key: ticker → 補充基本面 JSON
+// ── 基本面補充（後端 TWSE/MOPS，不依賴 Claude API）────────────
+const _descCache   = {};   // key: ticker → 繁中描述（translateDesc 快取）
+const _fundCache   = {};   // key: ticker → 後端補充後的完整 fundamentals
 
+/**
+ * translateDesc：將英文公司簡介翻譯為繁體中文
+ * 優先使用後端已回傳的繁中描述（後端 MOPS 已是中文），
+ * 只有在描述確為英文時才嘗試 Claude API 翻譯；API 失敗時直接顯示英文原文。
+ */
 async function translateDesc(engText, ticker) {
   if (_descCache[ticker]) return _descCache[ticker];
-
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      system: '你是專業財經翻譯員。請將以下英文公司簡介翻譯成流暢的繁體中文。只輸出翻譯結果，不加任何說明或引號。',
-      messages: [{ role: 'user', content: engText }]
-    })
-  });
-
-  if (!resp.ok) throw new Error(`API ${resp.status}`);
-  const json = await resp.json();
-  const zh = (json.content?.[0]?.text || '').trim();
-  if (!zh) throw new Error('empty response');
-
-  _descCache[ticker] = zh;
-  return zh;
-}
-
-// 用 Claude API + web_search 補充缺失的基本面資料
-async function fetchMissingFundamentals(ticker, stockName, missingFields) {
-  if (_fundCache[ticker]) return _fundCache[ticker];
-  if (!missingFields || missingFields.length === 0) return {};
-
-  const fieldMap = {
-    pe_ratio:      '本益比(P/E ratio)，數字，例如：22.5',
-    pb_ratio:      '股價淨值比(P/B ratio)，數字，例如：3.2',
-    div_yield:     '近12月股息殖利率(%)，數字，例如：3.5',
-    eps:           '每股盈餘EPS(元)，數字，例如：45.2',
-    roe:           '股東權益報酬率ROE，小數（不是百分比），例如：0.23 代表23%',
-    profit_margin: '淨利率，小數（不是百分比），例如：0.18 代表18%',
-    description:   '公司業務簡介，繁體中文，100~300字',
-  };
-
-  const fieldsNeeded = missingFields.map(f => `"${f}": ${fieldMap[f] || f}`).join('\n');
-  const nameHint = stockName ? `（${stockName}）` : '';
-
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 800,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        system: '你是財務數據分析師。請搜尋並回傳台灣股票的最新財務資料。回應必須是純JSON，不含任何說明文字或markdown。',
-        messages: [{
-          role: 'user',
-          content: `請搜尋台灣股票代碼 ${ticker}${nameHint} 的最新財務數據，並以JSON格式回傳以下欄位（若查不到某欄位請設為null）：\n{\n${fieldsNeeded}\n}\n只輸出JSON，不要其他文字。`
-        }]
+        max_tokens: 600,
+        system: '你是專業財經翻譯員。請將以下英文公司簡介翻譯成流暢的繁體中文。只輸出翻譯結果，不加任何說明或引號。',
+        messages: [{ role: 'user', content: engText }]
       })
     });
-
-    if (!resp.ok) {
-      console.warn(`基本面補充 API 錯誤: HTTP ${resp.status}`);
-      return {};
-    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json = await resp.json();
-    // 取最後一個 text block（跳過 tool_use/tool_result）
-    const textBlock = [...(json.content || [])].reverse().find(b => b.type === 'text');
-    const raw = (textBlock?.text || '').trim();
-    // 清理 markdown code fence
-    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/,'').trim();
-    try {
-      const parsed = JSON.parse(cleaned);
-      _fundCache[ticker] = parsed;
-      return parsed;
-    } catch(e) {
-      console.warn('基本面補充解析失敗', e, cleaned);
-      return {};
+    const zh = (json.content?.[0]?.text || '').trim();
+    if (!zh) throw new Error('empty');
+    _descCache[ticker] = zh;
+    return zh;
+  } catch(e) {
+    // API 失敗：直接回傳英文原文，不影響其他顯示
+    console.info('翻譯 API 不可用，顯示英文原文:', e.message);
+    throw e;
+  }
+}
+
+/**
+ * fetchMissingFundamentals：重新呼叫後端 /api/stock_analysis/<ticker>
+ * 後端已整合 yfinance → TWSE → TPEx → MOPS 多層補充，
+ * 前端不再依賴 Claude API，直接從後端取得最新補充結果。
+ * 快取 5 分鐘（與後端 analysis_cache 一致）。
+ */
+async function fetchMissingFundamentals(ticker, stockName, missingFields) {
+  if (_fundCache[ticker]) return _fundCache[ticker];
+  if (!missingFields || missingFields.length === 0) return {};
+
+  try {
+    // 後端已做 TWSE/MOPS 補充，直接取已補充完畢的 fundamentals
+    const r = await fetch('/api/stock_analysis/' + encodeURIComponent(ticker));
+    if (!r.ok) { console.warn('後端補充請求失敗:', r.status); return {}; }
+    const d = await r.json();
+    if (d.status !== 'success' || !d.data) return {};
+
+    const f = d.data.fundamentals || {};
+    // 只回傳前端需要補充的欄位（避免覆蓋已有的正確值）
+    const patch = {};
+    for (const key of missingFields) {
+      const val = f[key];
+      if (val != null && val !== '' && val !== 0) patch[key] = val;
     }
+    _fundCache[ticker] = patch;
+    console.info(`後端基本面補充成功 [${ticker}]:`, Object.keys(patch));
+    return patch;
   } catch(err) {
-    console.warn('基本面補充請求失敗（可能缺少API key或網路問題）', err);
+    console.warn('fetchMissingFundamentals 失敗:', err);
     return {};
   }
 }
