@@ -1145,7 +1145,7 @@ const STOCK_NAMES_ZH = {
   '3008':'大立光','2395':'研華','4938':'和碩','2603':'長榮','2615':'萬海',
   '2609':'陽明','2880':'華南金','2884':'玉山金','2885':'元大金','2887':'台新金',
   '2888':'新光金','2890':'永豐金','3045':'台灣大','4904':'遠傳','2376':'技嘉',
-  '3711':'日月光投控','2379':'瑞昱','2409':'友達','2408':'南亞科','6505':'台塑化',
+  '1519':'華城','3711':'日月光投控','2379':'瑞昱','2409':'友達','2408':'南亞科','6505':'台塑化',
   '1326':'台化','2207':'和泰車','2474':'可成','3481':'群創','2345':'智邦',
   '5880':'合庫金','2892':'第一金','2883':'開發金','2834':'臺企銀','5871':'中租-KY',
   '6669':'緯穎','3034':'聯詠','2301':'光寶科','2542':'興富發','2881':'富邦金',
@@ -1196,8 +1196,10 @@ async function loadPopular() {
     if (d.status !== 'success') return;
 
     // ── 調整熱門股票清單 ──────────────────────────────────────
-    // 移除 2002 中鋼
-    let stocks = d.stocks.filter(s => s.code !== '2002');
+    // 移除 2002 中鋼；同時移除所有 ETF（稍後重新插入到 4938 後面）
+    const etfCodes = ['0050','0056','00878','006208','00919','00929'];
+    let stocks = d.stocks.filter(s => s.code !== '2002' && !etfCodes.includes(s.code));
+
     // 若尚未包含則依序插入
     const insertIfMissing = (code, name, afterCode) => {
       if (stocks.find(s => s.code === code)) return;
@@ -1206,17 +1208,36 @@ async function loadPopular() {
       if (idx >= 0) stocks.splice(idx + 1, 0, newItem);
       else stocks.push(newItem);
     };
-    insertIfMissing('0050',  '元大台灣50', '2881');   // 在富邦金後
-    insertIfMissing('2408',  '南亞科',     '1303');   // 在南亞後
-    insertIfMissing('1519',  '華城',       '2357');   // 在華碩後
+    insertIfMissing('2408', '南亞科', '1303');   // 在南亞後
+    insertIfMissing('1519', '華城',   '2357');   // 在華碩後
+
+    // 4938 和碩後依序插入 ETF
+    const etfList = [
+      { code:'0050',   name:'元大台灣50'      },
+      { code:'0056',   name:'元大高股息'      },
+      { code:'00878',  name:'國泰永續高股息'  },
+      { code:'00919',  name:'群益台灣精選高息'},
+      { code:'00929',  name:'復華台灣科技優息'},
+      { code:'006208', name:'富邦台50'        },
+    ];
+    let insertAfter = '4938';
+    etfList.forEach(etf => {
+      const idx = stocks.findIndex(s => s.code === insertAfter);
+      if (idx >= 0) stocks.splice(idx + 1, 0, etf);
+      else stocks.push(etf);
+      insertAfter = etf.code;
+    });
     // ──────────────────────────────────────────────────────────
 
     const el = document.getElementById('popularList');
-    el.innerHTML = stocks.map(s => `
+    el.innerHTML = stocks.map(s => {
+      const name = (s.name && s.name.trim()) ? s.name : (STOCK_NAMES_ZH[s.code] || s.code);
+      return `
       <button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
         <span class="text-slate-400">${s.code}</span>
-        <span>${s.name}</span>
-      </button>`).join('');
+        <span>${name}</span>
+      </button>`;
+    }).join('');
   } catch(e) { console.error('載入熱門清單失敗', e); }
 }
 
