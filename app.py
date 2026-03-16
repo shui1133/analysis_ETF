@@ -15,6 +15,7 @@ import numpy as np
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
 import io
+import requests as _req
 
 app = Flask(__name__)
 
@@ -366,6 +367,23 @@ def get_stock_analysis(ticker):
         info       = raw.get('info', {})
         divs       = raw.get('dividend_data', [])
 
+        # ── 若 yfinance 缺少基本面資料，從 TWSE/MOPS 補充 ──────
+        needs_supplement = (
+            info.get('pe_ratio') is None or
+            info.get('eps') is None or
+            info.get('roe') is None or
+            not info.get('description')
+        )
+        if needs_supplement:
+            try:
+                twse_extra = _fetch_twse_fundamentals(ticker)
+                for key in ('pe_ratio', 'pb_ratio', 'eps', 'roe', 'profit_margin', 'description'):
+                    if twse_extra.get(key) is not None and info.get(key) in (None, '', 0):
+                        info[key] = twse_extra[key]
+                print(f"  TWSE/MOPS 補充完成，補充欄位: {list(twse_extra.keys())}")
+            except Exception as e2:
+                print(f"  TWSE/MOPS 補充失敗（非致命）: {e2}")
+
         # ── 最新資料 ────────────────────────────────────────────
         last = ohlcv[-1]
         prev = ohlcv[-2] if len(ohlcv) >= 2 else last
@@ -502,6 +520,159 @@ def get_stock_analysis(ticker):
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _fetch_twse_fundamentals(ticker: str) -> dict:
+    """
+    嘗試從台灣公開資訊觀測站 / TWSE API 補充基本面資料。
+    支援欄位：pe_ratio, pb_ratio, eps, roe, profit_margin, description
+    任何子請求失敗皆 silently skip，回傳已取得的欄位。
+    """
+    result = {}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'zh-TW,zh;q=0.9',
+        'Referer': 'https://www.twse.com.tw/',
+    }
+
+    # ── 1. 本益比/殖利率/股價淨值比：TWSE 每日市況報告 ──────────────
+    # API: https://www.twse.com.tw/exchangeReport/BWIBBU_d
+    try:
+        today_str = pd.Timestamp.now().strftime('%Y%m%d')
+        url = f'https://www.twse.com.tw/exchangeReport/BWIBBU_d?response=json&date={today_str}&stockNo={ticker}'
+        r = _req.get(url, headers=headers, timeout=10)
+        if r.ok:
+            jd = r.json()
+            rows = jd.get('data', [])
+            # 欄位順序: 0=日期, 1=股票代號, 2=股票名稱, 3=殖利率, 4=股利年度, 5=本益比, 6=股價淨值比, 7=財報年/季
+            for row in rows:
+                if len(row) >= 7 and str(row[1]).strip() == str(ticker):
+                    try:
+                        pe = float(str(row[5]).replace(',', '')) if row[5] and row[5] != '-' else None
+                        pb = float(str(row[6]).replace(',', '')) if row[6] and row[6] != '-' else None
+                        dy = float(str(row[3]).replace(',', '')) if row[3] and row[3] != '-' else None
+                        if pe: result['pe_ratio'] = pe
+                        if pb: result['pb_ratio'] = pb
+                        if dy: result['div_yield_pct'] = dy  # 注意：百分比值，後面轉換
+                    except Exception:
+                        pass
+                    break
+    except Exception as e:
+        print(f'  TWSE BWIBBU_d 查詢失敗（非致命）: {e}')
+
+    # 若 TWSE 主板查無資料，嘗試 OTC（興櫃/上櫃）
+    if 'pe_ratio' not in result:
+        try:
+            today_str = pd.Timestamp.now().strftime('%Y%m%d')
+            url2 = f'https://www.tpex.org.tw/web/stock/aftertrading/peratio_result/pera_result.php?l=zh-tw&o=json&d={pd.Timestamp.now().strftime("%Y/%m/%d")}&s=0,asc&stkno={ticker}'
+            r2 = _req.get(url2, headers=headers, timeout=10)
+            if r2.ok:
+                jd2 = r2.json()
+                rows2 = jd2.get('aaData', [])
+                for row in rows2:
+                    if len(row) >= 6 and str(row[0]).strip() == str(ticker):
+                        try:
+                            pe = float(str(row[4]).replace(',', '')) if row[4] and row[4] != '-' else None
+                            pb = float(str(row[5]).replace(',', '')) if len(row) > 5 and row[5] and row[5] != '-' else None
+                            if pe: result['pe_ratio'] = pe
+                            if pb: result['pb_ratio'] = pb
+                        except Exception:
+                            pass
+                        break
+        except Exception as e:
+            print(f'  TPEx 查詢失敗（非致命）: {e}')
+
+    # ── 2. EPS / ROE / 淨利率：公開資訊觀測站 財務摘要 ─────────────
+    # API: https://mops.twse.com.tw/mops/web/ajax_t05st22
+    try:
+        now = pd.Timestamp.now()
+        # 嘗試最近兩季
+        for offset in range(0, 5):
+            qtr_offset = now - pd.DateOffset(months=3 * offset)
+            year_roc   = qtr_offset.year - 1911   # 民國年
+            qtr_num    = (qtr_offset.month - 1) // 3 + 1
+            post_data  = {
+                'encodeURIComponent': '1',
+                'step':               '1',
+                'firstin':            '1',
+                'off':                '1',
+                'queryName':          'co_id',
+                'inpuType':           'co_id',
+                'TYPEK':              'all',
+                'isnew':              'false',
+                'co_id':              ticker,
+                'year':               str(year_roc),
+                'season':             str(qtr_num).zfill(2),
+            }
+            r = _req.post(
+                'https://mops.twse.com.tw/mops/web/ajax_t05st22',
+                data=post_data, headers=headers, timeout=12
+            )
+            if not r.ok:
+                continue
+            # 解析 HTML table（簡單 regex，不依賴 BeautifulSoup）
+            import re as _re
+            text = r.text
+            # 找 EPS、ROE、淨利率等數值
+            # EPS 基本每股盈餘
+            eps_m = _re.search(r'基本每股盈餘[^<]*</[^>]+>\s*<[^>]+>\s*(-?[\d,.]+)', text)
+            roe_m = _re.search(r'股東權益報酬率[^<]*</[^>]+>\s*<[^>]+>\s*(-?[\d,.]+)', text)
+            npm_m = _re.search(r'稅後淨利率[^<]*</[^>]+>\s*<[^>]+>\s*(-?[\d,.]+)', text)
+            got_any = False
+            if eps_m and 'eps' not in result:
+                try:
+                    val = float(eps_m.group(1).replace(',', ''))
+                    result['eps'] = val
+                    got_any = True
+                except Exception:
+                    pass
+            if roe_m and 'roe' not in result:
+                try:
+                    val = float(roe_m.group(1).replace(',', '')) / 100  # % → 小數
+                    result['roe'] = val
+                    got_any = True
+                except Exception:
+                    pass
+            if npm_m and 'profit_margin' not in result:
+                try:
+                    val = float(npm_m.group(1).replace(',', '')) / 100
+                    result['profit_margin'] = val
+                    got_any = True
+                except Exception:
+                    pass
+            if got_any:
+                break   # 找到資料就停止往前追溯
+    except Exception as e:
+        print(f'  MOPS 財務摘要查詢失敗（非致命）: {e}')
+
+    # ── 3. 公司簡介：公開資訊觀測站 基本資料 ─────────────────────────
+    try:
+        r = _req.post(
+            'https://mops.twse.com.tw/mops/web/ajax_t05st03',
+            data={
+                'encodeURIComponent': '1', 'step': '1', 'firstin': '1',
+                'off': '1', 'co_id': ticker, 'TYPEK': 'all'
+            },
+            headers=headers, timeout=12
+        )
+        if r.ok:
+            import re as _re
+            text = r.text
+            # 找主要業務/產品欄位
+            biz_m = _re.search(r'主要業務(?:及產品)?[^<]*</[^>]+>\s*<[^>]+>\s*([\s\S]{10,600}?)</t', text)
+            if biz_m:
+                import html as _html
+                desc_raw = _re.sub(r'<[^>]+>', '', biz_m.group(1)).strip()
+                desc_raw = _html.unescape(desc_raw).strip()
+                desc_raw = _re.sub(r'\s+', ' ', desc_raw)
+                if len(desc_raw) > 20:
+                    result['description'] = desc_raw[:500]
+    except Exception as e:
+        print(f'  MOPS 公司基本資料查詢失敗（非致命）: {e}')
+
+    return result
 
 
 def _calc_trend(close, ind):

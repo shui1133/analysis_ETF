@@ -682,49 +682,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <!-- ═══ Tab: 個股新聞 ══════════════════════════════════════════ -->
     <div id="panel-news" class="hidden space-y-4">
 
-      <!-- ── Goodinfo 最新訊息 ─────────────────────────────────── -->
-      <div class="card p-5">
-        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div>
-            <h3 class="font-bold text-lg text-white flex items-center gap-2">
-              <i class="fa-solid fa-bullhorn text-yellow-400"></i>
-              Goodinfo 最新訊息
-              <span class="text-slate-400 text-sm font-normal" id="giTicker">--</span>
-            </h3>
-            <p class="text-slate-500 text-xs mt-0.5">來源：Goodinfo 台灣股市資訊網 RSS，每次開啟自動更新</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <a id="giLink" href="#" target="_blank"
-               class="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold text-xs px-3 py-2 rounded-lg transition">
-              <i class="fa-solid fa-arrow-up-right-from-square"></i>Goodinfo
-            </a>
-            <button onclick="loadGoodinfo()" id="giRefreshBtn"
-                    class="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-500 text-white font-bold text-xs px-3 py-2 rounded-lg transition">
-              <i class="fa-solid fa-rotate-right"></i>重新整理
-            </button>
-          </div>
-        </div>
-
-        <!-- 載入中 -->
-        <div id="giLoading" class="hidden py-6 text-center">
-          <div class="news-spinner mb-3"></div>
-          <div class="text-slate-400 text-sm">載入 Goodinfo 訊息中...</div>
-        </div>
-        <!-- 錯誤 -->
-        <div id="giError" class="hidden rounded-xl bg-amber-900/20 border border-amber-700/40 p-4 text-sm text-amber-300 text-center">
-          <i class="fa-solid fa-triangle-exclamation mr-2"></i>
-          <span id="giErrorMsg">無法載入 Goodinfo 訊息</span>
-          <div class="text-xs text-slate-500 mt-1">可直接點擊上方「Goodinfo」按鈕前往查看</div>
-        </div>
-        <!-- 列表 -->
-        <div id="giList" class="space-y-2"></div>
-        <!-- 無結果 -->
-        <div id="giEmpty" class="hidden py-6 text-center text-slate-500">
-          <i class="fa-solid fa-inbox text-2xl mb-2 opacity-40"></i>
-          <div class="text-sm">目前無相關公告</div>
-        </div>
-      </div>
-
       <!-- ── Google News ─────────────────────────────────────────── -->
       <div class="card p-5">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -775,7 +732,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <!-- 免責聲明 -->
       <div class="rounded-xl bg-slate-800/50 border border-slate-700/50 p-3 text-xs text-slate-500">
         <i class="fa-solid fa-circle-info mr-1"></i>
-        新聞與公告來源分別為 Goodinfo RSS 及 Google News RSS，情緒判斷為關鍵字自動分析，僅供參考，不代表本系統立場。投資決策請以個人研究為準。
+        新聞來源為 Google News RSS，情緒判斷為關鍵字自動分析，僅供參考，不代表本系統立場。投資決策請以個人研究為準。
       </div>
     </div>
 
@@ -3137,163 +3094,8 @@ function sentimentBadge(s) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// Goodinfo RSS 最新訊息
-// RSS URL: https://goodinfo.tw/rss/StockNews.asp?STOCK_ID={ticker}
+// Google News
 // ════════════════════════════════════════════════════════════════
-
-/**
- * 載入 Goodinfo RSS 並渲染到 #giList
- */
-async function loadGoodinfo() {
-  if (!currentData) return;
-  const ticker  = currentData.ticker;
-  const zhName  = getStockNameZh(ticker) || currentData.name || ticker;
-
-  // 更新標題 ticker
-  const giTickerEl = document.getElementById('giTicker');
-  if (giTickerEl) giTickerEl.textContent = `${ticker} ${zhName}`;
-
-  // 更新 Goodinfo 連結（直接開啟公告列表頁）
-  const giLinkEl = document.getElementById('giLink');
-  if (giLinkEl) {
-    giLinkEl.href = `https://goodinfo.tw/tw/StockAnnouncementList.asp?STOCK_ID=${ticker}`;
-  }
-
-  // 顯示載入狀態
-  document.getElementById('giLoading').classList.remove('hidden');
-  document.getElementById('giError').classList.add('hidden');
-  document.getElementById('giList').innerHTML = '';
-  document.getElementById('giEmpty').classList.add('hidden');
-
-  try {
-    // ── 呼叫後端 API（後端直接爬 Goodinfo RSS，避免 CORS 問題）──
-    const resp = await fetch(`/api/goodinfo/${encodeURIComponent(ticker)}`,
-                             { signal: AbortSignal.timeout(15000) });
-    const json = await resp.json();
-
-    document.getElementById('giLoading').classList.add('hidden');
-
-    if (json.status !== 'success' || !json.items || json.items.length === 0) {
-      document.getElementById('giError').classList.remove('hidden');
-      document.getElementById('giErrorMsg').textContent =
-        `無法載入 ${ticker} 的 Goodinfo 訊息，請點右上角按鈕直接查看`;
-      return;
-    }
-
-    renderGoodinfo(json.items);
-
-  } catch (e) {
-    document.getElementById('giLoading').classList.add('hidden');
-    document.getElementById('giError').classList.remove('hidden');
-    document.getElementById('giErrorMsg').textContent =
-      `Goodinfo 訊息載入逾時，請點右上角按鈕直接查看`;
-    console.warn('loadGoodinfo 失敗:', e.message);
-  }
-}
-
-/**
- * 渲染 Goodinfo 訊息列表
- */
-function renderGoodinfo(items) {
-  const el = document.getElementById('giList');
-  if (!items || items.length === 0) {
-    document.getElementById('giEmpty').classList.remove('hidden');
-    return;
-  }
-  el.innerHTML = items.map(a => {
-    // 格式化時間：支援 ISO、RFC、MM/DD HH:MM 等多種格式
-    let timeStr = a.pubDate || '';
-    try {
-      // Goodinfo 回傳格式為 "MM/DD HH:MM"，直接顯示即可
-      if (/^\d{2}\/\d{2}\s+\d{2}:\d{2}$/.test(timeStr)) {
-        // 已是 MM/DD HH:MM，直接使用
-      } else {
-        const d = new Date(timeStr);
-        if (!isNaN(d.getTime())) {
-          timeStr = d.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' }) + ' ' +
-                    d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-        }
-      }
-    } catch(e) { /* 保留原始字串 */ }
-
-    // 以關鍵字簡單分類公告類型
-    const typeLabel = _giAnnoType(a.title);
-    // 安全處理連結（避免 javascript: 協議）
-    const safeLink = (a.link || '#').startsWith('http') ? a.link : '#';
-
-    return `
-    <div class="news-card flex items-start gap-3" onclick="window.open('${safeLink}','_blank')" style="cursor:pointer">
-      <div class="shrink-0 mt-0.5">${typeLabel}</div>
-      <div class="flex-1 min-w-0">
-        <div class="font-bold text-sm text-white leading-snug hover:text-yellow-300 transition mb-1">${a.title}</div>
-        ${a.desc ? `<div class="text-xs text-slate-400 line-clamp-2">${a.desc.slice(0,100)}${a.desc.length>100?'…':''}</div>` : ''}
-      </div>
-      <div class="shrink-0 text-right">
-        <div class="text-xs text-slate-500 whitespace-nowrap">${timeStr}</div>
-        <div class="text-yellow-400 text-xs mt-1 hover:underline">查看 →</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-/**
- * 根據標題關鍵字判斷公告類型標籤
- */
-function _giAnnoType(title) {
-  const t = title || '';
-  if (t.includes('除息') || t.includes('配息') || t.includes('股利'))
-    return '<span class="signal-tag signal-buy">配息</span>';
-  if (t.includes('除權') || t.includes('增資') || t.includes('發行'))
-    return '<span class="signal-tag signal-buy">除權</span>';
-  if (t.includes('法說') || t.includes('說明會') || t.includes('投資人'))
-    return '<span class="signal-tag" style="background:#1e1a4a;color:#a78bfa;border:1px solid #4c1d95">法說</span>';
-  if (t.includes('股東') || t.includes('董事') || t.includes('監察'))
-    return '<span class="signal-tag signal-neutral">股東會</span>';
-  if (t.includes('公告') || t.includes('重訊') || t.includes('重大'))
-    return '<span class="signal-tag signal-sell">重訊</span>';
-  return '<span class="signal-tag signal-neutral">公告</span>';
-}
-
-// ── CORS Proxy 清單（依序嘗試，任一成功即停止）────────────────────────
-const CORS_PROXIES = [
-  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-];
-
-/**
- * 透過多備援 Proxy 取得 RSS XML 字串
- * 回傳第一個成功的 xmlStr，全部失敗則 throw
- */
-async function fetchRssWithFallback(rssUrl) {
-  const errors = [];
-  for (const buildProxy of CORS_PROXIES) {
-    try {
-      const proxyUrl = buildProxy(rssUrl);
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
-      if (!resp.ok) { errors.push(`HTTP ${resp.status}`); continue; }
-      const data = await resp.json().catch(() => null);
-      // allorigins / corsproxy.io 回傳 { contents: '...' }
-      // codetabs 直接回傳文字，需用 resp.text() 再試
-      const xmlStr = (data && data.contents) ? data.contents : null;
-      if (xmlStr && xmlStr.trim().length > 0) return xmlStr;
-    } catch (e) {
-      errors.push(e.message);
-    }
-  }
-  // codetabs 直接回傳純文字（第三備援），補一次 text() 嘗試
-  try {
-    const resp = await fetch(
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rssUrl)}`,
-      { signal: AbortSignal.timeout(10000) }
-    );
-    if (resp.ok) {
-      const txt = await resp.text();
-      if (txt && txt.includes('<item>')) return txt;
-    }
-  } catch(e) { errors.push(e.message); }
-  throw new Error('所有 Proxy 均失敗：' + errors.join(' | '));
-}
 
 async function loadNews() {
   if (!currentData) return;
@@ -3684,7 +3486,7 @@ function switchTab(tab) {
     if (panel) panel.classList.toggle('hidden', t !== tab);
     if (btn)   btn.classList.toggle('active', t === tab);
   });
-  if (tab === 'news' && currentData) { loadGoodinfo(); loadNews(); }
+  if (tab === 'news' && currentData) { loadNews(); }
   // 切換到效益邊緣線時，自動將目前個股代碼加入輸入框（若尚未包含）
   if (tab === 'frontier' && currentData) {
     const efInput = document.getElementById('efTickers');
