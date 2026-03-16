@@ -191,7 +191,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               class="bg-amber-500 hover:bg-amber-400 text-white font-bold py-3 px-8 rounded-2xl transition text-base flex items-center gap-3 shadow-lg shadow-amber-900/30">
         <i class="fa-solid fa-fire text-lg"></i>
         <span>熱門股票總覽</span>
-        <span class="text-amber-200 text-sm font-normal">成交資料 · 漲跌統計 · 移動平均線</span>
+        <span class="text-amber-200 text-sm font-normal">成交資料 · 漲跌統計 · 移動平均線 · 投資分析</span>
       </button>
     </div>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-2xl mx-auto text-sm text-slate-400">
@@ -2131,34 +2131,42 @@ async function fetchMissingFundamentals(ticker, stockName, missingFields) {
   const fieldsNeeded = missingFields.map(f => `"${f}": ${fieldMap[f] || f}`).join('\n');
   const nameHint = stockName ? `（${stockName}）` : '';
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      system: '你是財務數據分析師。請搜尋並回傳台灣股票的最新財務資料。回應必須是純JSON，不含任何說明文字或markdown。',
-      messages: [{
-        role: 'user',
-        content: `請搜尋台灣股票代碼 ${ticker}${nameHint} 的最新財務數據，並以JSON格式回傳以下欄位（若查不到某欄位請設為null）：\n{\n${fieldsNeeded}\n}\n只輸出JSON，不要其他文字。`
-      }]
-    })
-  });
-
-  if (!resp.ok) throw new Error(`API ${resp.status}`);
-  const json = await resp.json();
-  // 取最後一個 text block（跳過 tool_use/tool_result）
-  const textBlock = [...(json.content || [])].reverse().find(b => b.type === 'text');
-  const raw = (textBlock?.text || '').trim();
-  // 清理 markdown code fence
-  const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/,'').trim();
   try {
-    const parsed = JSON.parse(cleaned);
-    _fundCache[ticker] = parsed;
-    return parsed;
-  } catch(e) {
-    console.warn('基本面補充解析失敗', e, cleaned);
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 800,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        system: '你是財務數據分析師。請搜尋並回傳台灣股票的最新財務資料。回應必須是純JSON，不含任何說明文字或markdown。',
+        messages: [{
+          role: 'user',
+          content: `請搜尋台灣股票代碼 ${ticker}${nameHint} 的最新財務數據，並以JSON格式回傳以下欄位（若查不到某欄位請設為null）：\n{\n${fieldsNeeded}\n}\n只輸出JSON，不要其他文字。`
+        }]
+      })
+    });
+
+    if (!resp.ok) {
+      console.warn(`基本面補充 API 錯誤: HTTP ${resp.status}`);
+      return {};
+    }
+    const json = await resp.json();
+    // 取最後一個 text block（跳過 tool_use/tool_result）
+    const textBlock = [...(json.content || [])].reverse().find(b => b.type === 'text');
+    const raw = (textBlock?.text || '').trim();
+    // 清理 markdown code fence
+    const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/,'').trim();
+    try {
+      const parsed = JSON.parse(cleaned);
+      _fundCache[ticker] = parsed;
+      return parsed;
+    } catch(e) {
+      console.warn('基本面補充解析失敗', e, cleaned);
+      return {};
+    }
+  } catch(err) {
+    console.warn('基本面補充請求失敗（可能缺少API key或網路問題）', err);
     return {};
   }
 }
@@ -2179,51 +2187,50 @@ function renderFundamental(data) {
   const descMissing = !f.description || f.description.length < 10;
   if (descMissing) missingFund.push('description');
 
-  // 初始渲染（可能含N/A）
-  _renderFundamentalUI(f, ticker);
+  const hasMissing = missingFund.length > 0;
+
+  // 初始渲染：若有缺失欄位，先顯示「補充中」動畫
+  _renderFundamentalUI(f, ticker, hasMissing);
 
   // 若有缺失欄位，非同步補充
-  if (missingFund.length > 0) {
-    const vaEl = document.getElementById('valuation-metrics');
-    const prEl = document.getElementById('profit-metrics');
-    // 在缺失欄位旁顯示搜尋中提示
-    if (missingFund.some(k => ['pe_ratio','pb_ratio','div_yield','eps'].includes(k))) {
-      vaEl.insertAdjacentHTML('beforeend',
-        '<div id="fund-fetch-hint" class="text-xs text-blue-400 mt-2 flex items-center gap-1">' +
-        '<i class="fa-solid fa-circle-notch fa-spin"></i>正在補充缺失資料...</div>');
-    }
-
+  if (hasMissing) {
     fetchMissingFundamentals(ticker, stockName, missingFund).then(extra => {
       document.getElementById('fund-fetch-hint')?.remove();
-      if (!extra || Object.keys(extra).length === 0) return;
+      if (!extra || Object.keys(extra).length === 0) {
+        // 補充失敗：重新渲染，顯示「查無資料」
+        _renderFundamentalUI(f, ticker, false);
+        return;
+      }
       // 合併補充資料
       const merged = Object.assign({}, f);
       for (const [k, v] of Object.entries(extra)) {
         if (v != null && merged[k] == null) merged[k] = v;
       }
-      _renderFundamentalUI(merged, ticker);
+      _renderFundamentalUI(merged, ticker, false);
     }).catch(err => {
       document.getElementById('fund-fetch-hint')?.remove();
+      // 補充失敗：重新渲染顯示「查無資料」而非 N/A
+      _renderFundamentalUI(f, ticker, false);
       console.warn('補充基本面失敗', err);
     });
   }
 }
 
-function _renderFundamentalUI(f, ticker) {
+function _renderFundamentalUI(f, ticker, isLoading=false) {
   const data = currentData; // 需要 ticker 等資訊
 
   document.getElementById('valuation-metrics').innerHTML = [
-    metricRow('本益比 (P/E)', f.pe_ratio, 'x', pe => pe < 15 ? 'up' : pe > 30 ? 'down' : 'flat'),
-    metricRow('股價淨值比 (P/B)', f.pb_ratio, 'x', pb => pb < 1.5 ? 'up' : pb > 3 ? 'down' : 'flat'),
-    metricRow('近12月殖利率', f.div_yield, '%', dy => dy >= 5 ? 'up' : dy >= 3 ? 'flat' : 'down'),
-    metricRow('每股盈餘 (EPS)', f.eps, '元'),
+    metricRow('本益比 (P/E)', f.pe_ratio, 'x', pe => pe < 15 ? 'up' : pe > 30 ? 'down' : 'flat', isLoading && f.pe_ratio == null),
+    metricRow('股價淨值比 (P/B)', f.pb_ratio, 'x', pb => pb < 1.5 ? 'up' : pb > 3 ? 'down' : 'flat', isLoading && f.pb_ratio == null),
+    metricRow('近12月殖利率', f.div_yield, '%', dy => dy >= 5 ? 'up' : dy >= 3 ? 'flat' : 'down', isLoading && f.div_yield == null),
+    metricRow('每股盈餘 (EPS)', f.eps, '元', null, isLoading && f.eps == null),
   ].join('');
 
   document.getElementById('profit-metrics').innerHTML = [
     metricRow('股東權益報酬率 (ROE)', f.roe != null ? (f.roe * 100) : null, '%',
-              v => v > 15 ? 'up' : v > 5 ? 'flat' : 'down'),
+              v => v > 15 ? 'up' : v > 5 ? 'flat' : 'down', isLoading && f.roe == null),
     metricRow('淨利率', f.profit_margin != null ? (f.profit_margin * 100) : null, '%',
-              v => v > 20 ? 'up' : v > 5 ? 'flat' : 'down'),
+              v => v > 20 ? 'up' : v > 5 ? 'flat' : 'down', isLoading && f.profit_margin == null),
   ].join('');
 
   document.getElementById('market-metrics').innerHTML = [
@@ -2239,8 +2246,15 @@ function _renderFundamentalUI(f, ticker) {
   const descToggle  = document.getElementById('descToggleBtn');
 
   if (!desc || desc.length < 10) {
-    descEl.textContent = '暫無公司簡介';
-    descToggle.style.display = 'none';
+    if (isLoading) {
+      // 補充中：顯示動畫等候
+      descEl.innerHTML = `<span class="text-blue-400 text-xs flex items-center gap-1"><i class="fa-solid fa-circle-notch fa-spin"></i>正在補充公司簡介…</span>`;
+      descToggle.style.display = 'none';
+    } else {
+      // 最終確認查無資料
+      descEl.innerHTML = `<span class="text-slate-500 text-sm italic">此股票目前無法取得公司簡介，可至<a href="https://mops.twse.com.tw/mops/web/t05st03" target="_blank" class="text-blue-400 underline ml-1">公開資訊觀測站</a>查詢。</span>`;
+      descToggle.style.display = 'none';
+    }
   } else {
     // 判斷是否為英文（主要字元為 ASCII 英文字母）
     const isEnglish = (desc.replace(/\s/g, '').match(/[a-zA-Z]/g) || []).length
@@ -2249,7 +2263,13 @@ function _renderFundamentalUI(f, ticker) {
     if (!isEnglish) {
       // 已是中文，直接顯示
       descEl.textContent = desc;
-      if (desc.length < 100) descToggle.style.display = 'none';
+      descEl.classList.remove('line-clamp-3');
+      if (desc.length >= 100) {
+        descEl.classList.add('line-clamp-3');
+        descToggle.style.display = '';
+      } else {
+        descToggle.style.display = 'none';
+      }
     } else {
       // 先顯示翻譯中提示
       descEl.innerHTML = `<span class="text-slate-500 italic text-xs">⏳ 翻譯中…</span>`;
@@ -2257,6 +2277,7 @@ function _renderFundamentalUI(f, ticker) {
 
       // 呼叫 Claude API 翻譯（帶 ticker 快取）
       translateDesc(desc, ticker).then(zhDesc => {
+        descEl.classList.remove('line-clamp-3');
         descEl.textContent = zhDesc;
         if (zhDesc.length >= 100) {
           descEl.classList.add('line-clamp-3');
@@ -2264,8 +2285,12 @@ function _renderFundamentalUI(f, ticker) {
         }
       }).catch(() => {
         // 翻譯失敗退回英文原文
+        descEl.classList.remove('line-clamp-3');
         descEl.textContent = desc;
-        if (desc.length >= 100) descToggle.style.display = '';
+        if (desc.length >= 100) {
+          descEl.classList.add('line-clamp-3');
+          descToggle.style.display = '';
+        }
       });
     }
   }
@@ -2282,8 +2307,13 @@ function _renderFundamentalUI(f, ticker) {
     divHtml || '<tr><td colspan="2" class="py-4 text-center text-slate-500">無配息紀錄</td></tr>';
 }
 
-function metricRow(label, val, unit, colorFn) {
-  if (val == null) return `<div class="flex justify-between py-2 border-b border-slate-800"><span class="text-slate-400">${label}</span><span class="text-slate-600">N/A</span></div>`;
+function metricRow(label, val, unit, colorFn, loading=false) {
+  if (val == null) {
+    const inner = loading
+      ? `<span class="text-blue-400 text-xs flex items-center gap-1"><i class="fa-solid fa-circle-notch fa-spin text-xs"></i>補充中…</span>`
+      : `<span class="text-slate-600 text-xs">查無資料</span>`;
+    return `<div class="flex justify-between py-2 border-b border-slate-800"><span class="text-slate-400">${label}</span>${inner}</div>`;
+  }
   const display = typeof val === 'number' ? val.toFixed(2) : val;
   const cls = colorFn ? colorFn(parseFloat(display)) : 'flat';
   const clsMap = {up:'text-green-400', down:'text-red-400', flat:'text-white'};
@@ -2294,10 +2324,10 @@ function metricRow(label, val, unit, colorFn) {
 }
 
 function mCard(label, val, unit, color, raw=false) {
-  const display = val != null ? (raw ? val : `${val}${unit}`) : 'N/A';
+  const display = val != null ? (raw ? val : `${val}${unit}`) : '--';
   return `<div class="ind-card text-center">
     <div class="text-xs text-slate-500 mb-1">${label}</div>
-    <div class="text-base font-black mono" style="color:${val != null ? color : '#64748b'}">${display}</div>
+    <div class="text-base font-black mono" style="color:${val != null ? color : '#475569'}">${display}</div>
   </div>`;
 }
 
@@ -4741,7 +4771,7 @@ let hotViewMode      = 'trade';  // 'trade' | 'risedrop' | 'ma'
 // 設定熱門股票表格檢視模式
 function setHotViewMode(mode) {
   hotViewMode = mode;
-  ['trade','risedrop','ma'].forEach(m => {
+  ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
     if (btn) btn.classList.toggle('active', m === mode);
   });
@@ -4778,6 +4808,13 @@ function renderHotTableHeader() {
       <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma20')">MA20 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
       <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma60')">MA60 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
       <th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortHotTable('matrend')">均線排列 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
+  } else if (hotViewMode === 'invest') {
+    extra = `<th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortHotTable('rating_score')">評級 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('target_price')">目標價 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('pe_ratio')">本益比 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('div_yield')">殖利率% <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-left">趨勢</th>
+      <th class="py-3 px-3 text-left" style="min-width:220px">主要訊號</th>`;
   }
 
   thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">${base}${extra}<th class="py-3 px-3 text-center">操作</th></tr>`;
@@ -4846,7 +4883,7 @@ async function openHotStockPanel() {
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   hotViewMode  = 'trade';
-  ['trade','risedrop','ma'].forEach(m => {
+  ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
     if (btn) btn.classList.toggle('active', m === 'trade');
   });
@@ -4973,7 +5010,23 @@ function calcHotRow(code, data) {
   return { code, close, change, chgpct, vol, high, low,
            ma5, ma10, ma20, ma60, matrend,
            updays: upDays, downdays: downDays, flatdays: flatDays,
-           upvolpct: upVolPct, downvolpct: downVolPct };
+           upvolpct: upVolPct, downvolpct: downVolPct,
+           // 投資分析欄位
+           rating:       (data.recommendation || {}).rating       || null,
+           rating_score: (data.recommendation || {}).total_score  || 0,
+           rating_color: (data.recommendation || {}).rating_color || '#64748b',
+           rating_bg:    (data.recommendation || {}).rating_bg    || '#1e293b',
+           rating_icon:  (data.recommendation || {}).rating_icon  || '',
+           target_price: (data.recommendation || {}).target_price || null,
+           target_type:  (data.recommendation || {}).target_type  || 'none',
+           trend_label:  ((data.technical || {}).trend || {}).label || '--',
+           trend_color:  ((data.technical || {}).trend || {}).color || '#94a3b8',
+           signals:      ((data.technical || {}).trend || {}).signals || [],
+           pe_ratio:     (data.fundamentals || {}).pe_ratio   || null,
+           div_yield:    (data.fundamentals || {}).div_yield  || null,
+           reasons_buy:  (data.recommendation || {}).reasons_buy  || [],
+           reasons_sell: (data.recommendation || {}).reasons_sell || [],
+         };
 }
 
 // ── 排序 ─────────────────────────────────────────────────────────────
@@ -5120,6 +5173,51 @@ function renderHotTable() {
         maCell(row.ma20, ma20Cls) +
         maCell(row.ma60, ma60Cls) +
         '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
+
+    } else if (hotViewMode === 'invest') {
+      // 評級徽章
+      const ratingHtml = row.rating
+        ? '<span style="background:' + row.rating_bg + ';color:' + row.rating_color + ';border:1px solid ' + row.rating_color + '40;" class="px-2 py-0.5 rounded-full text-xs font-black">' +
+          row.rating_icon + ' ' + row.rating + '</span>'
+        : '<span class="text-slate-500 text-xs">--</span>';
+
+      // 目標價（含類型標示）
+      const targetTypeLabel = { 'upside':'⬆', 'fair':'➡', 'downside':'⬇', 'none':'' };
+      const targetCls = row.target_type === 'upside' ? 'up' : row.target_type === 'downside' ? 'down' : 'flat';
+      const targetHtml = row.target_price != null
+        ? '<span class="mono font-bold ' + targetCls + '">' + (targetTypeLabel[row.target_type]||'') + ' ' + row.target_price.toFixed(1) + '</span>'
+        : '<span class="flat">--</span>';
+
+      // 本益比
+      const peHtml = row.pe_ratio != null
+        ? '<span class="mono ' + (row.pe_ratio < 15 ? 'up' : row.pe_ratio > 30 ? 'down' : '') + '">' + row.pe_ratio.toFixed(1) + 'x</span>'
+        : '<span class="flat text-xs">--</span>';
+
+      // 殖利率
+      const dyHtml = row.div_yield != null
+        ? '<span class="mono ' + (row.div_yield >= 5 ? 'up' : row.div_yield >= 3 ? 'text-amber-400' : 'flat') + '">' + row.div_yield.toFixed(2) + '%</span>'
+        : '<span class="flat text-xs">--</span>';
+
+      // 趨勢標籤
+      const trendHtml = '<span style="color:' + row.trend_color + '" class="text-xs font-bold">' + (row.trend_label || '--') + '</span>';
+
+      // 主要訊號（最多3個）
+      const signals = row.reasons_buy.concat(row.reasons_sell).slice(0,3);
+      const signalHtml = signals.length
+        ? signals.map(s => {
+            const isBuy = row.reasons_buy.includes(s);
+            const cls = isBuy ? 'signal-buy' : 'signal-sell';
+            return '<span class="signal-tag ' + cls + '">' + s.replace(/（[^）]*）/g,'').slice(0,14) + '</span>';
+          }).join('')
+        : '<span class="text-slate-600 text-xs">資料不足</span>';
+
+      extraCols =
+        '<td class="py-2 px-3 text-center">' + ratingHtml + '</td>' +
+        '<td class="py-2 px-3 text-right">' + targetHtml + '</td>' +
+        '<td class="py-2 px-3 text-right">' + peHtml + '</td>' +
+        '<td class="py-2 px-3 text-right">' + dyHtml + '</td>' +
+        '<td class="py-2 px-3">' + trendHtml + '</td>' +
+        '<td class="py-2 px-3"><div class="flex flex-wrap gap-0.5">' + signalHtml + '</div></td>';
     }
 
     const actionCol = '<td class="py-2 px-3 text-center">' +
@@ -5369,7 +5467,7 @@ function renderTradeOverview(data) {
         <div class="flex items-center gap-3">
           <i class="fa-solid fa-fire text-amber-400 text-xl"></i>
           <h2 class="text-lg font-black text-white">熱門股票總覽</h2>
-          <span class="text-slate-400 text-sm">成交資料 · 漲跌成交統計 · 移動平均線</span>
+          <span class="text-slate-400 text-sm">成交資料 · 漲跌成交統計 · 移動平均線 · 投資分析</span>
         </div>
         <div class="flex items-center gap-3">
           <!-- 每頁筆數 -->
@@ -5406,6 +5504,10 @@ function renderTradeOverview(data) {
         <button id="hotViewBtn-ma" onclick="setHotViewMode('ma')"
                 class="tab-btn text-xs py-1.5 px-3">
           <i class="fa-solid fa-wave-square mr-1"></i>移動平均線
+        </button>
+        <button id="hotViewBtn-invest" onclick="setHotViewMode('invest')"
+                class="tab-btn text-xs py-1.5 px-3">
+          <i class="fa-solid fa-lightbulb mr-1"></i>投資分析
         </button>
       </div>
 
