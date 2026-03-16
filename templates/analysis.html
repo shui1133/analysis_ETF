@@ -129,7 +129,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           股票分析中心
           <span class="text-emerald-400 text-sm font-normal ml-2">v4.0</span>
         </h1>
-        <p class="text-slate-400 text-sm mt-1">技術面 ▸ 基本面 ▸ 籌碼面 ▸ 投資建議 ▸ 蒙地卡羅 ▸ 情境分析</p>
+
       </div>
       <a href="/" class="inline-flex items-center gap-2 bg-slate-700/60 hover:bg-slate-600 text-slate-200 font-bold py-2 px-4 rounded-xl border border-slate-600 transition text-sm">
         <i class="fa-solid fa-house"></i>退休規劃回測
@@ -2949,11 +2949,13 @@ function renderEfficientFrontier(d) {
           type:            'line',
           label:           '效益邊緣線',
           data:            ef.risk.map((r,i) => ({x: r*100, y: ef.ret[i]*100})),
-          borderColor:     '#1e3a8a',
+          borderColor:     '#60a5fa',
           backgroundColor: 'transparent',
-          borderWidth:     2.5,
-          pointRadius:     4,
-          pointBackgroundColor: '#1e3a8a',
+          borderWidth:     3,
+          pointRadius:     5,
+          pointBackgroundColor: '#60a5fa',
+          pointBorderColor:    '#ffffff',
+          pointBorderWidth:    1,
           tension:         0.3,
           order:           2,
         },
