@@ -156,17 +156,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     </div>
 
     <!-- 熱門股票清單 -->
-    <div class="flex items-center gap-2 mb-2">
-      <span class="text-slate-400 text-xs shrink-0">熱門顯示：</span>
-      <select id="popularPageSize" onchange="changePopularSize()"
-              class="bg-slate-800 border border-slate-600 text-white rounded-lg px-2 py-1 text-xs outline-none focus:border-blue-500">
-        <option value="10" selected>10筆</option>
-        <option value="20">20筆</option>
-        <option value="30">30筆</option>
-        <option value="40">40筆</option>
-        <option value="50">50筆</option>
-      </select>
-    </div>
     <div id="popularList" class="flex flex-wrap gap-2 pb-2 overflow-x-auto"></div>
   </div>
 </div>
@@ -1830,8 +1819,7 @@ async function loadPopular() {
 }
 
 function renderPopularList() {
-  const size = parseInt(document.getElementById('popularPageSize').value) || 10;
-  const stocks = _popularAllStocks.slice(0, size);
+  const stocks = _popularAllStocks; // 全數顯示
   const el = document.getElementById('popularList');
   el.innerHTML = stocks.map(s => {
     const name = (s.name && s.name.trim()) ? s.name : (STOCK_NAMES_ZH[s.code] || s.code);
@@ -4940,12 +4928,58 @@ function renderSIM(d) {
 // ════════════════════════════════════════════════════════════════
 let hotStockList     = [];
 let hotStockData     = {};
-let hotPageSize      = 50;
+let hotPageSize      = 5;
 let hotLoadAbort     = false;
 let hotChartRiseDrop = null;
 let hotChartMA       = null;
 let _hotSortKey      = null;
 let _hotSortAsc      = true;
+let hotViewMode      = 'trade';  // 'trade' | 'risedrop' | 'ma'
+
+// 設定熱門股票表格檢視模式
+function setHotViewMode(mode) {
+  hotViewMode = mode;
+  ['trade','risedrop','ma'].forEach(m => {
+    const btn = document.getElementById('hotViewBtn-' + m);
+    if (btn) btn.classList.toggle('active', m === mode);
+  });
+  renderHotTableHeader();
+  renderHotTable();
+}
+
+function renderHotTableHeader() {
+  const thead = document.getElementById('hotTableHead');
+  if (!thead) return;
+  const base = `<th class="py-3 px-3 text-left w-8">#</th>
+    <th class="py-3 px-3 text-left cursor-pointer hover:text-white" onclick="sortHotTable('code')">代號 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+    <th class="py-3 px-3 text-left">股票名稱</th>
+    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('close')">成交價 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('chgpct')">漲跌幅% <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('volume')">成交量(張) <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
+
+  let extra = '';
+  if (hotViewMode === 'trade') {
+    extra = `<th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('chg')">漲跌 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right">最高</th>
+      <th class="py-3 px-3 text-right">最低</th>
+      <th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortHotTable('matrend')">均線排列 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
+  } else if (hotViewMode === 'risedrop') {
+    extra = `<th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('updays')">上漲日(近60日) <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('downdays')">下跌日 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-center">持平日</th>
+      <th class="py-3 px-3 text-center">漲跌比（近60日）</th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('upvolpct')">上漲量% <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('downvolpct')">下跌量% <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
+  } else if (hotViewMode === 'ma') {
+    extra = `<th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma5')">MA5 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma10')">MA10 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma20')">MA20 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma60')">MA60 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortHotTable('matrend')">均線排列 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
+  }
+
+  thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">${base}${extra}<th class="py-3 px-3 text-center">操作</th></tr>`;
+}
 
 // ── 建立熱門股票清單（優先順序清單，補足至 pageSize 筆）────────────
 function buildHotList(pageSize) {
@@ -5009,7 +5043,13 @@ function buildHotList(pageSize) {
 async function openHotStockPanel() {
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-  hotPageSize  = parseInt(document.getElementById('hotPageSize').value) || 50;
+  hotViewMode  = 'trade';
+  ['trade','risedrop','ma'].forEach(m => {
+    const btn = document.getElementById('hotViewBtn-' + m);
+    if (btn) btn.classList.toggle('active', m === 'trade');
+  });
+  renderHotTableHeader();
+  hotPageSize  = parseInt(document.getElementById('hotPageSize').value) || 5;
   hotStockList = buildHotList(hotPageSize);
   hotLoadAbort = false;
   await loadHotStocksSequential();
@@ -5170,21 +5210,26 @@ function renderHotTable() {
 
   tbody.innerHTML = rows.map((row, idx) => {
     const name = STOCK_DICT_CSV[row.code] || STOCK_NAMES_ZH[row.code] || row.name || row.code;
+
+    // base cols: #, code, name, close, chgpct, volume
+    const baseLoading = '<td colspan="6" class="py-2 px-3 text-center">' +
+      '<i class="fa-solid fa-circle-notch fa-spin text-amber-400 mr-2"></i>載入中...</td>';
+    const baseError   = '<td colspan="5" class="py-2 px-3 text-red-400 text-center">' +
+      '<i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>';
+
     if (row.loading) {
       return '<tr class="text-slate-500">' +
         '<td class="py-2 px-3">' + (idx+1) + '</td>' +
         '<td class="py-2 px-3 font-bold">' + row.code + '</td>' +
         '<td class="py-2 px-3">' + name + '</td>' +
-        '<td colspan="14" class="py-2 px-3 text-center">' +
-        '<i class="fa-solid fa-circle-notch fa-spin text-amber-400 mr-2"></i>載入中...</td>' +
-        '</tr>';
+        baseLoading + '</tr>';
     }
     if (row.error) {
       return '<tr class="text-slate-500">' +
         '<td class="py-2 px-3">' + (idx+1) + '</td>' +
         '<td class="py-2 px-3 font-bold text-red-400">' + row.code + '</td>' +
         '<td class="py-2 px-3">' + name + '</td>' +
-        '<td colspan="13" class="py-2 px-3 text-red-400 text-center"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>' +
+        baseError +
         '<td class="py-2 px-3 text-center">' +
           '<button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" ' +
             'class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1">' +
@@ -5195,53 +5240,93 @@ function renderHotTable() {
 
     const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
     const chgSign = row.chgpct > 0 ? '+' : '';
-    const ma5Cls  = row.ma5  && row.close > row.ma5  ? 'up' : row.ma5  && row.close < row.ma5  ? 'down' : 'flat';
-    const ma20Cls = row.ma20 && row.close > row.ma20 ? 'up' : row.ma20 && row.close < row.ma20 ? 'down' : 'flat';
-    const ma60Cls = row.ma60 && row.close > row.ma60 ? 'up' : row.ma60 && row.close < row.ma60 ? 'down' : 'flat';
 
-    const matrendMap = {
-       '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
-       '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
-       '0': ['--','px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-slate-500'],
-      '-1': ['空頭排列','px-2 py-0.5 rounded text-xs font-bold bg-red-900/60 text-red-300 border border-red-700/50'],
-      '-2': ['偏空整理','px-2 py-0.5 rounded text-xs font-bold bg-red-900/30 text-red-400 border border-red-800/50'],
-    };
-    const mt = matrendMap[String(row.matrend)] || matrendMap['0'];
-
-    const totD = row.updays + row.downdays + row.flatdays || 1;
-    const upW   = Math.round(row.updays   / totD * 100);
-    const flatW = Math.round(row.flatdays / totD * 100);
-    const downW = 100 - upW - flatW;
-    const barHtml =
-      '<div class="flex h-2 rounded-full overflow-hidden w-20 mx-auto">' +
-        '<div class="bg-emerald-500" style="width:' + upW   + '%"></div>' +
-        '<div class="bg-slate-600"   style="width:' + flatW + '%"></div>' +
-        '<div class="bg-red-500"     style="width:' + downW + '%"></div>' +
-      '</div>' +
-      '<div class="text-slate-500 mt-0.5">' + row.updays + '↑ ' + row.flatdays + '= ' + row.downdays + '↓</div>';
-
-    return '<tr class="hover:bg-slate-800/40 cursor-pointer" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' +
+    // Shared base columns
+    const baseCols =
       '<td class="py-2 px-3 text-slate-500">' + (idx+1) + '</td>' +
       '<td class="py-2 px-3 font-black text-blue-400">' + row.code + '</td>' +
       '<td class="py-2 px-3 font-bold text-white">' + name + '</td>' +
       '<td class="py-2 px-3 text-right mono font-bold ' + chgCls + '">' + row.close.toFixed(2) + '</td>' +
-      '<td class="py-2 px-3 text-right mono ' + chgCls + '">' + chgSign + row.change.toFixed(2) + '</td>' +
       '<td class="py-2 px-3 text-right mono font-bold ' + chgCls + '">' + chgSign + row.chgpct.toFixed(2) + '%</td>' +
-      '<td class="py-2 px-3 text-right mono">' + row.vol.toLocaleString() + '</td>' +
-      '<td class="py-2 px-3 text-right mono up">' + row.high.toFixed(2) + '</td>' +
-      '<td class="py-2 px-3 text-right mono down">' + row.low.toFixed(2) + '</td>' +
-      '<td class="py-2 px-3 text-right up font-bold">' + row.updays + '</td>' +
-      '<td class="py-2 px-3 text-right down font-bold">' + row.downdays + '</td>' +
-      '<td class="py-2 px-3 text-center">' + barHtml + '</td>' +
-      '<td class="py-2 px-3 text-right mono ' + ma5Cls  + '">' + (row.ma5  ? row.ma5.toFixed(2)  : '--') + '</td>' +
-      '<td class="py-2 px-3 text-right mono ' + ma20Cls + '">' + (row.ma20 ? row.ma20.toFixed(2) : '--') + '</td>' +
-      '<td class="py-2 px-3 text-right mono ' + ma60Cls + '">' + (row.ma60 ? row.ma60.toFixed(2) : '--') + '</td>' +
-      '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>' +
-      '<td class="py-2 px-3 text-center">' +
-        '<button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" ' +
-          'class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>' +
-      '</td>' +
-    '</tr>';
+      '<td class="py-2 px-3 text-right mono">' + row.vol.toLocaleString() + '</td>';
+
+    let extraCols = '';
+
+    if (hotViewMode === 'trade') {
+      const ma5Cls  = row.ma5  && row.close > row.ma5  ? 'up' : row.ma5  && row.close < row.ma5  ? 'down' : 'flat';
+      const ma20Cls = row.ma20 && row.close > row.ma20 ? 'up' : row.ma20 && row.close < row.ma20 ? 'down' : 'flat';
+      const ma60Cls = row.ma60 && row.close > row.ma60 ? 'up' : row.ma60 && row.close < row.ma60 ? 'down' : 'flat';
+      const matrendMap = {
+         '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
+         '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
+         '0': ['--','px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-slate-500'],
+        '-1': ['空頭排列','px-2 py-0.5 rounded text-xs font-bold bg-red-900/60 text-red-300 border border-red-700/50'],
+        '-2': ['偏空整理','px-2 py-0.5 rounded text-xs font-bold bg-red-900/30 text-red-400 border border-red-800/50'],
+      };
+      const mt = matrendMap[String(row.matrend)] || matrendMap['0'];
+      extraCols =
+        '<td class="py-2 px-3 text-right mono ' + chgCls + '">' + chgSign + row.change.toFixed(2) + '</td>' +
+        '<td class="py-2 px-3 text-right mono up">' + row.high.toFixed(2) + '</td>' +
+        '<td class="py-2 px-3 text-right mono down">' + row.low.toFixed(2) + '</td>' +
+        '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
+
+    } else if (hotViewMode === 'risedrop') {
+      const totD = row.updays + row.downdays + row.flatdays || 1;
+      const upW   = Math.round(row.updays   / totD * 100);
+      const flatW = Math.round(row.flatdays / totD * 100);
+      const downW = 100 - upW - flatW;
+      const barHtml =
+        '<div class="flex h-2 rounded-full overflow-hidden w-28 mx-auto">' +
+          '<div class="bg-emerald-500" style="width:' + upW   + '%"></div>' +
+          '<div class="bg-slate-600"   style="width:' + flatW + '%"></div>' +
+          '<div class="bg-red-500"     style="width:' + downW + '%"></div>' +
+        '</div>' +
+        '<div class="text-slate-500 mt-0.5 text-xs">' + row.updays + '↑ ' + row.flatdays + '= ' + row.downdays + '↓</div>';
+      extraCols =
+        '<td class="py-2 px-3 text-right up font-bold">' + row.updays + '</td>' +
+        '<td class="py-2 px-3 text-right down font-bold">' + row.downdays + '</td>' +
+        '<td class="py-2 px-3 text-center flat">' + row.flatdays + '</td>' +
+        '<td class="py-2 px-3 text-center">' + barHtml + '</td>' +
+        '<td class="py-2 px-3 text-right up font-bold">' + row.upvolpct + '%</td>' +
+        '<td class="py-2 px-3 text-right down font-bold">' + row.downvolpct + '%</td>';
+
+    } else if (hotViewMode === 'ma') {
+      const ma5Cls  = row.ma5  && row.close > row.ma5  ? 'up' : row.ma5  && row.close < row.ma5  ? 'down' : 'flat';
+      const ma10Cls = row.ma10 && row.close > row.ma10 ? 'up' : row.ma10 && row.close < row.ma10 ? 'down' : 'flat';
+      const ma20Cls = row.ma20 && row.close > row.ma20 ? 'up' : row.ma20 && row.close < row.ma20 ? 'down' : 'flat';
+      const ma60Cls = row.ma60 && row.close > row.ma60 ? 'up' : row.ma60 && row.close < row.ma60 ? 'down' : 'flat';
+      const matrendMap = {
+         '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
+         '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
+         '0': ['--','px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-slate-500'],
+        '-1': ['空頭排列','px-2 py-0.5 rounded text-xs font-bold bg-red-900/60 text-red-300 border border-red-700/50'],
+        '-2': ['偏空整理','px-2 py-0.5 rounded text-xs font-bold bg-red-900/30 text-red-400 border border-red-800/50'],
+      };
+      const mt = matrendMap[String(row.matrend)] || matrendMap['0'];
+
+      // show close vs MA as arrow+diff%
+      const maCell = (val, cls) => {
+        if (!val) return '<td class="py-2 px-3 text-right mono flat">--</td>';
+        const diff = ((row.close - val) / val * 100);
+        const arrow = diff > 0 ? '↗' : diff < 0 ? '↘' : '→';
+        return '<td class="py-2 px-3 text-right mono ' + cls + '">' +
+          val.toFixed(2) + '<span class="text-xs ml-1 opacity-70">' + arrow + '</span></td>';
+      };
+      extraCols =
+        maCell(row.ma5,  ma5Cls) +
+        maCell(row.ma10, ma10Cls) +
+        maCell(row.ma20, ma20Cls) +
+        maCell(row.ma60, ma60Cls) +
+        '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
+    }
+
+    const actionCol = '<td class="py-2 px-3 text-center">' +
+      '<button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" ' +
+        'class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>' +
+      '</td>';
+
+    return '<tr class="hover:bg-slate-800/40 cursor-pointer" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' +
+      baseCols + extraCols + actionCol + '</tr>';
   }).join('');
 
   updateHotSummary();
@@ -5490,11 +5575,13 @@ function renderTradeOverview(data) {
             <span class="text-slate-400">每頁筆數：</span>
             <select id="hotPageSize" onchange="changeHotPageSize()"
                     class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-500">
-              <option value="50" selected>50筆</option>
-              <option value="100">100筆</option>
-              <option value="150">150筆</option>
-              <option value="200">200筆</option>
-              <option value="300">300筆</option>
+              <option value="5" selected>5筆</option>
+              <option value="10">10筆</option>
+              <option value="15">15筆</option>
+              <option value="20">20筆</option>
+              <option value="30">30筆</option>
+              <option value="40">40筆</option>
+              <option value="50">50筆</option>
             </select>
           </div>
           <button onclick="closeHotStockPanel()"
@@ -5502,6 +5589,22 @@ function renderTradeOverview(data) {
             <i class="fa-solid fa-xmark text-lg"></i>
           </button>
         </div>
+      </div>
+
+      <!-- 檢視模式切換 -->
+      <div class="px-6 py-2 border-b border-slate-700 shrink-0 flex gap-2">
+        <button id="hotViewBtn-trade" onclick="setHotViewMode('trade')"
+                class="tab-btn active text-xs py-1.5 px-3">
+          <i class="fa-solid fa-receipt mr-1"></i>成交資料
+        </button>
+        <button id="hotViewBtn-risedrop" onclick="setHotViewMode('risedrop')"
+                class="tab-btn text-xs py-1.5 px-3">
+          <i class="fa-solid fa-chart-bar mr-1"></i>漲跌成交統計
+        </button>
+        <button id="hotViewBtn-ma" onclick="setHotViewMode('ma')"
+                class="tab-btn text-xs py-1.5 px-3">
+          <i class="fa-solid fa-wave-square mr-1"></i>移動平均線
+        </button>
       </div>
 
       <!-- 進度列 -->
@@ -5531,52 +5634,7 @@ function renderTradeOverview(data) {
       <!-- 表格區域 -->
       <div class="overflow-auto flex-1 px-2">
         <table class="w-full text-xs" style="min-width:900px;">
-          <thead class="sticky top-0 bg-slate-900 z-10">
-            <tr class="text-slate-400 border-b border-slate-700">
-              <th class="py-3 px-3 text-left w-8">#</th>
-              <th class="py-3 px-3 text-left cursor-pointer hover:text-white" onclick="sortHotTable('code')">
-                代號 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-left">股票名稱</th>
-              <!-- 成交資料 -->
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('close')">
-                成交價 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('chg')">
-                漲跌 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('chgpct')">
-                漲跌幅% <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('volume')">
-                成交量(張) <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-right">最高</th>
-              <th class="py-3 px-3 text-right">最低</th>
-              <!-- 漲跌統計(近60日) -->
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('updays')">
-                上漲日 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('downdays')">
-                下跌日 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-center">漲跌比</th>
-              <!-- 移動平均線 -->
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma5')">
-                MA5 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma20')">
-                MA20 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma60')">
-                MA60 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortHotTable('matrend')">
-                均線排列 <i class="fa-solid fa-sort text-slate-600 ml-1"></i>
-              </th>
-              <th class="py-3 px-3 text-center">操作</th>
-            </tr>
-          </thead>
+          <thead id="hotTableHead" class="sticky top-0 bg-slate-900 z-10"></thead>
           <tbody id="hotStockTableBody" class="divide-y divide-slate-800/60"></tbody>
         </table>
         <!-- 空狀態 -->
