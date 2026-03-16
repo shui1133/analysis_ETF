@@ -1036,21 +1036,46 @@ def efficient_frontier():
         msp_weights = [round(x, 4) for x in msp_res.x]
 
         # ── 效率前緣曲線（最小化風險，固定報酬率）───────────
-        # 修正：上限改為 max(sim_ret) 不截斷，點數增至 60 提升密度
-        ret_range  = np.linspace(mvp_ret, max(sim_ret), 60)
+        # 修正1：上限改為所有股票中報酬最高的單一持有點 max(mu)
+        #        （蒙地卡羅混合組合的最高報酬永遠低於最強單股，
+        #          用 max(sim_ret) 會讓曲線在到達單股前就截斷）
+        ret_max   = float(np.max(mu))   # 最高報酬單股（100% 持有）
+        ret_range = np.linspace(mvp_ret, ret_max, 80)   # 點數80，密度更高
+
+        # 各股 100% 持有的初始點（作為高報酬段優化的熱啟動）
+        stock_inits = [np.eye(n)[i] for i in range(n)]
+
         ef_risks, ef_rets = [], []
         for target_r in ret_range:
             constraints = [eq_con, {'type':'eq','fun': lambda w,r=target_r: port_ret(w) - r}]
-            # 修正：多個初始點提高高報酬段優化成功率
+            # 修正2：多個初始點（含各股單一持有）提高高報酬段優化成功率
             best = None
-            for w_init in [w0, mvp_res.x, msp_res.x]:
-                res = sp_minimize(port_std, w_init, bounds=bounds,
-                                  constraints=constraints, method='SLSQP')
-                if res.success and (best is None or res.fun < best.fun):
-                    best = res
+            for w_init in [w0, mvp_res.x, msp_res.x] + stock_inits:
+                try:
+                    res = sp_minimize(port_std, w_init, bounds=bounds,
+                                      constraints=constraints, method='SLSQP',
+                                      options={'ftol':1e-9,'maxiter':500})
+                    if res.success and (best is None or res.fun < best.fun):
+                        best = res
+                except Exception:
+                    continue
             if best is not None:
                 ef_risks.append(round(best.fun, 6))
                 ef_rets.append(round(target_r, 6))
+
+        # 修正3：將各股 100% 持有的點補入曲線（確保端點完整延伸）
+        for i in range(n):
+            single_ret  = float(mu[i])
+            single_risk = float(np.sqrt(cov[i][i]))
+            # 只加入高於現有曲線末端的單股點，避免重複
+            if not ef_rets or single_ret > max(ef_rets) + 1e-6:
+                ef_risks.append(round(single_risk, 6))
+                ef_rets.append(round(single_ret, 6))
+
+        # 依報酬率排序，確保曲線方向正確
+        ef_sorted  = sorted(zip(ef_rets, ef_risks))
+        ef_rets    = [x[0] for x in ef_sorted]
+        ef_risks   = [x[1] for x in ef_sorted]
 
         # ── 各股個別風險報酬 ─────────────────────────────────
         stock_stats = []
