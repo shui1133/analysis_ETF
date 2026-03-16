@@ -323,7 +323,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <div class="flex flex-wrap gap-1" id="periodBtns">
               <button class="period-btn active" onclick="setPeriod('D')"   id="pbtn-D">日線</button>
               <button class="period-btn"        onclick="setPeriod('W')"   id="pbtn-W">週線</button>
-              <button class="period-btn"        onclick="setPeriod('2W')"  id="pbtn-2W">雙週線</button>
               <button class="period-btn"        onclick="setPeriod('M')"   id="pbtn-M">月線</button>
               <button class="period-btn"        onclick="setPeriod('Q')"   id="pbtn-Q">季線</button>
               <button class="period-btn"        onclick="setPeriod('6M')"  id="pbtn-6M">半年線</button>
@@ -1195,8 +1194,25 @@ async function loadPopular() {
     const r = await fetch('/api/popular_stocks');
     const d = await r.json();
     if (d.status !== 'success') return;
+
+    // ── 調整熱門股票清單 ──────────────────────────────────────
+    // 移除 2002 中鋼
+    let stocks = d.stocks.filter(s => s.code !== '2002');
+    // 若尚未包含則依序插入
+    const insertIfMissing = (code, name, afterCode) => {
+      if (stocks.find(s => s.code === code)) return;
+      const idx = stocks.findIndex(s => s.code === afterCode);
+      const newItem = { code, name };
+      if (idx >= 0) stocks.splice(idx + 1, 0, newItem);
+      else stocks.push(newItem);
+    };
+    insertIfMissing('0050',  '元大台灣50', '2881');   // 在富邦金後
+    insertIfMissing('2408',  '南亞科',     '1303');   // 在南亞後
+    insertIfMissing('1519',  '華城',       '2357');   // 在華碩後
+    // ──────────────────────────────────────────────────────────
+
     const el = document.getElementById('popularList');
-    el.innerHTML = d.stocks.map(s => `
+    el.innerHTML = stocks.map(s => `
       <button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
         <span class="text-slate-400">${s.code}</span>
         <span>${s.name}</span>
@@ -2858,12 +2874,13 @@ function drawMACDChart(data) {
             callback: function(val, index) {
               const label = this.getLabelForValue(val);
               if (!label) return '';
-              // 顯示 MM/DD 格式
+              // 顯示 YYYY/MM/DD 格式
               const d = new Date(label);
               if (isNaN(d)) return label;
+              const yyyy = d.getFullYear();
               const mm = String(d.getMonth()+1).padStart(2,'0');
               const dd = String(d.getDate()).padStart(2,'0');
-              return mm + '/' + dd;
+              return yyyy + '/' + mm + '/' + dd;
             }
           },
           grid: { color: 'rgba(255,255,255,.04)' }
