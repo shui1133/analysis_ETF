@@ -156,6 +156,17 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     </div>
 
     <!-- 熱門股票清單 -->
+    <div class="flex items-center gap-2 mb-2">
+      <span class="text-slate-400 text-xs shrink-0">熱門顯示：</span>
+      <select id="popularPageSize" onchange="changePopularSize()"
+              class="bg-slate-800 border border-slate-600 text-white rounded-lg px-2 py-1 text-xs outline-none focus:border-blue-500">
+        <option value="10" selected>10筆</option>
+        <option value="20">20筆</option>
+        <option value="30">30筆</option>
+        <option value="40">40筆</option>
+        <option value="50">50筆</option>
+      </select>
+    </div>
     <div id="popularList" class="flex flex-wrap gap-2 pb-2 overflow-x-auto"></div>
   </div>
 </div>
@@ -1771,6 +1782,8 @@ const PERIOD_CFG = {
 // ════════════════════════════════════════════════════════════════
 // 載入熱門清單
 // ════════════════════════════════════════════════════════════════
+let _popularAllStocks = [];  // 快取完整清單
+
 async function loadPopular() {
   try {
     const r = await fetch('/api/popular_stocks');
@@ -1811,16 +1824,27 @@ async function loadPopular() {
     });
     // ──────────────────────────────────────────────────────────
 
-    const el = document.getElementById('popularList');
-    el.innerHTML = stocks.map(s => {
-      const name = (s.name && s.name.trim()) ? s.name : (STOCK_NAMES_ZH[s.code] || s.code);
-      return `
-      <button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
-        <span class="text-slate-400">${s.code}</span>
-        <span>${name}</span>
-      </button>`;
-    }).join('');
+    _popularAllStocks = stocks;
+    renderPopularList();
   } catch(e) { console.error('載入熱門清單失敗', e); }
+}
+
+function renderPopularList() {
+  const size = parseInt(document.getElementById('popularPageSize').value) || 10;
+  const stocks = _popularAllStocks.slice(0, size);
+  const el = document.getElementById('popularList');
+  el.innerHTML = stocks.map(s => {
+    const name = (s.name && s.name.trim()) ? s.name : (STOCK_NAMES_ZH[s.code] || s.code);
+    return `
+    <button class="stock-tag" onclick="loadStock('${s.code}')" id="tag-${s.code}">
+      <span class="text-slate-400">${s.code}</span>
+      <span>${name}</span>
+    </button>`;
+  }).join('');
+}
+
+function changePopularSize() {
+  renderPopularList();
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -2117,8 +2141,9 @@ function setIndCard(id, val, close) {
 }
 
 // ── 基本面 ────────────────────────────────────────────────────
-// ── 公司簡介翻譯（Claude API，帶本地快取）────────────────────
-const _descCache = {};   // key: ticker → 繁中描述
+// ── 公司簡介翻譯 & 基本面補充（Claude API，帶本地快取）────────
+const _descCache   = {};   // key: ticker → 繁中描述
+const _fundCache   = {};   // key: ticker → 補充基本面 JSON
 
 async function translateDesc(engText, ticker) {
   if (_descCache[ticker]) return _descCache[ticker];
@@ -2143,8 +2168,104 @@ async function translateDesc(engText, ticker) {
   return zh;
 }
 
+// 用 Claude API + web_search 補充缺失的基本面資料
+async function fetchMissingFundamentals(ticker, stockName, missingFields) {
+  if (_fundCache[ticker]) return _fundCache[ticker];
+  if (!missingFields || missingFields.length === 0) return {};
+
+  const fieldMap = {
+    pe_ratio:      '本益比(P/E ratio)，數字，例如：22.5',
+    pb_ratio:      '股價淨值比(P/B ratio)，數字，例如：3.2',
+    div_yield:     '近12月股息殖利率(%)，數字，例如：3.5',
+    eps:           '每股盈餘EPS(元)，數字，例如：45.2',
+    roe:           '股東權益報酬率ROE，小數（不是百分比），例如：0.23 代表23%',
+    profit_margin: '淨利率，小數（不是百分比），例如：0.18 代表18%',
+    description:   '公司業務簡介，繁體中文，100~300字',
+  };
+
+  const fieldsNeeded = missingFields.map(f => `"${f}": ${fieldMap[f] || f}`).join('\n');
+  const nameHint = stockName ? `（${stockName}）` : '';
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 800,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      system: '你是財務數據分析師。請搜尋並回傳台灣股票的最新財務資料。回應必須是純JSON，不含任何說明文字或markdown。',
+      messages: [{
+        role: 'user',
+        content: `請搜尋台灣股票代碼 ${ticker}${nameHint} 的最新財務數據，並以JSON格式回傳以下欄位（若查不到某欄位請設為null）：\n{\n${fieldsNeeded}\n}\n只輸出JSON，不要其他文字。`
+      }]
+    })
+  });
+
+  if (!resp.ok) throw new Error(`API ${resp.status}`);
+  const json = await resp.json();
+  // 取最後一個 text block（跳過 tool_use/tool_result）
+  const textBlock = [...(json.content || [])].reverse().find(b => b.type === 'text');
+  const raw = (textBlock?.text || '').trim();
+  // 清理 markdown code fence
+  const cleaned = raw.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/,'').trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    _fundCache[ticker] = parsed;
+    return parsed;
+  } catch(e) {
+    console.warn('基本面補充解析失敗', e, cleaned);
+    return {};
+  }
+}
+
 function renderFundamental(data) {
   const f = data.fundamentals;
+  const ticker    = data.ticker;
+  const stockName = getStockNameZh(ticker) || data.name || '';
+
+  // 檢測哪些欄位缺失
+  const missingFund = [];
+  if (f.pe_ratio      == null) missingFund.push('pe_ratio');
+  if (f.pb_ratio      == null) missingFund.push('pb_ratio');
+  if (f.div_yield     == null) missingFund.push('div_yield');
+  if (f.eps           == null) missingFund.push('eps');
+  if (f.roe           == null) missingFund.push('roe');
+  if (f.profit_margin == null) missingFund.push('profit_margin');
+  const descMissing = !f.description || f.description.length < 10;
+  if (descMissing) missingFund.push('description');
+
+  // 初始渲染（可能含N/A）
+  _renderFundamentalUI(f, ticker);
+
+  // 若有缺失欄位，非同步補充
+  if (missingFund.length > 0) {
+    const vaEl = document.getElementById('valuation-metrics');
+    const prEl = document.getElementById('profit-metrics');
+    // 在缺失欄位旁顯示搜尋中提示
+    if (missingFund.some(k => ['pe_ratio','pb_ratio','div_yield','eps'].includes(k))) {
+      vaEl.insertAdjacentHTML('beforeend',
+        '<div id="fund-fetch-hint" class="text-xs text-blue-400 mt-2 flex items-center gap-1">' +
+        '<i class="fa-solid fa-circle-notch fa-spin"></i>正在補充缺失資料...</div>');
+    }
+
+    fetchMissingFundamentals(ticker, stockName, missingFund).then(extra => {
+      document.getElementById('fund-fetch-hint')?.remove();
+      if (!extra || Object.keys(extra).length === 0) return;
+      // 合併補充資料
+      const merged = Object.assign({}, f);
+      for (const [k, v] of Object.entries(extra)) {
+        if (v != null && merged[k] == null) merged[k] = v;
+      }
+      _renderFundamentalUI(merged, ticker);
+    }).catch(err => {
+      document.getElementById('fund-fetch-hint')?.remove();
+      console.warn('補充基本面失敗', err);
+    });
+  }
+}
+
+function _renderFundamentalUI(f, ticker) {
+  const data = currentData; // 需要 ticker 等資訊
 
   document.getElementById('valuation-metrics').innerHTML = [
     metricRow('本益比 (P/E)', f.pe_ratio, 'x', pe => pe < 15 ? 'up' : pe > 30 ? 'down' : 'flat'),
@@ -2190,7 +2311,7 @@ function renderFundamental(data) {
       descToggle.style.display = 'none';
 
       // 呼叫 Claude API 翻譯（帶 ticker 快取）
-      translateDesc(desc, data.ticker).then(zhDesc => {
+      translateDesc(desc, ticker).then(zhDesc => {
         descEl.textContent = zhDesc;
         if (zhDesc.length >= 100) {
           descEl.classList.add('line-clamp-3');
@@ -2204,8 +2325,8 @@ function renderFundamental(data) {
     }
   }
 
-  // 配息歷史
-  const divs = data.dividends || [];
+  // 配息歷史（使用 currentData）
+  const divs = (currentData && currentData.dividends) || [];
   const divHtml = divs.slice().reverse().slice(0, 15).map(d =>
     `<tr class="text-sm">
        <td class="py-2 text-slate-300">${d.date}</td>
@@ -4915,6 +5036,19 @@ function reloadHotStocks() {
   loadHotStocksSequential();
 }
 
+async function reloadSingleHotStock(code) {
+  // 清除失敗快取，顯示載入中
+  delete hotStockData[code];
+  renderHotTable();
+  try {
+    const r = await fetch('/api/stock_analysis/' + code);
+    const d = await r.json();
+    hotStockData[code] = (d.status === 'success') ? d.data : null;
+  } catch(e) { hotStockData[code] = null; }
+  renderHotTable();
+  updateHotSummary();
+}
+
 // ── 逐批載入（每批 5 支並行） ────────────────────────────────────────
 async function loadHotStocksSequential() {
   const tbody = document.getElementById('hotStockTableBody');
@@ -5050,8 +5184,13 @@ function renderHotTable() {
         '<td class="py-2 px-3">' + (idx+1) + '</td>' +
         '<td class="py-2 px-3 font-bold text-red-400">' + row.code + '</td>' +
         '<td class="py-2 px-3">' + name + '</td>' +
-        '<td colspan="14" class="py-2 px-3 text-red-400 text-center"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>' +
-        '</tr>';
+        '<td colspan="13" class="py-2 px-3 text-red-400 text-center"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>' +
+        '<td class="py-2 px-3 text-center">' +
+          '<button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" ' +
+            'class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1">' +
+            '<i class="fa-solid fa-rotate-right"></i>重新載入</button>' +
+        '</td>' +
+      '</tr>';
     }
 
     const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
