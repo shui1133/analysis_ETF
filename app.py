@@ -1348,24 +1348,145 @@ def efficient_frontier():
         if len(tickers) > 15:
             return jsonify({'status':'error','message':'最多支援15支股票'}), 400
 
-        # ── 取得股價資料 ─────────────────────────────────────
+        # ── 初始化 GitHub 快取 ───────────────────────────────
+        try:
+            from github_cache import GitHubCache
+            _ef_gh = GitHubCache()
+        except ImportError:
+            _ef_gh = None
+
+        # ── L1: Render /tmp 快取（最快，當次部署有效）────────
         prices = {}
-        failed = []
+        cached_from = {}
         for tk in tickers:
-            for suffix in ['.TW', '.TWO']:
+            tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
+            if os.path.exists(tmp_path):
                 try:
-                    hist = yf.Ticker(f"{tk}{suffix}").history(period=period, timeout=12)
-                    if hist is not None and not hist.empty:
-                        prices[tk] = hist['Close'].dropna()
-                        break
+                    tmp_df    = pd.read_csv(tmp_path, encoding='utf-8-sig')
+                    date_col  = next((c for c in tmp_df.columns if c in ['日期','date','Date']), None)
+                    close_col = next((c for c in tmp_df.columns if c in ['收盤價','close','Close']), None)
+                    if date_col and close_col and len(tmp_df) >= 20:
+                        s = pd.Series(
+                            tmp_df[close_col].values,
+                            index=pd.to_datetime(tmp_df[date_col])
+                        ).dropna()
+                        prices[tk] = s
+                        cached_from[tk] = '/tmp'
                 except Exception:
+                    pass
+
+        # ── L2: GitHub 持久化快取（跨重啟有效）───────────────
+        for tk in tickers:
+            if tk in prices:
+                continue
+            if _ef_gh and _ef_gh.enabled and _ef_gh.is_fresh(tk, 'price'):
+                rows = _ef_gh.load_price(tk)
+                if rows and len(rows) >= 20:
+                    try:
+                        s = pd.Series(
+                            [float(r.get('close', r.get('收盤價', 0))) for r in rows],
+                            index=pd.to_datetime([r.get('date', r.get('日期','')) for r in rows])
+                        ).dropna()
+                        if len(s) >= 20:
+                            prices[tk] = s
+                            cached_from[tk] = 'GitHub'
+                    except Exception:
+                        pass
+
+        need_fetch = [tk for tk in tickers if tk not in prices]
+        if cached_from:
+            print(f"  [EF] 快取命中: {cached_from}")
+        if need_fetch:
+            print(f"  [EF] 需從 yfinance 下載: {need_fetch}")
+
+        # ── L3: yfinance 批次下載（僅針對快取未命中的股票）──
+        failed = []
+        if need_fetch:
+            # 先嘗試 .TW（上市）批次
+            tw_syms = [f"{tk}.TW" for tk in need_fetch]
+            try:
+                batch = yf.download(
+                    tw_syms, period=period, auto_adjust=True,
+                    progress=False, timeout=20, threads=True
+                )
+                if not batch.empty:
+                    close_df = batch['Close'] if 'Close' in batch.columns else batch
+                    for tk in need_fetch:
+                        sym = f"{tk}.TW"
+                        if sym in close_df.columns:
+                            s = close_df[sym].dropna()
+                            if len(s) >= 20:
+                                prices[tk] = s
+            except Exception as e:
+                print(f"  [EF] .TW 批次下載失敗: {e}")
+
+            # 仍未取得的嘗試 .TWO（上櫃）
+            still_missing = [tk for tk in need_fetch if tk not in prices]
+            if still_missing:
+                two_syms = [f"{tk}.TWO" for tk in still_missing]
+                try:
+                    batch2 = yf.download(
+                        two_syms, period=period, auto_adjust=True,
+                        progress=False, timeout=20, threads=True
+                    )
+                    if not batch2.empty:
+                        close_df2 = batch2['Close'] if 'Close' in batch2.columns else batch2
+                        for tk in still_missing:
+                            sym = f"{tk}.TWO"
+                            if sym in close_df2.columns:
+                                s = close_df2[sym].dropna()
+                                if len(s) >= 20:
+                                    prices[tk] = s
+                except Exception as e:
+                    print(f"  [EF] .TWO 批次下載失敗: {e}")
+
+            # 最後逐一補抓（單股 fallback）
+            for tk in need_fetch:
+                if tk not in prices:
+                    for suffix in ['.TW', '.TWO']:
+                        try:
+                            hist = yf.Ticker(f"{tk}{suffix}").history(period=period, timeout=10)
+                            if hist is not None and not hist.empty:
+                                s = hist['Close'].dropna()
+                                if len(s) >= 20:
+                                    prices[tk] = s
+                                    break
+                        except Exception:
+                            continue
+                if tk not in prices:
+                    failed.append(tk)
+
+            # ── 新抓到的資料存入 /tmp 及 GitHub ──────────────
+            for tk in need_fetch:
+                if tk not in prices:
                     continue
-            if tk not in prices:
-                failed.append(tk)
+                price_series = prices[tk]
+                # 存到 Render /tmp
+                try:
+                    tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
+                    pdf = price_series.reset_index()
+                    pdf.columns = ['日期', '收盤價']
+                    pdf['日期'] = pdf['日期'].astype(str).str[:10]
+                    pdf.to_csv(tmp_path, index=False, encoding='utf-8-sig')
+                    print(f"  [EF] {tk} 已存 /tmp")
+                except Exception as e_tmp:
+                    print(f"  [EF] /tmp 存檔 {tk} 失敗: {e_tmp}")
+                # 存到 GitHub
+                if _ef_gh and _ef_gh.enabled:
+                    try:
+                        price_list = [
+                            {'date': str(d)[:10], 'close': round(float(v), 2)}
+                            for d, v in price_series.items() if pd.notna(v)
+                        ]
+                        _ef_gh.save_price(tk, price_list)
+                        print(f"  [EF] {tk} 已存 GitHub")
+                    except Exception as e_gh:
+                        print(f"  [EF] GitHub {tk} 失敗: {e_gh}")
 
         if failed:
             return jsonify({'status':'error',
-                           'message': f'無法取得以下股票資料：{", ".join(failed)}'}), 422
+                           'message': f'無法取得以下股票資料：{", ".join(failed)}，'
+                                      f'請確認代碼正確（台灣上市如 2330、00878）'}), 422
 
         # ── 對齊日期、計算報酬率 ─────────────────────────────
         df = pd.DataFrame(prices).dropna()
