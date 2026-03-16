@@ -1036,13 +1036,20 @@ def efficient_frontier():
         msp_weights = [round(x, 4) for x in msp_res.x]
 
         # ── 效率前緣曲線（最小化風險，固定報酬率）───────────
-        ret_range  = np.linspace(mvp_ret, max(sim_ret) * 0.98, 40)
+        # 修正：上限改為 max(sim_ret) 不截斷，點數增至 60 提升密度
+        ret_range  = np.linspace(mvp_ret, max(sim_ret), 60)
         ef_risks, ef_rets = [], []
         for target_r in ret_range:
             constraints = [eq_con, {'type':'eq','fun': lambda w,r=target_r: port_ret(w) - r}]
-            res = sp_minimize(port_std, w0, bounds=bounds, constraints=constraints)
-            if res.success:
-                ef_risks.append(round(res.fun, 6))
+            # 修正：多個初始點提高高報酬段優化成功率
+            best = None
+            for w_init in [w0, mvp_res.x, msp_res.x]:
+                res = sp_minimize(port_std, w_init, bounds=bounds,
+                                  constraints=constraints, method='SLSQP')
+                if res.success and (best is None or res.fun < best.fun):
+                    best = res
+            if best is not None:
+                ef_risks.append(round(best.fun, 6))
                 ef_rets.append(round(target_r, 6))
 
         # ── 各股個別風險報酬 ─────────────────────────────────
