@@ -17,6 +17,13 @@ from backtest import PortfolioBacktestV3
 import io
 import requests as _req
 
+# ── 載入 .env（本機開發用；Render 環境直接讀系統環境變數）──
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass   # 若未安裝 python-dotenv，忽略（Render 不需要）
+
 app = Flask(__name__)
 
 
