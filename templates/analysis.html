@@ -153,6 +153,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               class="bg-amber-500 hover:bg-amber-400 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-fire"></i>熱門股票總覽
       </button>
+      <button onclick="openHotETFPanel()"
+              id="btnHotETF"
+              class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
+        <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
+      </button>
     </div>
 
     <!-- 熱門股票清單 -->
@@ -256,17 +261,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('chip')" id="tab-chip">
         <i class="fa-solid fa-users mr-1"></i>籌碼面
       </button>
-      <button class="tab-btn" onclick="switchTab('recommendation')" id="tab-recommendation">
-        <i class="fa-solid fa-lightbulb mr-1"></i>投資建議
+      <button class="tab-btn" onclick="switchTab('tradeoverview')" id="tab-tradeoverview">
+        <i class="fa-solid fa-table-list mr-1"></i>交易概況
       </button>
-      <button class="tab-btn" onclick="switchTab('montecarlo')" id="tab-montecarlo">
-        <i class="fa-solid fa-dice mr-1"></i>蒙地卡羅
-      </button>
-      <button class="tab-btn" onclick="switchTab('scenario')" id="tab-scenario">
-        <i class="fa-solid fa-layer-group mr-1"></i>情境分析
-      </button>
-      <button class="tab-btn" onclick="switchTab('news')" id="tab-news">
-        <i class="fa-solid fa-newspaper mr-1"></i>個股新聞
+      <button class="tab-btn" onclick="switchTab('finreport')" id="tab-finreport">
+        <i class="fa-solid fa-file-invoice-dollar mr-1"></i>財報分析
       </button>
       <button class="tab-btn" onclick="switchTab('frontier')" id="tab-frontier">
         <i class="fa-solid fa-chart-scatter mr-1"></i>效益邊緣線
@@ -274,11 +273,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('sim')" id="tab-sim">
         <i class="fa-solid fa-chart-line mr-1"></i>SIM分析
       </button>
-      <button class="tab-btn" onclick="switchTab('tradeoverview')" id="tab-tradeoverview">
-        <i class="fa-solid fa-table-list mr-1"></i>交易概況
+      <button class="tab-btn" onclick="switchTab('news')" id="tab-news">
+        <i class="fa-solid fa-newspaper mr-1"></i>個股新聞
       </button>
-      <button class="tab-btn" onclick="switchTab('finreport')" id="tab-finreport">
-        <i class="fa-solid fa-file-invoice-dollar mr-1"></i>財報分析
+      <button class="tab-btn" onclick="switchTab('recommendation')" id="tab-recommendation">
+        <i class="fa-solid fa-lightbulb mr-1"></i>投資建議
       </button>
     </div>
 
@@ -1939,6 +1938,8 @@ async function loadPopular() {
     });
     // ──────────────────────────────────────────────────────────
 
+    // 最前面固定插入 0000 大盤指數
+    stocks.unshift({ code: '0000', name: '大盤指數' });
     _popularAllStocks = stocks;
     renderPopularList();
   } catch(e) { console.error('載入熱門清單失敗', e); }
@@ -3139,13 +3140,13 @@ function drawCandleChartPeriod(data, period) {
         },
         // ③ MA 均線
         { type:'line', label:`MA${cfg.ma[0]}`, data:ma1,
-          borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0,
+          borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0,
           fill:false, tension:.3, spanGaps:false, order:1 },
         { type:'line', label:`MA${cfg.ma[1]}`, data:ma2,
-          borderColor:'#60a5fa', borderWidth:1.5, pointRadius:0,
+          borderColor:'#60a5fa', borderWidth:2.5, pointRadius:0,
           fill:false, tension:.3, spanGaps:false, order:1 },
         { type:'line', label:`MA${cfg.ma[2]}`, data:ma3,
-          borderColor:'#a78bfa', borderWidth:1.5, pointRadius:0,
+          borderColor:'#a78bfa', borderWidth:2.5, pointRadius:0,
           fill:false, tension:.3, spanGaps:false, order:1 },
       ]
     },
@@ -3695,7 +3696,7 @@ function drawKDChart(data) {
 // ════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  const tabs = ['chart','fundamental','chip','recommendation','montecarlo','scenario','news','frontier','sim','tradeoverview','finreport'];
+  const tabs = ['chart','fundamental','chip','tradeoverview','finreport','frontier','sim','news','recommendation','montecarlo','scenario'];
   tabs.forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn   = document.getElementById(`tab-${t}`);
@@ -5023,7 +5024,7 @@ function renderHotTableHeader() {
 // ── 建立熱門股票清單（第1列固定為大盤指數，後面依優先順序補足至 pageSize 筆）────────────
 function buildHotList(pageSize) {
   // 第1列永遠是台灣加權指數（代碼 0000 → 後端用 ^TWII 抓）
-  const INDEX_ITEM = { code: '0000', name: '台灣加權指數' };
+  const INDEX_ITEM = { code: '0000', name: '大盤指數' };
   const priorityCodes = [
     '2330','2317','2454','2382','2308','2881','2882','2891','2886','2303',
     '2412','1301','1303','2408','2357','3008','2395','4938','1519','2603',
@@ -5079,6 +5080,60 @@ function buildHotList(pageSize) {
   }
   // 大盤指數固定插在第1列
   return [INDEX_ITEM, ...list.slice(0, pageSize)];
+}
+
+
+// ── 熱門 ETF 清單（點擊直接開啟總覽面板，篩選 ETF）──────────────────
+const HOT_ETF_CODES = [
+  { code:'0050',   name:'元大台灣50'        },
+  { code:'0056',   name:'元大高股息'        },
+  { code:'006208', name:'富邦台50'          },
+  { code:'00878',  name:'國泰永續高股息'    },
+  { code:'00713',  name:'元大台灣高息低波'  },
+  { code:'00919',  name:'群益台灣精選高息'  },
+  { code:'00929',  name:'復華台灣科技優息'  },
+  { code:'00915',  name:'凱基優選高股息30'  },
+  { code:'00679B', name:'元大美債20年'      },
+  { code:'00757',  name:'統一MSCI台灣ESG'   },
+  { code:'00850',  name:'元大臺灣ESG永續'   },
+  { code:'00900',  name:'富邦特選高股息30'  },
+  { code:'00907',  name:'永豐優息存股'      },
+  { code:'00930',  name:'永豐台灣ESG'       },
+  { code:'00934',  name:'中信成長高股息'    },
+  { code:'00939',  name:'統一台灣高息動能'  },
+  { code:'00940',  name:'元大台灣價值高息'  },
+];
+
+function openHotETFPanel() {
+  // 將熱門 ETF 清單注入 hotStockList，然後開啟總覽面板
+  hotPageSize  = HOT_ETF_CODES.length;
+  // 同步 select 顯示（找最接近的值）
+  const sel = document.getElementById('hotPageSize');
+  if (sel) {
+    // 找最接近的 option
+    let best = null, bestDiff = Infinity;
+    for (const opt of sel.options) {
+      const v = parseInt(opt.value);
+      const diff = Math.abs(v - hotPageSize);
+      if (diff < bestDiff) { bestDiff = diff; best = opt; }
+    }
+    if (best) sel.value = best.value;
+  }
+  // 直接用 ETF 清單（大盤指數 + ETF）
+  hotStockList = [{ code:'0000', name:'大盤指數' }, ...HOT_ETF_CODES];
+  // 清除非 ETF 快取（保留已有的 ETF 資料）
+  const keepCodes = new Set(hotStockList.map(s => s.code));
+  Object.keys(hotStockData).forEach(k => { if (!keepCodes.has(k)) delete hotStockData[k]; });
+  hotLoadAbort = false;
+  document.getElementById('hotStockModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  hotViewMode = 'trade';
+  ['trade','risedrop','ma','invest'].forEach(m => {
+    const btn = document.getElementById('hotViewBtn-' + m);
+    if (btn) btn.classList.toggle('active', m === 'trade');
+  });
+  renderHotTableHeader();
+  loadHotStocksSequential();
 }
 
 // ── 開啟熱門股票總覽面板 ─────────────────────────────────────────────
