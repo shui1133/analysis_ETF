@@ -5091,9 +5091,28 @@ async function openHotStockPanel() {
     if (btn) btn.classList.toggle('active', m === 'trade');
   });
   renderHotTableHeader();
-  hotPageSize  = parseInt(document.getElementById('hotPageSize').value) || 5;
+  const newPageSize = parseInt(document.getElementById('hotPageSize').value) || 5;
+  const listChanged = newPageSize !== hotPageSize;
+  hotPageSize  = newPageSize;
   hotStockList = buildHotList(hotPageSize);
   hotLoadAbort = false;
+
+  // ── 若已有部分資料（上次載入的），先立即顯示，再補抓缺漏 ──
+  const alreadyLoaded = hotStockList.filter(s => hotStockData[s.code] !== undefined).length;
+  if (alreadyLoaded > 0 && !listChanged) {
+    renderHotTable();
+    updateHotSummary();
+    const missing = hotStockList.filter(s => hotStockData[s.code] === undefined);
+    if (missing.length === 0) {
+      updateHotProgress(hotStockList.length, hotStockList.length, '資料已是最新（共 ' + hotStockList.length + ' 支）');
+      document.getElementById('hotSummaryRow').classList.remove('hidden');
+      document.getElementById('hotProgress').classList.remove('hidden');
+      return;
+    }
+    // 只載入缺少的股票
+    await loadHotStocksSequential(missing.map(s => s.code));
+    return;
+  }
   await loadHotStocksSequential();
 }
 
@@ -5104,8 +5123,12 @@ function closeHotStockPanel() {
 }
 
 function changeHotPageSize() {
-  hotPageSize  = parseInt(document.getElementById('hotPageSize').value) || 50;
-  hotStockData = {};
+  const newSize = parseInt(document.getElementById('hotPageSize').value) || 50;
+  // 若頁數不變，不重置已有資料
+  if (newSize !== hotPageSize) {
+    hotStockData = {};
+  }
+  hotPageSize  = newSize;
   hotStockList = buildHotList(hotPageSize);
   hotLoadAbort = false;
   loadHotStocksSequential();
@@ -5132,17 +5155,28 @@ async function reloadSingleHotStock(code) {
 }
 
 // ── 逐批載入（每批 10 支並行，每秒更新進度） ────────────────────────
-async function loadHotStocksSequential() {
+// onlyCodes: 若傳入，只載入這些代碼（補抓模式）；否則載入全部 hotStockList
+async function loadHotStocksSequential(onlyCodes) {
   const tbody = document.getElementById('hotStockTableBody');
-  tbody.innerHTML = '';
+  if (!onlyCodes) tbody.innerHTML = '';  // 補抓模式不清空表格
   document.getElementById('hotSummaryRow').classList.add('hidden');
   document.getElementById('hotProgress').classList.remove('hidden');
-  const total = hotStockList.length;
-  let loaded = 0;
-  const BATCH = 10;   // 由 5 提升為 10，加快速度
-  updateHotProgress(0, total, '準備載入...');
 
-  // 每秒刷新進度條（即使批次尚未完成也即時顯示）
+  // 補抓模式：只處理缺少的，total 從已有筆數開始計
+  const targetList = onlyCodes
+    ? hotStockList.filter(s => onlyCodes.includes(s.code))
+    : hotStockList;
+  const total = hotStockList.length;
+  let loaded = hotStockList.filter(s => !onlyCodes && hotStockData[s.code] !== undefined).length;
+  const BATCH = 10;
+  updateHotProgress(loaded, total, onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...') : '準備載入...');
+
+  // 若補抓模式且有已載入資料，先顯示已有的
+  if (onlyCodes && loaded > 0) {
+    renderHotTable();
+  }
+
+  // 每秒刷新進度條
   let _progressInterval = setInterval(() => {
     updateHotProgress(loaded, total, '已載入 ' + loaded + ' / ' + total + ' 支...');
   }, 1000);
@@ -5153,7 +5187,6 @@ async function loadHotStocksSequential() {
         const r = await fetch('/api/stock_analysis/' + code);
         const d = await r.json();
         if (d.status === 'success') return d.data;
-        // 明確失敗（非網路錯誤），不重試
         if (r.status !== 500 && r.status !== 503) return null;
       } catch (e) { /* 網路異常，繼續重試 */ }
       if (attempt < maxRetry) await new Promise(r => setTimeout(r, 400 * attempt));
@@ -5161,16 +5194,17 @@ async function loadHotStocksSequential() {
     return null;
   };
 
-  for (let i = 0; i < total; i += BATCH) {
+  for (let i = 0; i < targetList.length; i += BATCH) {
     if (hotLoadAbort) break;
-    const batch = hotStockList.slice(i, i + BATCH);
+    const batch = targetList.slice(i, i + BATCH);
     await Promise.all(batch.map(async (s) => {
       if (hotStockData[s.code] !== undefined) { loaded++; return; }
       hotStockData[s.code] = await fetchWithRetry(s.code);
       loaded++;
+      // ── 取得任一支就立即更新表格 ──
+      renderHotTable();
     }));
-    renderHotTable();
-    if (i + BATCH < total) await new Promise(r => setTimeout(r, 80));  // 批次間短暫間隔
+    if (i + BATCH < targetList.length) await new Promise(r => setTimeout(r, 80));
   }
 
   clearInterval(_progressInterval);

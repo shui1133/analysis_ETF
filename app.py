@@ -351,6 +351,12 @@ def get_stock_analysis(ticker):
     取得單支股票完整分析資料
     回傳：OHLCV、技術指標、基本面、籌碼估算、投資建議
     特殊：ticker=0000 → 台灣加權指數 ^TWII
+
+    快取優先順序（由快到慢）：
+      L1. 記憶體快取（analysis_cache）        → 5 分鐘
+      L2. 本地 /tmp/data/{ticker}_analysis.json → 20 小時（跨請求持久）
+      L3. GitHub 持久化快取                    → 20 小時（跨重啟/部署持久）
+      L4. yfinance 即時抓取                   → 抓完後寫回 L2 + L3
     """
     ticker = ticker.strip().upper()
 
@@ -358,11 +364,63 @@ def get_stock_analysis(ticker):
     if ticker == '0000':
         return _get_twii_analysis()
 
-    # 快取（5分鐘）
-    import time
+    import time, json as _json
+
+    # ── L1: 記憶體快取（5分鐘，同一 process 內重複請求秒回）──────
     cache_entry = analysis_cache.get(ticker)
     if cache_entry and (time.time() - cache_entry.get('ts', 0)) < 300:
         return jsonify({'status': 'success', 'data': cache_entry['data']})
+
+    # ── 初始化 GitHub 快取 ────────────────────────────────────
+    try:
+        from github_cache import GitHubCache
+        _sa_gh = GitHubCache()
+    except ImportError:
+        _sa_gh = None
+
+    ANALYSIS_TTL = 60 * 60 * 20   # 20小時
+
+    # ── L2: 本地 JSON 快取（Render /tmp/data，重啟前有效）────────
+    local_analysis_path = os.path.join(DATA_DIR, f"{ticker}_analysis.json")
+    if os.path.exists(local_analysis_path):
+        try:
+            mtime = os.path.getmtime(local_analysis_path)
+            if (time.time() - mtime) < ANALYSIS_TTL:
+                with open(local_analysis_path, 'r', encoding='utf-8') as f:
+                    cached_data = _json.load(f)
+                print(f"  [L2快取] {ticker} 分析資料命中本地快取（{(time.time()-mtime)/3600:.1f}h 前）")
+                analysis_cache[ticker] = {'data': cached_data, 'ts': time.time()}
+                return jsonify({'status': 'success', 'data': cached_data, '_cache': 'local'})
+        except Exception as e:
+            print(f"  [L2快取] {ticker} 讀取失敗: {e}")
+
+    # ── L3: GitHub 持久化快取（跨 Render 重啟/部署，20小時有效）──
+    if _sa_gh and _sa_gh.enabled:
+        try:
+            # 用 fundamental 的 TTL 機制，key 存在 meta/{ticker}.json 的 analysis_at 欄位
+            meta_content, _ = _sa_gh._get(f"meta/{ticker}.json")
+            if meta_content:
+                meta = _json.loads(meta_content)
+                ts_str = meta.get('analysis_at')
+                if ts_str:
+                    from datetime import datetime
+                    elapsed = time.time() - datetime.fromisoformat(ts_str).timestamp()
+                    if elapsed < ANALYSIS_TTL:
+                        # 讀取 GitHub 存的 analysis JSON
+                        gh_content, _ = _sa_gh._get(f"data/{ticker}/analysis.json")
+                        if gh_content:
+                            cached_data = _json.loads(gh_content)
+                            print(f"  [L3快取] {ticker} 分析資料命中 GitHub 快取（{elapsed/3600:.1f}h 前）")
+                            analysis_cache[ticker] = {'data': cached_data, 'ts': time.time()}
+                            # 同步寫回本地
+                            try:
+                                with open(local_analysis_path, 'w', encoding='utf-8') as f:
+                                    _json.dump(cached_data, f, ensure_ascii=False)
+                            except Exception:
+                                pass
+                            return jsonify({'status': 'success', 'data': cached_data, '_cache': 'github'})
+        except Exception as e:
+            print(f"  [L3快取] {ticker} GitHub 讀取失敗（非致命）: {e}")
 
     try:
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
@@ -556,7 +614,37 @@ def get_stock_analysis(ticker):
             }
         }
 
+        # ── 寫入快取 ────────────────────────────────────────────
         analysis_cache[ticker] = {'data': data_out, 'ts': time.time()}
+
+        # L2: 寫入本地 JSON（不含大型圖表資料以節省空間，僅存 latest/fundamentals/technical/chip/recommendation）
+        try:
+            import json as _json2
+            with open(local_analysis_path, 'w', encoding='utf-8') as f:
+                _json2.dump(data_out, f, ensure_ascii=False)
+            print(f"  [L2快取] {ticker} 分析資料已寫入本地")
+        except Exception as e:
+            print(f"  [L2快取] {ticker} 寫入失敗（非致命）: {e}")
+
+        # L3: 寫入 GitHub（背景執行，不阻塞回應）
+        if _sa_gh and _sa_gh.enabled:
+            try:
+                import json as _json3, threading
+                def _write_gh():
+                    try:
+                        _sa_gh._put(f"data/{ticker}/analysis.json",
+                                    _json3.dumps(data_out, ensure_ascii=False),
+                                    f"analysis: {ticker} {__import__('datetime').datetime.now().date()}")
+                        meta = _sa_gh._read_meta(ticker)
+                        meta['analysis_at'] = __import__('datetime').datetime.now().isoformat()
+                        _sa_gh._write_meta(ticker, meta)
+                        print(f"  [L3快取] {ticker} 分析資料已寫入 GitHub")
+                    except Exception as ex:
+                        print(f"  [L3快取] {ticker} GitHub 寫入失敗（非致命）: {ex}")
+                threading.Thread(target=_write_gh, daemon=True).start()
+            except Exception as e:
+                print(f"  [L3快取] {ticker} GitHub 背景寫入啟動失敗: {e}")
+
         return jsonify({'status': 'success', 'data': data_out})
 
     except Exception as e:
