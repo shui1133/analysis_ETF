@@ -2495,7 +2495,7 @@ function mCard(label, val, unit, color, raw=false) {
 function renderChip(data) {
   const chip  = data.chip;
   const tech  = data.technical;
-  if (!chip || chip.note === '資料不足，無法估算籌碼') return;
+  if (!chip || chip.note === '資料不足，無法估算籌碼' || !chip.foreign_dir) return;
 
   const foreign = chip.foreign_dir, trust = chip.trust_dir;
   const volRatio = chip.vol_ratio, upDays = chip.up_days_20, downDays = chip.down_days_20;
@@ -5106,7 +5106,7 @@ const HOT_ETF_CODES = [
   { code:'00940',  name:'元大台灣價值高息'  },
 ];
 
-function openHotETFPanel() {
+async function openHotETFPanel() {
   // 將熱門 ETF 清單注入 hotStockList，然後開啟總覽面板
   hotPageSize  = HOT_ETF_CODES.length;
   // 同步 select 顯示（找最接近的值）
@@ -5225,7 +5225,7 @@ async function loadHotStocksSequential(onlyCodes) {
     : hotStockList;
   const total = hotStockList.length;
   let loaded = hotStockList.filter(s => !onlyCodes && hotStockData[s.code] !== undefined).length;
-  const BATCH = 10;
+  const BATCH = 20;
   updateHotProgress(loaded, total, onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...') : '準備載入...');
 
   // 若補抓模式且有已載入資料，先顯示已有的
@@ -5261,7 +5261,7 @@ async function loadHotStocksSequential(onlyCodes) {
       // ── 取得任一支就立即更新表格 ──
       renderHotTable();
     }));
-    if (i + BATCH < targetList.length) await new Promise(r => setTimeout(r, 80));
+    // 批次間不等待，最大化並行速度
   }
 
   clearInterval(_progressInterval);
@@ -5542,7 +5542,7 @@ function renderHotTable() {
         ? signals.map(s => {
             const isBuy = row.reasons_buy.includes(s);
             const cls = isBuy ? 'signal-buy' : 'signal-sell';
-            return '<span class="signal-tag ' + cls + '">' + s.replace(/（[^）]*）/g,'').slice(0,14) + '</span>';
+            return '<span class="signal-tag ' + cls + '">' + s.replace(/（[^）]*）/g,'') + '</span>';
           }).join('')
         : '<span class="text-slate-600 text-xs">資料不足</span>';
 
