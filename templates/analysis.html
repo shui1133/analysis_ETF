@@ -1321,7 +1321,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <span class="text-amber-400 font-bold text-sm" id="finreport-source-badge">
               <i class="fa-solid fa-database mr-1"></i>資料來源：--
             </span>
-            <span class="text-slate-500 text-xs" id="finreport-period-hint">年報(近5年) + 季報(近4季)</span>
+            <span class="text-slate-500 text-xs" id="finreport-period-hint">年報(近4年) + 季報(近4季)</span>
           </div>
           <div class="flex gap-2">
             <button id="fin-btn-annual" onclick="switchFinView('annual')"
@@ -4959,6 +4959,16 @@ function renderSIM(d) {
 // ════════════════════════════════════════════════════════════════
 // 熱門股票總覽 - 全域狀態
 // ════════════════════════════════════════════════════════════════
+// ── 股票模式（熱門股票總覽）獨立狀態 ──
+let _stockHotList    = [];   // 股票清單
+let _stockHotData    = {};   // 股票快取資料
+let _stockHotPageSize= 20;   // 股票筆數
+// ── ETF 模式（熱門ETF總覽）獨立狀態 ──
+let _etfHotList      = [];   // ETF 清單
+let _etfHotData      = {};   // ETF 快取資料
+let _etfHotPageSize  = 20;   // ETF 筆數
+
+// ── 目前作用中面板（指向其中一組）──
 let hotStockList     = [];
 let hotStockData     = {};
 let hotPageSize      = 20;
@@ -4968,6 +4978,34 @@ let hotChartMA       = null;
 let _hotSortKey      = null;
 let _hotSortAsc      = true;
 let hotViewMode      = 'trade';  // 'trade' | 'risedrop' | 'ma'
+let hotIsETF         = false;   // true = 熱門ETF模式（只顯示 00 開頭 ETF）
+
+// 切換到股票模式（同步共用指標到股票狀態）
+function _switchToStockMode() {
+  hotIsETF     = false;
+  hotStockList = _stockHotList;
+  hotStockData = _stockHotData;
+  hotPageSize  = _stockHotPageSize;
+}
+// 切換到 ETF 模式（同步共用指標到 ETF 狀態）
+function _switchToETFMode() {
+  hotIsETF     = true;
+  hotStockList = _etfHotList;
+  hotStockData = _etfHotData;
+  hotPageSize  = _etfHotPageSize;
+}
+// 每次操作後將共用變數回寫到對應模式的狀態
+function _syncHotState() {
+  if (hotIsETF) {
+    _etfHotList      = hotStockList;
+    _etfHotData      = hotStockData;
+    _etfHotPageSize  = hotPageSize;
+  } else {
+    _stockHotList    = hotStockList;
+    _stockHotData    = hotStockData;
+    _stockHotPageSize= hotPageSize;
+  }
+}
 
 // 設定熱門股票表格檢視模式
 function setHotViewMode(mode) {
@@ -5106,13 +5144,39 @@ const HOT_ETF_CODES = [
   { code:'00940',  name:'元大台灣價值高息'  },
 ];
 
+// ── 建立 ETF 清單（只取代碼以 00 開頭的 ETF，依 pageSize 截取）────────────
+function buildETFList(pageSize) {
+  const INDEX_ITEM = { code: '0000', name: '大盤指數' };
+  // 從 HOT_ETF_CODES 及 STOCK_NAMES_ZH 中擷取 00 開頭的 ETF
+  const allETFCodes = new Set();
+  HOT_ETF_CODES.forEach(e => allETFCodes.add(e.code));
+  // 再從 priorityCodes 補充 00 開頭
+  const extraCodes = [
+    '0050','0056','006208','00878','00713','00679B','00919','00929','00915',
+    '00757','00850','00692','00900','00907','00930','00934','00939','00940',
+  ];
+  extraCodes.forEach(c => allETFCodes.add(c));
+  // 過濾：只保留 00 開頭（含 0050、0056、006208 等）
+  const etfFiltered = [...allETFCodes].filter(c => c.startsWith('00') || c === '0050' || c === '0056');
+  const list = [];
+  const seen = new Set();
+  for (const code of etfFiltered) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+    const name = STOCK_DICT_CSV[code] || STOCK_NAMES_ZH[code] || (HOT_ETF_CODES.find(e=>e.code===code)||{}).name || code;
+    list.push({ code, name });
+    if (list.length >= pageSize) break;
+  }
+  return [INDEX_ITEM, ...list.slice(0, pageSize)];
+}
+
 async function openHotETFPanel() {
-  // 將熱門 ETF 清單注入 hotStockList，然後開啟總覽面板
-  hotPageSize  = HOT_ETF_CODES.length;
-  // 同步 select 顯示（找最接近的值）
+  // ── 切換到 ETF 獨立狀態（不影響股票面板）──
+  _switchToETFMode();
+
+  // 同步 select 顯示為目前 ETF 筆數
   const sel = document.getElementById('hotPageSize');
   if (sel) {
-    // 找最接近的 option
     let best = null, bestDiff = Infinity;
     for (const opt of sel.options) {
       const v = parseInt(opt.value);
@@ -5121,30 +5185,55 @@ async function openHotETFPanel() {
     }
     if (best) sel.value = best.value;
   }
-  // 直接用 ETF 清單（大盤指數 + ETF）
-  hotStockList = [{ code:'0000', name:'大盤指數' }, ...HOT_ETF_CODES];
-  // 清除非 ETF 快取（保留已有的 ETF 資料）
-  const keepCodes = new Set(hotStockList.map(s => s.code));
-  Object.keys(hotStockData).forEach(k => { if (!keepCodes.has(k)) delete hotStockData[k]; });
+
+  // 建立 ETF 清單（大盤指數 + 00 開頭 ETF）
+  hotStockList = buildETFList(hotPageSize);
+  _etfHotList  = hotStockList;
+
   hotLoadAbort = false;
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   const titleEl = document.getElementById('hotModalTitle');
   if (titleEl) titleEl.textContent = '熱門ETF總覽';
   hotViewMode = 'trade';
+  _hotSortKey = null;  // 重設排序（ETF 模式獨立排序）
   ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
     if (btn) btn.classList.toggle('active', m === 'trade');
   });
   renderHotTableHeader();
-  loadHotStocksSequential();
+
+  // 若已有部分 ETF 快取，先顯示再補抓
+  const alreadyLoaded = hotStockList.filter(s => hotStockData[s.code] !== undefined).length;
+  if (alreadyLoaded > 0) {
+    renderHotTable();
+    updateHotSummary();
+    const missing = hotStockList.filter(s => hotStockData[s.code] === undefined);
+    if (missing.length === 0) {
+      updateHotProgress(hotStockList.length, hotStockList.length, '資料已是最新（共 ' + hotStockList.length + ' 支）');
+      document.getElementById('hotSummaryRow').classList.remove('hidden');
+      document.getElementById('hotProgress').classList.remove('hidden');
+      return;
+    }
+    await loadHotStocksSequential(missing.map(s => s.code));
+    return;
+  }
+  await loadHotStocksSequential();
 }
 
 // ── 開啟熱門股票總覽面板 ─────────────────────────────────────────────
 async function openHotStockPanel() {
+  // ── 切換到股票獨立狀態（不影響 ETF 面板）──
+  _switchToStockMode();
+
+  // 同步 select 顯示為目前股票筆數
+  const sel2 = document.getElementById('hotPageSize');
+  if (sel2) sel2.value = hotPageSize;
+
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   hotViewMode  = 'trade';
+  _hotSortKey = null;  // 重設排序（股票模式獨立排序）
   const titleEl2 = document.getElementById('hotModalTitle');
   if (titleEl2) titleEl2.textContent = '熱門股票總覽';
   ['trade','risedrop','ma','invest'].forEach(m => {
@@ -5152,10 +5241,12 @@ async function openHotStockPanel() {
     if (btn) btn.classList.toggle('active', m === 'trade');
   });
   renderHotTableHeader();
-  const newPageSize = parseInt(document.getElementById('hotPageSize').value) || 5;
+
+  const newPageSize = parseInt(document.getElementById('hotPageSize').value) || 20;
   const listChanged = newPageSize !== hotPageSize;
   hotPageSize  = newPageSize;
   hotStockList = buildHotList(hotPageSize);
+  _stockHotList = hotStockList;
   hotLoadAbort = false;
 
   // ── 若已有部分資料（上次載入的），先立即顯示，再補抓缺漏 ──
@@ -5178,6 +5269,8 @@ async function openHotStockPanel() {
 }
 
 function closeHotStockPanel() {
+  // 關閉時回寫當前狀態到對應模式，保留下次重開時的快取
+  _syncHotState();
   document.getElementById('hotStockModal').classList.add('hidden');
   document.body.style.overflow = '';
   hotLoadAbort = true;
@@ -5190,7 +5283,9 @@ function changeHotPageSize() {
     hotStockData = {};
   }
   hotPageSize  = newSize;
-  hotStockList = buildHotList(hotPageSize);
+  // ETF 模式只顯示 00 開頭 ETF；一般模式顯示熱門股票
+  hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
+  _syncHotState();
   hotLoadAbort = false;
   loadHotStocksSequential();
 }
@@ -5198,7 +5293,8 @@ function changeHotPageSize() {
 function reloadHotStocks() {
   hotStockData = {};
   hotLoadAbort = false;
-  hotStockList = buildHotList(hotPageSize);
+  hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
+  _syncHotState();
   loadHotStocksSequential();
 }
 
@@ -5272,6 +5368,8 @@ async function loadHotStocksSequential(onlyCodes) {
   updateHotProgress(total, total, '載入完成，共 ' + total + ' 支');
   document.getElementById('hotSummaryRow').classList.remove('hidden');
   updateHotSummary();
+  // 載入完成後回寫快取到對應模式，確保兩個面板資料獨立
+  _syncHotState();
 }
 
 function updateHotProgress(loaded, total, text) {
@@ -5363,7 +5461,10 @@ function renderHotTable() {
   });
 
   if (_hotSortKey) {
-    rows.sort((a, b) => {
+    // 大盤指數(0000)永遠固定在第一列，其餘股票才進行排序
+    const indexRow = rows.find(r => r.code === '0000');
+    const stockRows = rows.filter(r => r.code !== '0000');
+    stockRows.sort((a, b) => {
       const av = a[_hotSortKey];
       const bv = b[_hotSortKey];
       const na = av == null;
@@ -5377,6 +5478,7 @@ function renderHotTable() {
         ? String(av).localeCompare(String(bv))
         : String(bv).localeCompare(String(av));
     });
+    rows = indexRow ? [indexRow, ...stockRows] : stockRows;
   }
 
   tbody.innerHTML = rows.map((row, idx) => {
@@ -5922,9 +6024,11 @@ function destroyFinChart(key) {
 }
 
 function renderFinCharts(data) {
-  const ratios = (_finView === 'annual'
+  const allRatios = (_finView === 'annual'
     ? data.ratios?.annual
     : data.ratios?.quarterly) || [];
+  // 年報只顯示近4年；季報顯示近4季
+  const ratios = allRatios.slice(0, 4);
 
   if (!ratios.length) return;
 
@@ -6103,8 +6207,11 @@ function renderFinDetailTable(data) {
   const def   = FIN_TABLE_DEFS[_finTableType];
   const vData = _finView === 'annual' ? data.annual : data.quarterly;
   const rData = _finView === 'annual' ? data.ratios?.annual : data.ratios?.quarterly;
-  const rawRows = vData?.[_finTableType] || [];
-  const ratioRows = rData || [];
+  const allRawRows = vData?.[_finTableType] || [];
+  // 年報預設只顯示近4年；季報顯示近4季
+  const rawRows   = _finView === 'annual' ? allRawRows.slice(0, 4) : allRawRows.slice(0, 4);
+  const allRatioRows = rData || [];
+  const ratioRows = _finView === 'annual' ? allRatioRows.slice(0, 4) : allRatioRows.slice(0, 4);
 
   // 期間標頭
   const periods = rawRows.map(r => r.period?.slice(0,7) || '');

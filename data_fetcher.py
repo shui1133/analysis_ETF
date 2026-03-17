@@ -8,6 +8,7 @@ import yfinance as yf
 import pandas as pd
 import requests
 import numpy as np
+import json
 from datetime import datetime, timedelta
 import time
 import os
@@ -303,8 +304,8 @@ class ETFDataFetcher:
     # ─────────────────────────────────────────────────────────────
     def fetch_stock_analysis(self, ticker):
         """
-        回傳股票分析所需完整資料（三層快取）：
-        L1 記憶體快取 → L2 GitHub 持久化快取 → L3 yfinance 重新抓取
+        回傳股票分析所需完整資料（四層快取）：
+        L1 記憶體(1hr) → L1.5 磁碟(每日) → L2 GitHub(20hr) → L3 yfinance
         {
           ticker, name, ohlcv, price_data, dividend_data,
           indicators, info, source
@@ -313,7 +314,7 @@ class ETFDataFetcher:
         print(f"\n[分析模式] 取得 {ticker} 完整資料...")
         self.last_error = ''
 
-        # ── L1：記憶體快取（最快，同一進程內）────────────────
+        # ── L1：記憶體快取（最快，同一進程內，1小時有效）────
         import sys
         _app = sys.modules.get('__main__') or sys.modules.get('app')
         mem_cache = getattr(_app, 'analysis_cache', {})
@@ -321,6 +322,67 @@ class ETFDataFetcher:
         if isinstance(cached, dict) and (time.time() - cached.get('_ts', 0)) < 3600:
             print(f"  [L1 記憶體] {ticker} 命中快取")
             return cached
+
+        # ── L1.5：本地磁碟快取（每交易日只抓一次）──────────
+        # 以 {ticker}_data.json 的修改日期判斷是否同一天
+        disk_json_path = os.path.join(self.output_dir, f"{ticker}_data.json")
+        disk_ohlcv_path = os.path.join(self.output_dir, f"{ticker}_price.csv")
+        if os.path.exists(disk_json_path) and os.path.exists(disk_ohlcv_path):
+            try:
+                mtime = os.path.getmtime(disk_json_path)
+                mtime_date = pd.Timestamp.fromtimestamp(mtime).date()
+                today = pd.Timestamp.now().date()
+                if mtime_date == today:
+                    with open(disk_json_path, 'r', encoding='utf-8') as f:
+                        saved = json.load(f)
+                    price_df = pd.read_csv(disk_ohlcv_path, encoding='utf-8-sig')
+                    date_col  = next((c for c in price_df.columns if c in ['日期','date','Date']), None)
+                    close_col = next((c for c in price_df.columns if c in ['收盤價','close','Close']), None)
+                    if date_col and close_col and len(price_df) >= 5:
+                        ohlcv = []
+                        for _, row in price_df.iterrows():
+                            c = float(row[close_col])
+                            ohlcv.append({
+                                'date':   str(row[date_col]),
+                                'open':   float(row.get('open', row.get('開盤價', c))),
+                                'high':   float(row.get('high', row.get('最高價', c))),
+                                'low':    float(row.get('low',  row.get('最低價', c))),
+                                'close':  c,
+                                'volume': int(float(row.get('volume', row.get('成交量', 0)))),
+                            })
+                        div_csv = os.path.join(self.output_dir, f"{ticker}_hist_配息.csv")
+                        dividend_data = []
+                        if os.path.exists(div_csv):
+                            try:
+                                div_df = pd.read_csv(div_csv, encoding='utf-8-sig')
+                                dc = next((c for c in div_df.columns if c in ['除息日','date','Date']), None)
+                                dv = next((c for c in div_df.columns if c in ['股利','dividend','Dividend']), None)
+                                if dc and dv:
+                                    dividend_data = [
+                                        {'date': str(r[dc]), 'dividend': float(r[dv])}
+                                        for _, r in div_df.iterrows()
+                                    ]
+                            except Exception:
+                                pass
+                        indicators = calc_technical_indicators(ohlcv)
+                        info = saved.get('info', {'name': ticker})
+                        result = {
+                            'ticker':        ticker,
+                            'name':          info.get('name', ticker),
+                            'ohlcv':         ohlcv,
+                            'price_data':    [{'date': r['date'], 'close': r['close']} for r in ohlcv],
+                            'dividend_data': dividend_data,
+                            'indicators':    indicators,
+                            'info':          info,
+                            'source':        'disk_cache',
+                            'is_simulated':  saved.get('is_simulated', False),
+                            '_ts':           time.time(),
+                        }
+                        mem_cache[ticker] = result
+                        print(f"  [L1.5 磁碟] {ticker} 今日已快取（{len(ohlcv)} 筆），略過重新抓取")
+                        return result
+            except Exception as e:
+                print(f"  [L1.5 磁碟] 讀取失敗（非致命）: {e}")
 
         # ── L2：GitHub 持久化快取（跨重啟有效）──────────────
         if _gh_cache and _gh_cache.enabled and _gh_cache.is_fresh(ticker, 'price'):
@@ -687,8 +749,27 @@ class ETFDataFetcher:
     # ─────────────────────────────────────────────────────────────
     def _save_data(self, ticker, data):
         try:
-            import json
-            if data.get('price_data'):
+            # 優先使用完整 ohlcv 存檔（含 open/high/low/volume），供 L1.5 磁碟快取使用
+            # 若無 ohlcv，降級使用 price_data（僅日期+收盤）
+            if data.get('ohlcv'):
+                ohlcv_df = pd.DataFrame(data['ohlcv'])
+                col_map = {
+                    'date': '日期', 'Date': '日期',
+                    'open': 'open', 'high': 'high', 'low': 'low',
+                    'close': '收盤價', 'Close': '收盤價',
+                    'volume': 'volume',
+                }
+                ohlcv_df = ohlcv_df.rename(columns={k: v for k, v in col_map.items() if k in ohlcv_df.columns})
+                # 確保必要欄位存在
+                if '日期' in ohlcv_df.columns and '收盤價' in ohlcv_df.columns:
+                    # 保留所有欄位（日期、收盤價、open、high、low、volume）
+                    keep_cols = ['日期', '收盤價'] + [c for c in ['open','high','low','volume'] if c in ohlcv_df.columns]
+                    ohlcv_df = ohlcv_df[keep_cols]
+                    ohlcv_df.to_csv(
+                        os.path.join(self.output_dir, f"{ticker}_price.csv"),
+                        index=False, encoding='utf-8-sig'
+                    )
+            elif data.get('price_data'):
                 price_df = pd.DataFrame(data['price_data'])
                 for old, new in [('date','日期'),('Date','日期'),
                                   ('close','收盤價'),('Close','收盤價')]:
