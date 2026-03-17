@@ -1227,7 +1227,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <i class="fa-solid fa-wave-square text-purple-400"></i>技術指標 - 移動平均線
         </h3>
         <!-- MA 數值卡片 -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5" id="maCards">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" id="maCards">
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1">MA5（5日）</div>
             <div class="text-xl font-black mono" id="ma-5">--</div>
@@ -1247,6 +1247,16 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <div class="text-xs text-slate-500 mb-1">MA60（季線）</div>
             <div class="text-xl font-black mono" id="ma-60">--</div>
             <div class="text-xs mt-1" id="ma-60-rel">--</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1" style="color:#f97316">MA120（半年線）</div>
+            <div class="text-xl font-black mono" id="ma-120">--</div>
+            <div class="text-xs mt-1" id="ma-120-rel">--</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1" style="color:#ec4899">MA200（年線）</div>
+            <div class="text-xl font-black mono" id="ma-200">--</div>
+            <div class="text-xs mt-1" id="ma-200-rel">--</div>
           </div>
         </div>
         <!-- MA 多空判斷 -->
@@ -1701,6 +1711,7 @@ const STOCK_DICT_CSV = {
 function getStockNameZh(ticker) {
   if (!ticker) return null;
   const t = ticker.toUpperCase();
+  if (t === '0000') return '台灣加權指數';   // 大盤指數特殊對應
   return STOCK_DICT_CSV[t] || STOCK_NAMES_ZH[t] || null;
 }
 
@@ -1937,9 +1948,14 @@ function renderTechnical(data) {
   document.getElementById('support-val').textContent = tech.support;
   document.getElementById('resist-val').textContent  = tech.resist;
   const pos = rec.price_position;
-  document.getElementById('price-pos-bar').style.width = pos + '%';
-  document.getElementById('price-pos-text').textContent =
-    `目前位置 ${pos.toFixed(1)}%（0%=支撐，100%=壓力）`;
+  if (pos != null) {
+    document.getElementById('price-pos-bar').style.width = pos + '%';
+    document.getElementById('price-pos-text').textContent =
+      `目前位置 ${pos.toFixed(1)}%（0%=支撐，100%=壓力）`;
+  } else {
+    document.getElementById('price-pos-bar').style.width = '50%';
+    document.getElementById('price-pos-text').textContent = '指數不顯示位置百分比';
+  }
 
   const trendEl = document.getElementById('trend-badge');
   trendEl.textContent = tech.trend.label;
@@ -3275,6 +3291,28 @@ function drawCandleChart(data) {
           tension: .3,
           spanGaps: false,
           order: 4,
+        },
+        {
+          label: 'MA120',
+          data: ch.ma120,
+          borderColor: '#f97316',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: .3,
+          spanGaps: false,
+          order: 5,
+        },
+        {
+          label: 'MA200',
+          data: ch.ma200,
+          borderColor: '#ec4899',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: .3,
+          spanGaps: false,
+          order: 6,
         },
       ]
     },
@@ -4790,6 +4828,8 @@ function renderHotTableHeader() {
       <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma10')">MA10 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
       <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma20')">MA20 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
       <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma60')">MA60 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma120')">MA120 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('ma200')">MA200 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
       <th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortHotTable('matrend')">均線排列 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
   } else if (hotViewMode === 'invest') {
     extra = `<th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortHotTable('rating_score')">評級 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
@@ -4803,12 +4843,14 @@ function renderHotTableHeader() {
   thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">${base}${extra}<th class="py-3 px-3 text-center">操作</th></tr>`;
 }
 
-// ── 建立熱門股票清單（優先順序清單，補足至 pageSize 筆）────────────
+// ── 建立熱門股票清單（第1列固定為大盤指數，後面依優先順序補足至 pageSize 筆）────────────
 function buildHotList(pageSize) {
+  // 第1列永遠是台灣加權指數（代碼 0000 → 後端用 ^TWII 抓）
+  const INDEX_ITEM = { code: '0000', name: '台灣加權指數' };
   const priorityCodes = [
     '2330','2317','2454','2382','2308','2881','2882','2891','2886','2303',
     '2412','1301','1303','2408','2357','3008','2395','4938','1519','2603',
-    '2615','2609','2880','2884','2885','2887','2888','2890','3045','4904',
+    '2615','2609','2880','2884','2885','2887','2890','3045','4904',
     '3711','2379','2409','2376','2377','6505','1326','2207','2474','3481',
     '2345','5880','2892','2883','2834','5871','6669','3034','2301','2542',
     '0050','0056','006208','00878','00713','00679B','00919','00929','00915',
@@ -4858,7 +4900,8 @@ function buildHotList(pageSize) {
       if (list.length >= pageSize) break;
     }
   }
-  return list.slice(0, pageSize);
+  // 大盤指數固定插在第1列
+  return [INDEX_ITEM, ...list.slice(0, pageSize)];
 }
 
 // ── 開啟熱門股票總覽面板 ─────────────────────────────────────────────
@@ -4911,7 +4954,7 @@ async function reloadSingleHotStock(code) {
   updateHotSummary();
 }
 
-// ── 逐批載入（每批 5 支並行） ────────────────────────────────────────
+// ── 逐批載入（每批 10 支並行，每秒更新進度） ────────────────────────
 async function loadHotStocksSequential() {
   const tbody = document.getElementById('hotStockTableBody');
   tbody.innerHTML = '';
@@ -4919,25 +4962,41 @@ async function loadHotStocksSequential() {
   document.getElementById('hotProgress').classList.remove('hidden');
   const total = hotStockList.length;
   let loaded = 0;
-  const BATCH = 5;
+  const BATCH = 10;   // 由 5 提升為 10，加快速度
   updateHotProgress(0, total, '準備載入...');
+
+  // 每秒刷新進度條（即使批次尚未完成也即時顯示）
+  let _progressInterval = setInterval(() => {
+    updateHotProgress(loaded, total, '已載入 ' + loaded + ' / ' + total + ' 支...');
+  }, 1000);
+
+  const fetchWithRetry = async (code, maxRetry = 3) => {
+    for (let attempt = 1; attempt <= maxRetry; attempt++) {
+      try {
+        const r = await fetch('/api/stock_analysis/' + code);
+        const d = await r.json();
+        if (d.status === 'success') return d.data;
+        // 明確失敗（非網路錯誤），不重試
+        if (r.status !== 500 && r.status !== 503) return null;
+      } catch (e) { /* 網路異常，繼續重試 */ }
+      if (attempt < maxRetry) await new Promise(r => setTimeout(r, 400 * attempt));
+    }
+    return null;
+  };
 
   for (let i = 0; i < total; i += BATCH) {
     if (hotLoadAbort) break;
     const batch = hotStockList.slice(i, i + BATCH);
     await Promise.all(batch.map(async (s) => {
-      if (hotStockData[s.code] !== undefined) return;
-      try {
-        const r = await fetch('/api/stock_analysis/' + s.code);
-        const d = await r.json();
-        hotStockData[s.code] = (d.status === 'success') ? d.data : null;
-      } catch(e) { hotStockData[s.code] = null; }
+      if (hotStockData[s.code] !== undefined) { loaded++; return; }
+      hotStockData[s.code] = await fetchWithRetry(s.code);
+      loaded++;
     }));
-    loaded = Math.min(i + BATCH, total);
-    updateHotProgress(loaded, total, '已載入 ' + loaded + ' / ' + total + ' 支...');
     renderHotTable();
-    if (i + BATCH < total) await new Promise(r => setTimeout(r, 150));
+    if (i + BATCH < total) await new Promise(r => setTimeout(r, 80));  // 批次間短暫間隔
   }
+
+  clearInterval(_progressInterval);
   updateHotProgress(total, total, '載入完成，共 ' + total + ' 支');
   document.getElementById('hotSummaryRow').classList.remove('hidden');
   updateHotSummary();
@@ -4966,6 +5025,8 @@ function calcHotRow(code, data) {
   const ma10   = tech.ma10   || null;
   const ma20   = tech.ma20   || null;
   const ma60   = tech.ma60   || null;
+  const ma120  = tech.ma120  || null;
+  const ma200  = tech.ma200  || null;
 
   const closes = chart.closes  || [];
   const opens  = chart.opens   || [];
@@ -4991,7 +5052,7 @@ function calcHotRow(code, data) {
     else                                matrend = -2;
   }
   return { code, close, change, chgpct, vol, high, low,
-           ma5, ma10, ma20, ma60, matrend,
+           ma5, ma10, ma20, ma60, ma120, ma200, matrend,
            updays: upDays, downdays: downDays, flatdays: flatDays,
            upvolpct: upVolPct, downvolpct: downVolPct,
            // 投資分析欄位
@@ -5079,14 +5140,30 @@ function renderHotTable() {
     const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
     const chgSign = row.chgpct > 0 ? '+' : '';
 
+    // 大盤指數特殊樣式
+    const isIndex = (row.code === '0000');
+    const trClass = isIndex
+      ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10'
+      : 'border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/30';
+
     // Shared base columns
+    const codeDisplay = isIndex
+      ? '<span class="text-amber-400 font-black text-xs">▲ 大盤</span>'
+      : '<span class="font-black text-blue-400">' + row.code + '</span>';
+    const nameDisplay = isIndex
+      ? '<span class="text-amber-300 font-bold">' + name + '</span><span class="ml-1 text-xs text-amber-600">(^TWII)</span>'
+      : '<span class="font-bold text-white">' + name + '</span>';
+    const closeDisplay = isIndex
+      ? '<span class="font-black text-lg ' + chgCls + '">' + row.close.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>'
+      : '<span class="font-bold ' + chgCls + '">' + row.close.toFixed(2) + '</span>';
+
     const baseCols =
-      '<td class="py-2 px-3 text-slate-500">' + (idx+1) + '</td>' +
-      '<td class="py-2 px-3 font-black text-blue-400">' + row.code + '</td>' +
-      '<td class="py-2 px-3 font-bold text-white">' + name + '</td>' +
-      '<td class="py-2 px-3 text-right mono font-bold ' + chgCls + '">' + row.close.toFixed(2) + '</td>' +
+      '<td class="py-2 px-3 text-slate-500">' + (isIndex ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : (idx)) + '</td>' +
+      '<td class="py-2 px-3">' + codeDisplay + '</td>' +
+      '<td class="py-2 px-3">' + nameDisplay + '</td>' +
+      '<td class="py-2 px-3 text-right mono">' + closeDisplay + '</td>' +
       '<td class="py-2 px-3 text-right mono font-bold ' + chgCls + '">' + chgSign + row.chgpct.toFixed(2) + '%</td>' +
-      '<td class="py-2 px-3 text-right mono">' + row.vol.toLocaleString() + '</td>';
+      '<td class="py-2 px-3 text-right mono">' + (isIndex ? '--' : row.vol.toLocaleString()) + '</td>';
 
     let extraCols = '';
 
@@ -5133,6 +5210,8 @@ function renderHotTable() {
       const ma10Cls = row.ma10 && row.close > row.ma10 ? 'up' : row.ma10 && row.close < row.ma10 ? 'down' : 'flat';
       const ma20Cls = row.ma20 && row.close > row.ma20 ? 'up' : row.ma20 && row.close < row.ma20 ? 'down' : 'flat';
       const ma60Cls = row.ma60 && row.close > row.ma60 ? 'up' : row.ma60 && row.close < row.ma60 ? 'down' : 'flat';
+      const ma120Cls= row.ma120&& row.close > row.ma120? 'up' : row.ma120&& row.close < row.ma120? 'down' : 'flat';
+      const ma200Cls= row.ma200&& row.close > row.ma200? 'up' : row.ma200&& row.close < row.ma200? 'down' : 'flat';
       const matrendMap = {
          '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
          '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
@@ -5151,10 +5230,12 @@ function renderHotTable() {
           val.toFixed(2) + '<span class="text-xs ml-1 opacity-70">' + arrow + '</span></td>';
       };
       extraCols =
-        maCell(row.ma5,  ma5Cls) +
-        maCell(row.ma10, ma10Cls) +
-        maCell(row.ma20, ma20Cls) +
-        maCell(row.ma60, ma60Cls) +
+        maCell(row.ma5,   ma5Cls)  +
+        maCell(row.ma10,  ma10Cls) +
+        maCell(row.ma20,  ma20Cls) +
+        maCell(row.ma60,  ma60Cls) +
+        maCell(row.ma120, ma120Cls)+
+        maCell(row.ma200, ma200Cls)+
         '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
 
     } else if (hotViewMode === 'invest') {
@@ -5208,7 +5289,7 @@ function renderHotTable() {
         'class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>' +
       '</td>';
 
-    return '<tr class="hover:bg-slate-800/40 cursor-pointer" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' +
+    return '<tr class="' + trClass + '" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' +
       baseCols + extraCols + actionCol + '</tr>';
   }).join('');
 
@@ -5218,6 +5299,7 @@ function renderHotTable() {
 function updateHotSummary() {
   let loaded=0, up=0, down=0, flat=0, bull=0, bear=0, topGain=-Infinity;
   for (const s of hotStockList) {
+    if (s.code === '0000') continue;  // 排除大盤指數列
     const d = hotStockData[s.code];
     if (!d) continue;
     loaded++;
@@ -5361,7 +5443,7 @@ function renderTradeOverview(data) {
   }
 
   // 移動平均線卡片
-  const maVals = { 5: tech.ma5, 10: tech.ma10, 20: tech.ma20, 60: tech.ma60 };
+  const maVals = { 5: tech.ma5, 10: tech.ma10, 20: tech.ma20, 60: tech.ma60, 120: tech.ma120, 200: tech.ma200 };
   for (const [period, val] of Object.entries(maVals)) {
     const el    = document.getElementById('ma-' + period);
     const relEl = document.getElementById('ma-' + period + '-rel');
@@ -5413,11 +5495,13 @@ function renderTradeOverview(data) {
       data: {
         labels: maDts.map(d => d ? d.slice(5) : ''),
         datasets: [
-          { label:'收盤',  data: maCls,        borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA5',   data: getMA('ma5'),  borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA10',  data: getMA('ma10'), borderColor:'#8b5cf6', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA20',  data: getMA('ma20'), borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA60',  data: getMA('ma60'), borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
+          { label:'收盤',  data: maCls,          borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA5',   data: getMA('ma5'),    borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA10',  data: getMA('ma10'),   borderColor:'#8b5cf6', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA20',  data: getMA('ma20'),   borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA60',  data: getMA('ma60'),   borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA120', data: getMA('ma120'),  borderColor:'#f97316', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
+          { label:'MA200', data: getMA('ma200'),  borderColor:'#ec4899', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[6,4] },
         ]
       },
       options: {
@@ -5450,7 +5534,6 @@ function renderTradeOverview(data) {
         <div class="flex items-center gap-3">
           <i class="fa-solid fa-fire text-amber-400 text-xl"></i>
           <h2 class="text-lg font-black text-white">熱門股票總覽</h2>
-          <span class="text-slate-400 text-sm">成交資料 · 漲跌成交統計 · 移動平均線 · 投資分析</span>
         </div>
         <div class="flex items-center gap-3">
           <!-- 每頁筆數 -->

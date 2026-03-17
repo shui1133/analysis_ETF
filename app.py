@@ -343,8 +343,13 @@ def get_stock_analysis(ticker):
     """
     取得單支股票完整分析資料
     回傳：OHLCV、技術指標、基本面、籌碼估算、投資建議
+    特殊：ticker=0000 → 台灣加權指數 ^TWII
     """
     ticker = ticker.strip().upper()
+
+    # ── 特殊處理：0000 = 台灣加權指數 ^TWII ────────────────────
+    if ticker == '0000':
+        return _get_twii_analysis()
 
     # 快取（5分鐘）
     import time
@@ -354,12 +359,26 @@ def get_stock_analysis(ticker):
 
     try:
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
-        raw = fetcher.fetch_stock_analysis(ticker)
+        raw = None
+        last_exc = None
+        MAX_RETRY = 3
+        for attempt in range(1, MAX_RETRY + 1):
+            try:
+                raw = fetcher.fetch_stock_analysis(ticker)
+                if raw and raw.get('ohlcv'):
+                    break   # 成功，跳出重試
+                print(f"  [{ticker}] 第{attempt}次取得資料為空，{'重試...' if attempt < MAX_RETRY else '放棄'}")
+            except Exception as e_retry:
+                last_exc = e_retry
+                print(f"  [{ticker}] 第{attempt}次例外: {e_retry}，{'重試...' if attempt < MAX_RETRY else '放棄'}")
+            if attempt < MAX_RETRY:
+                time.sleep(0.5 * attempt)   # 退讓等待
 
         if not raw or not raw.get('ohlcv'):
+            err_msg = str(last_exc) if last_exc else f'無法取得 {ticker} 資料，請確認股票代碼正確（台灣上市如：2330、00878）'
             return jsonify({
                 'status':  'error',
-                'message': f'無法取得 {ticker} 資料，請確認股票代碼正確（台灣上市如：2330、00878）'
+                'message': err_msg
             }), 404
 
         ohlcv      = raw['ohlcv']
@@ -420,6 +439,8 @@ def get_stock_analysis(ticker):
             'ma10':        last_val(indicators.get('ma10')),
             'ma20':        last_val(indicators.get('ma20')),
             'ma60':        last_val(indicators.get('ma60')),
+            'ma120':       last_val(indicators.get('ma120')),
+            'ma200':       last_val(indicators.get('ma200')),
             'macd':        last_val(indicators.get('macd')),
             'macd_signal': last_val(indicators.get('macd_signal')),
             'macd_hist':   last_val(indicators.get('macd_hist')),
@@ -517,6 +538,8 @@ def get_stock_analysis(ticker):
                 'ma10':         slice_ind('ma10'),
                 'ma20':         slice_ind('ma20'),
                 'ma60':         slice_ind('ma60'),
+                'ma120':        slice_ind('ma120'),
+                'ma200':        slice_ind('ma200'),
                 'macd':         slice_ind('macd'),
                 'macd_signal':  slice_ind('macd_signal'),
                 'macd_hist':    slice_ind('macd_hist'),
@@ -527,6 +550,161 @@ def get_stock_analysis(ticker):
         }
 
         analysis_cache[ticker] = {'data': data_out, 'ts': time.time()}
+        return jsonify({'status': 'success', 'data': data_out})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _get_twii_analysis():
+    """
+    取得台灣加權指數（^TWII）分析資料
+    以 ticker='0000' 作為識別，對外格式與一般股票相同
+    """
+    import time
+    import yfinance as yf
+
+    TICKER_KEY = '0000'
+    cache_entry = analysis_cache.get(TICKER_KEY)
+    if cache_entry and (time.time() - cache_entry.get('ts', 0)) < 300:
+        return jsonify({'status': 'success', 'data': cache_entry['data']})
+
+    try:
+        tk = yf.Ticker('^TWII')
+        hist = tk.history(period='5y', timeout=15)
+        if hist is None or hist.empty:
+            return jsonify({'status': 'error', 'message': '無法取得台灣加權指數資料'}), 404
+
+        hist = hist.sort_index()
+        ohlcv = []
+        for dt, row in hist.iterrows():
+            ohlcv.append({
+                'date':   str(dt.date()),
+                'open':   round(float(row['Open']),  2),
+                'high':   round(float(row['High']),  2),
+                'low':    round(float(row['Low']),   2),
+                'close':  round(float(row['Close']), 2),
+                'volume': int(row.get('Volume', 0) or 0),
+            })
+
+        if not ohlcv:
+            return jsonify({'status': 'error', 'message': '大盤資料為空'}), 404
+
+        from data_fetcher import calc_technical_indicators
+        indicators = calc_technical_indicators(ohlcv)
+
+        last = ohlcv[-1]
+        prev = ohlcv[-2] if len(ohlcv) >= 2 else last
+        change     = round(last['close'] - prev['close'], 2)
+        change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
+
+        def last_val(lst):
+            if not lst: return None
+            return next((v for v in reversed(lst) if v is not None), None)
+
+        latest_ind = {k: last_val(indicators.get(k)) for k in
+                      ('ma5','ma10','ma20','ma60','ma120','ma200',
+                       'macd','macd_signal','macd_hist','rsi','k','d')}
+
+        CHART_DAYS  = 1260
+        chart_ohlcv = ohlcv[-CHART_DAYS:] if len(ohlcv) > CHART_DAYS else ohlcv
+        chart_len   = len(chart_ohlcv)
+        offset      = len(ohlcv) - chart_len
+
+        def slice_ind(key):
+            lst = indicators.get(key, [])
+            return lst[offset:offset + chart_len] if len(lst) >= offset + chart_len else lst[-chart_len:]
+
+        # 近60日支撐/壓力
+        recent60 = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
+        support  = round(min(r['low']  for r in recent60), 2)
+        resist   = round(max(r['high'] for r in recent60), 2)
+
+        # 趨勢判斷
+        trend = _calc_trend(last['close'], latest_ind)
+
+        data_out = {
+            'ticker':       TICKER_KEY,
+            'name':         '台灣加權指數',
+            'source':       'yfinance(^TWII)',
+            'is_simulated': False,
+            'is_index':     True,   # 標記為指數，前端可特殊處理
+            'latest': {
+                'date':       last['date'],
+                'open':       last['open'],
+                'high':       last['high'],
+                'low':        last['low'],
+                'close':      last['close'],
+                'volume':     last['volume'],
+                'change':     change,
+                'change_pct': change_pct,
+            },
+            'fundamentals': {
+                'pe_ratio':      None,
+                'pb_ratio':      None,
+                'div_yield':     None,
+                'annual_div':    0,
+                'eps':           None,
+                'roe':           None,
+                'profit_margin': None,
+                'market_cap':    None,
+                'sector':        '指數',
+                'industry':      '台灣加權股價指數',
+                '52w_high':      max(r['high'] for r in ohlcv[-252:]) if len(ohlcv) >= 252 else None,
+                '52w_low':       min(r['low']  for r in ohlcv[-252:]) if len(ohlcv) >= 252 else None,
+                'description':   '台灣加權股價指數（TAIEX）追蹤台灣證券交易所全體上市股票之加權市值，是衡量台股整體表現的主要基準指標。',
+            },
+            'technical': {
+                'latest':  latest_ind,
+                'support': support,
+                'resist':  resist,
+                'trend':   trend,
+            },
+            'chip': {'note': '指數無籌碼資料', 'estimated': True},
+            'recommendation': {
+                'rating':       trend['label'],
+                'rating_color': trend['color'],
+                'rating_bg':    '#1e293b',
+                'rating_icon':  '',
+                'total_score':  trend['score'],
+                'tech_score':   trend['score'],
+                'fund_score':   0,
+                'reasons_buy':  trend['signals'],
+                'reasons_sell': [],
+                'risks':        [],
+                'target_price': None,
+                'target_type':  'none',
+                'target_desc':  '',
+                'support':      support,
+                'resist':       resist,
+                'price_position': None,
+                'summary':      f'台灣加權指數目前報 {last["close"]:,.2f} 點，技術面呈「{trend["label"]}」態勢。',
+            },
+            'dividends': [],
+            'chart': {
+                'dates':       [r['date']  for r in chart_ohlcv],
+                'opens':       [r['open']  for r in chart_ohlcv],
+                'highs':       [r['high']  for r in chart_ohlcv],
+                'lows':        [r['low']   for r in chart_ohlcv],
+                'closes':      [r['close'] for r in chart_ohlcv],
+                'volumes':     [r['volume']for r in chart_ohlcv],
+                'ma5':         slice_ind('ma5'),
+                'ma10':        slice_ind('ma10'),
+                'ma20':        slice_ind('ma20'),
+                'ma60':        slice_ind('ma60'),
+                'ma120':       slice_ind('ma120'),
+                'ma200':       slice_ind('ma200'),
+                'macd':        slice_ind('macd'),
+                'macd_signal': slice_ind('macd_signal'),
+                'macd_hist':   slice_ind('macd_hist'),
+                'rsi':         slice_ind('rsi'),
+                'k':           slice_ind('k'),
+                'd':           slice_ind('d'),
+            },
+        }
+
+        analysis_cache[TICKER_KEY] = {'data': data_out, 'ts': time.time()}
         return jsonify({'status': 'success', 'data': data_out})
 
     except Exception as e:

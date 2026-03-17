@@ -71,6 +71,7 @@ POPULAR_STOCKS = [
     {'code': '2882', 'name': '國泰金'},
     {'code': '2891', 'name': '中信金'},
     {'code': '2886', 'name': '兆豐金'},
+    {'code': '2887', 'name': '台新金'},
     {'code': '2303', 'name': '聯電'},
     {'code': '2412', 'name': '中華電'},
     {'code': '1301', 'name': '台塑'},
@@ -137,10 +138,12 @@ def calc_technical_indicators(ohlcv: list) -> dict:
         return result
 
     # ── MA ─────────────────────────────────────────────────────
-    ma5  = sma(closes, 5)
-    ma10 = sma(closes, 10)
-    ma20 = sma(closes, 20)
-    ma60 = sma(closes, 60)
+    ma5   = sma(closes, 5)
+    ma10  = sma(closes, 10)
+    ma20  = sma(closes, 20)
+    ma60  = sma(closes, 60)
+    ma120 = sma(closes, 120)
+    ma200 = sma(closes, 200)
 
     # ── MACD（EMA12 - EMA26，Signal=EMA9） ────────────────────
     ema12 = ema(closes, 12)
@@ -207,6 +210,8 @@ def calc_technical_indicators(ohlcv: list) -> dict:
         'ma10':       ma10,
         'ma20':       ma20,
         'ma60':       ma60,
+        'ma120':      ma120,
+        'ma200':      ma200,
         'macd':       macd_line,
         'macd_signal':signal_line,
         'macd_hist':  macd_hist,
