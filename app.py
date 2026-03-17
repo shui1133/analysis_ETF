@@ -2198,7 +2198,38 @@ def get_goodinfo_news(ticker):
 # 財報分析 API
 # ═══════════════════════════════════════════════════════════════
 
-@app.route('/api/finreport/<ticker>', methods=['GET'])
+@app.route('/api/claude_proxy', methods=['POST'])
+def claude_proxy():
+    """
+    Claude API 後端代理
+    API Key 從環境變數 ANTHROPIC_API_KEY 讀取，不暴露於前端
+    本機開發：在 .env 或系統環境變數設定 ANTHROPIC_API_KEY=sk-ant-api03-...
+    Render 部署：在 Render Dashboard > Environment 設定同名變數
+    """
+    import requests as req
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        return jsonify({'error': '伺服器未設定 ANTHROPIC_API_KEY 環境變數'}), 500
+
+    try:
+        payload = request.get_json(force=True)
+        resp = req.post(
+            'https://api.anthropic.com/v1/messages',
+            headers={
+                'Content-Type':    'application/json',
+                'x-api-key':       api_key,
+                'anthropic-version': '2023-06-01',
+            },
+            json=payload,
+            timeout=60
+        )
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+
 def get_finreport(ticker):
     """
     取得個股三大財務報表（年報5年 + 季報4季）
@@ -2293,7 +2324,9 @@ def _fetch_finreport(ticker: str) -> dict:
                 def parse_annual(df, converter=to_b):
                     if df is None or df.empty: return []
                     rows = []
-                    for col in df.columns[:5]:   # 最近5年
+                    # 取最多6年並依日期由新到舊排序，確保含2021年資料
+                    sorted_cols = sorted(df.columns, reverse=True)[:6]
+                    for col in sorted_cols:
                         yr = str(col)[:10]
                         row = {'period': yr, 'period_type': 'annual'}
                         for idx in df.index:
