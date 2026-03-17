@@ -2296,6 +2296,7 @@ def claude_proxy():
 
 
 
+@app.route('/api/finreport/<ticker>', methods=['GET'])
 def get_finreport(ticker):
     """
     取得個股三大財務報表（年報5年 + 季報4季）

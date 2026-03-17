@@ -3431,7 +3431,7 @@ function drawCandleChart(data) {
           label: 'MA5',
           data: ch.ma5,
           borderColor: '#f59e0b',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3442,7 +3442,7 @@ function drawCandleChart(data) {
           label: 'MA20',
           data: ch.ma20,
           borderColor: '#60a5fa',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3453,7 +3453,7 @@ function drawCandleChart(data) {
           label: 'MA60',
           data: ch.ma60,
           borderColor: '#a78bfa',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3464,7 +3464,7 @@ function drawCandleChart(data) {
           label: 'MA120',
           data: ch.ma120,
           borderColor: '#f97316',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3475,7 +3475,7 @@ function drawCandleChart(data) {
           label: 'MA200',
           data: ch.ma200,
           borderColor: '#ec4899',
-          borderWidth: 2,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -4961,7 +4961,7 @@ function renderSIM(d) {
 // ════════════════════════════════════════════════════════════════
 let hotStockList     = [];
 let hotStockData     = {};
-let hotPageSize      = 5;
+let hotPageSize      = 20;
 let hotLoadAbort     = false;
 let hotChartRiseDrop = null;
 let hotChartMA       = null;
@@ -5129,6 +5129,8 @@ async function openHotETFPanel() {
   hotLoadAbort = false;
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+  const titleEl = document.getElementById('hotModalTitle');
+  if (titleEl) titleEl.textContent = '熱門ETF總覽';
   hotViewMode = 'trade';
   ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
@@ -5143,6 +5145,8 @@ async function openHotStockPanel() {
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   hotViewMode  = 'trade';
+  const titleEl2 = document.getElementById('hotModalTitle');
+  if (titleEl2) titleEl2.textContent = '熱門股票總覽';
   ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
     if (btn) btn.classList.toggle('active', m === 'trade');
@@ -5767,11 +5771,11 @@ function renderTradeOverview(data) {
         labels: maDts.map(d => d ? d.slice(5) : ''),
         datasets: [
           { label:'收盤',  data: maCls,          borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA5',   data: getMA('ma5'),    borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA10',  data: getMA('ma10'),   borderColor:'#8b5cf6', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA5',   data: getMA('ma5'),    borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA10',  data: getMA('ma10'),   borderColor:'#8b5cf6', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
           { label:'MA20',  data: getMA('ma20'),   borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
           { label:'MA60',  data: getMA('ma60'),   borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA120', data: getMA('ma120'),  borderColor:'#f97316', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
+          { label:'MA120', data: getMA('ma120'),  borderColor:'#f97316', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
           { label:'MA200', data: getMA('ma200'),  borderColor:'#ec4899', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[6,4] },
         ]
       },
@@ -5812,7 +5816,7 @@ async function loadFinReport(ticker) {
   }
   showFinState('loading');
   try {
-    const r = await fetch(`/api/finreport/${ticker}`, { signal: AbortSignal.timeout(30000) });
+    const r = await fetch(`/api/finreport/${ticker}`, { signal: AbortSignal.timeout(60000) });
     const d = await r.json();
     if (d.status !== 'success') {
       document.getElementById('finreport-error-msg').textContent = d.message || '財報載入失敗';
@@ -6258,7 +6262,7 @@ ${summaryLines || '（資料不足）'}
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
         <div class="flex items-center gap-3">
           <i class="fa-solid fa-fire text-amber-400 text-xl"></i>
-          <h2 class="text-lg font-black text-white">熱門股票總覽</h2>
+          <h2 class="text-lg font-black text-white" id="hotModalTitle">熱門股票總覽</h2>
         </div>
         <div class="flex items-center gap-3">
           <!-- 每頁筆數 -->
@@ -6266,10 +6270,10 @@ ${summaryLines || '（資料不足）'}
             <span class="text-slate-400">每頁筆數：</span>
             <select id="hotPageSize" onchange="changeHotPageSize()"
                     class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-500">
-              <option value="5" selected>5筆</option>
+              <option value="5">5筆</option>
               <option value="10">10筆</option>
               <option value="15">15筆</option>
-              <option value="20">20筆</option>
+              <option value="20" selected>20筆</option>
               <option value="30">30筆</option>
               <option value="40">40筆</option>
               <option value="50">50筆</option>
