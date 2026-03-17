@@ -2649,7 +2649,7 @@ function renderRecommendation(data) {
   const barColor = totalScore>=6?'#10b981':totalScore>=3?'#22d3ee':totalScore>=0?'#3b82f6':totalScore>=-3?'#f59e0b':'#ef4444';
   const ratingDescs = {'強力買進':'多項指標高度一致偏多，為最強力買入訊號。建議在支撐位分批建倉，設定停損保護獲利。','買進':'技術面或基本面具明確優勢，整體偏多。建議在回撤至支撐位時逢低分批買進。','持有':'多空訊號相對平衡。已持有者續持觀望，未持有者等待更明確訊號。','減碼':'出現偏空訊號，趨勢開始轉弱。建議逐步減少持股，等待更佳時機。','賣出':'多項指標指向弱勢，整體偏空。建議儘早出脫，嚴格執行停損。'};
   const scoreBarEl = document.getElementById('recScoreBar');
-  if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}）＋基本面（${fmtScore(rec.fund_score)}）＝ 總分（${fmtScore(totalScore)}）</div>`;
+  if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}，-8~+8）＋基本面（${fmtScore(rec.fund_score)}，-1~+4）＝ 總分（${fmtScore(totalScore)}）</div>`;
 
   // 評分維度分解
   const dimEl = document.getElementById('recScoreDimensions');
@@ -2659,13 +2659,15 @@ function renderRecommendation(data) {
   }
   const ma5=ind.ma5,ma20=ind.ma20,ma60=ind.ma60,macd=ind.macd,macdSig=ind.macd_signal,rsi=ind.rsi,k=ind.k,d=ind.d;
   const techItems=[];
-  if(ma5&&ma20) techItems.push(ma5>ma20?'MA5>MA20（+2）':'MA5<MA20（-2）');
-  if(ma20&&ma60) techItems.push(ma20>ma60?'MA20>MA60（+2）':'MA20<MA60（-2）');
+  if(ma5&&ma20) techItems.push(ma5>ma20?'MA5>MA20（+1）':'MA5<MA20（-1）');
+  if(ma20&&ma60) techItems.push(ma20>ma60?'MA20>MA60（+1）':'MA20<MA60（-1）');
   if(ma20) techItems.push(close>ma20?'價格>MA20（+1）':'價格<MA20（-1）');
-  if(macd) techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）');
-  if(macd&&macdSig) techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）');
-  if(rsi) techItems.push(rsi>70?'RSI超買（-1）':rsi<30?'RSI超賣（+1）':'RSI中性（0）');
-  if(k&&d) techItems.push(k<20?'KD超賣（+1）':k>80?'KD超買（-1）':'KD中性（0）');
+  if(macd!=null) techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）');
+  if(macd!=null&&macdSig!=null) techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）');
+  if(rsi!=null) techItems.push(rsi>70?'RSI超買（-1）':rsi<30?'RSI超賣（+1）':'RSI中性（0）');
+  if(k!=null&&d!=null) techItems.push(k<20?'KD超賣（+1）':k>80?'KD超買（-1）':'KD中性（0）');
+  // 支撐/壓力位置（對應後端 pos_pct）
+  if(rec.price_position!=null) techItems.push(rec.price_position<=20?'接近支撐（+1）':rec.price_position>=80?'接近壓力（-1）':'位置中性（0）');
   const f=data.fundamentals||{};
   const fundItems=[];
   if(f.pe_ratio) fundItems.push(f.pe_ratio<15?`P/E ${f.pe_ratio.toFixed(1)}x 低估（+1）`:f.pe_ratio>30?`P/E ${f.pe_ratio.toFixed(1)}x 高估（-1）`:`P/E ${f.pe_ratio.toFixed(1)}x 中性`);

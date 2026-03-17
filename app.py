@@ -1209,13 +1209,24 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
     """
     綜合評估產生投資建議與評級
     評級：強力買進 / 買進 / 持有 / 減碼 / 賣出
+
+    技術面評分獨立計算（每項 ±1），不從 trend.score 繼承，避免重複加分：
+      MA5 vs MA20     ±1
+      MA20 vs MA60    ±1
+      價格 vs MA20    ±1
+      MACD 正負       ±1
+      MACD 黃金/死亡  ±1
+      RSI 超買/超賣   ±1（中性 0）
+      KD 超買/超賣    ±1（中性 0）
+      支撐/壓力位置   ±1（中間 0）
+    合計範圍：-8 ~ +8
     """
-    score = trend.get('score', 0)
     rsi   = ind.get('rsi')
     macd  = ind.get('macd')
     macd_signal = ind.get('macd_signal')
     k     = ind.get('k')
     d     = ind.get('d')
+    ma5   = ind.get('ma5')
     ma20  = ind.get('ma20')
     ma60  = ind.get('ma60')
 
@@ -1223,29 +1234,75 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
     reasons_sell = []
     risks        = []
 
-    # ── 技術面評分 ─────────────────────────────────────────────
-    tech_score = score  # -6 ~ +6
+    # ── 技術面評分（從 0 開始，每項獨立 ±1）───────────────────
+    tech_score = 0
 
-    # MACD 黃金/死亡交叉
-    if macd and macd_signal:
-        if macd > macd_signal:
-            reasons_buy.append('MACD 黃金交叉，多方動能增強')
+    # MA5 vs MA20（短線趨勢）
+    if ma5 and ma20:
+        if ma5 > ma20:
             tech_score += 1
+            reasons_buy.append('MA5 > MA20（短線偏多）')
         else:
-            reasons_sell.append('MACD 死亡交叉，多方動能減弱')
             tech_score -= 1
+            reasons_sell.append('MA5 < MA20（短線偏空）')
 
-    # KD 超買超賣
-    if k and d:
-        if k < 20 and d < 20:
-            reasons_buy.append(f'KD 超賣區（K={k:.1f}），有反彈機會')
+    # MA20 vs MA60（中線趨勢）
+    if ma20 and ma60:
+        if ma20 > ma60:
             tech_score += 1
+            reasons_buy.append('MA20 > MA60（中線偏多）')
+        else:
+            tech_score -= 1
+            reasons_sell.append('MA20 < MA60（中線偏空）')
+
+    # 價格 vs MA20
+    if ma20:
+        if close > ma20:
+            tech_score += 1
+            reasons_buy.append('股價站上 MA20')
+        else:
+            tech_score -= 1
+            reasons_sell.append('股價跌破 MA20')
+
+    # MACD 正負（動能方向）
+    if macd is not None:
+        if macd > 0:
+            tech_score += 1
+            reasons_buy.append('MACD > 0（多方動能）')
+        elif macd < 0:
+            tech_score -= 1
+            reasons_sell.append('MACD < 0（空方動能）')
+
+    # MACD 黃金/死亡交叉（訊號確認）
+    if macd is not None and macd_signal is not None:
+        if macd > macd_signal:
+            tech_score += 1
+            reasons_buy.append('MACD 黃金交叉，動能轉強')
+        else:
+            tech_score -= 1
+            reasons_sell.append('MACD 死亡交叉，動能轉弱')
+
+    # RSI
+    if rsi is not None:
+        if rsi > 70:
+            tech_score -= 1
+            risks.append(f'RSI={rsi:.1f}（超買，短線注意壓回）')
+        elif rsi < 30:
+            tech_score += 1
+            reasons_buy.append(f'RSI={rsi:.1f}（超賣，反彈機會）')
+        # 30~70 中性，不加減分
+
+    # KD
+    if k is not None and d is not None:
+        if k < 20 and d < 20:
+            tech_score += 1
+            reasons_buy.append(f'KD 超賣區（K={k:.1f}），有反彈機會')
         elif k > 80 and d > 80:
+            tech_score -= 1
             reasons_sell.append(f'KD 超買區（K={k:.1f}），注意短線壓力')
             risks.append('KD 處於超買，短線漲幅受限')
-            tech_score -= 1
 
-    # 支撐/壓力
+    # 支撐/壓力位置
     price_range = resist - support
     if price_range > 0:
         pos_pct = round((close - support) / price_range * 100, 1)
@@ -1253,8 +1310,10 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
         pos_pct = 50
 
     if pos_pct < 20:
+        tech_score += 1
         reasons_buy.append(f'接近近期支撐（{support}），風險相對低')
     elif pos_pct > 80:
+        tech_score -= 1
         reasons_sell.append(f'接近近期壓力（{resist}），上漲空間受限')
         risks.append(f'股價已在近期高點附近（支撐/壓力位置：{pos_pct}%）')
 
@@ -2237,7 +2296,6 @@ def claude_proxy():
 
 
 
-@app.route('/api/finreport/<ticker>', methods=['GET'])
 def get_finreport(ticker):
     """
     取得個股三大財務報表（年報5年 + 季報4季）
