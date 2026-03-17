@@ -153,6 +153,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               class="bg-amber-500 hover:bg-amber-400 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-fire"></i>熱門股票總覽
       </button>
+      <button onclick="openHotETFPanel()"
+              id="btnHotETF"
+              class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
+        <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
+      </button>
     </div>
 
     <!-- 熱門股票清單 -->
@@ -256,17 +261,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('chip')" id="tab-chip">
         <i class="fa-solid fa-users mr-1"></i>籌碼面
       </button>
-      <button class="tab-btn" onclick="switchTab('recommendation')" id="tab-recommendation">
-        <i class="fa-solid fa-lightbulb mr-1"></i>投資建議
+      <button class="tab-btn" onclick="switchTab('tradeoverview')" id="tab-tradeoverview">
+        <i class="fa-solid fa-table-list mr-1"></i>交易概況
       </button>
-      <button class="tab-btn" onclick="switchTab('montecarlo')" id="tab-montecarlo">
-        <i class="fa-solid fa-dice mr-1"></i>蒙地卡羅
-      </button>
-      <button class="tab-btn" onclick="switchTab('scenario')" id="tab-scenario">
-        <i class="fa-solid fa-layer-group mr-1"></i>情境分析
-      </button>
-      <button class="tab-btn" onclick="switchTab('news')" id="tab-news">
-        <i class="fa-solid fa-newspaper mr-1"></i>個股新聞
+      <button class="tab-btn" onclick="switchTab('finreport')" id="tab-finreport">
+        <i class="fa-solid fa-file-invoice-dollar mr-1"></i>財報分析
       </button>
       <button class="tab-btn" onclick="switchTab('frontier')" id="tab-frontier">
         <i class="fa-solid fa-chart-scatter mr-1"></i>效益邊緣線
@@ -274,8 +273,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('sim')" id="tab-sim">
         <i class="fa-solid fa-chart-line mr-1"></i>SIM分析
       </button>
-      <button class="tab-btn" onclick="switchTab('tradeoverview')" id="tab-tradeoverview">
-        <i class="fa-solid fa-table-list mr-1"></i>交易概況
+      <button class="tab-btn" onclick="switchTab('news')" id="tab-news">
+        <i class="fa-solid fa-newspaper mr-1"></i>個股新聞
+      </button>
+      <button class="tab-btn" onclick="switchTab('recommendation')" id="tab-recommendation">
+        <i class="fa-solid fa-lightbulb mr-1"></i>投資建議
       </button>
     </div>
 
@@ -769,9 +771,10 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <div class="shrink-0">
             <label class="text-xs text-slate-400 mb-1 block">模擬次數</label>
             <select id="efSims" class="search-input text-sm w-28">
-              <option value="2000">2,000</option>
-              <option value="5000" selected>5,000</option>
-              <option value="10000">10,000</option>
+              <option value="1000">1,000</option>
+              <option value="2000" selected>2,000</option>
+              <option value="3000">3,000</option>
+              <option value="5000">5,000</option>
             </select>
           </div>
           <button onclick="runEfficientFrontier()"
@@ -1283,11 +1286,165 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           移動平均線（MA）為過去N日收盤價均值，常用於判斷趨勢方向與支撐/壓力位。
         </p>
       </div>
-    </div>
+    </div><!-- /panel-tradeoverview -->
+
+    <!-- ═══ Tab: 財報分析 ════════════════════════════════════════ -->
+    <div id="panel-finreport" class="hidden space-y-4">
+
+      <!-- 載入中狀態 -->
+      <div id="finreport-loading" class="hidden">
+        <div class="card p-10 text-center">
+          <i class="fa-solid fa-circle-notch fa-spin text-amber-400 text-3xl mb-4"></i>
+          <div class="text-slate-300 font-bold text-lg" id="finreport-loading-text">正在取得財務報表資料...</div>
+          <div class="text-slate-500 text-sm mt-2">yfinance → MOPS 雙重備援，請稍候</div>
+        </div>
+      </div>
+
+      <!-- 錯誤狀態 -->
+      <div id="finreport-error" class="hidden">
+        <div class="card p-8 text-center">
+          <i class="fa-solid fa-circle-exclamation text-red-400 text-3xl mb-3"></i>
+          <div class="text-red-400 font-bold" id="finreport-error-msg">無法取得財報資料</div>
+          <div class="text-slate-500 text-sm mt-2">部分股票財報可能尚未公告，或請確認代碼正確</div>
+          <button onclick="loadFinReport(currentData&&currentData.ticker)" class="mt-4 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition">
+            <i class="fa-solid fa-rotate-right mr-1"></i>重新載入
+          </button>
+        </div>
+      </div>
+
+      <!-- 財報內容 -->
+      <div id="finreport-content" class="hidden space-y-4">
+
+        <!-- 資料來源 & 切換年/季 -->
+        <div class="card p-4 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <span class="text-amber-400 font-bold text-sm" id="finreport-source-badge">
+              <i class="fa-solid fa-database mr-1"></i>資料來源：--
+            </span>
+            <span class="text-slate-500 text-xs" id="finreport-period-hint">年報(近5年) + 季報(近4季)</span>
+          </div>
+          <div class="flex gap-2">
+            <button id="fin-btn-annual" onclick="switchFinView('annual')"
+              class="px-3 py-1.5 rounded-lg text-xs font-bold border transition fin-view-btn active-fin-btn"
+              style="background:#1e40af;color:#fff;border-color:#3b82f6">
+              <i class="fa-solid fa-calendar mr-1"></i>年報
+            </button>
+            <button id="fin-btn-quarterly" onclick="switchFinView('quarterly')"
+              class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-600 text-slate-400 hover:text-white transition fin-view-btn">
+              <i class="fa-solid fa-calendar-days mr-1"></i>季報
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI 摘要卡片列 -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" id="fin-kpi-row"></div>
+
+        <!-- 圖表區 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- 營收與毛利率 -->
+          <div class="card p-5">
+            <h3 class="font-bold text-white mb-3 flex items-center gap-2 text-sm">
+              <i class="fa-solid fa-chart-bar text-blue-400"></i>營收 & 毛利率趨勢
+            </h3>
+            <div style="height:220px;position:relative;"><canvas id="fin-chart-revenue"></canvas></div>
+          </div>
+          <!-- 獲利能力 -->
+          <div class="card p-5">
+            <h3 class="font-bold text-white mb-3 flex items-center gap-2 text-sm">
+              <i class="fa-solid fa-chart-line text-emerald-400"></i>獲利能力（ROE / NPM / OPM）
+            </h3>
+            <div style="height:220px;position:relative;"><canvas id="fin-chart-profit"></canvas></div>
+          </div>
+          <!-- 現金流量 -->
+          <div class="card p-5">
+            <h3 class="font-bold text-white mb-3 flex items-center gap-2 text-sm">
+              <i class="fa-solid fa-water text-cyan-400"></i>現金流量
+              <span class="text-slate-500 text-xs font-normal">（營業/自由）</span>
+            </h3>
+            <div style="height:220px;position:relative;"><canvas id="fin-chart-cashflow"></canvas></div>
+          </div>
+          <!-- 財務結構 -->
+          <div class="card p-5">
+            <h3 class="font-bold text-white mb-3 flex items-center gap-2 text-sm">
+              <i class="fa-solid fa-scale-balanced text-purple-400"></i>財務結構（負債比 / 流動比）
+            </h3>
+            <div style="height:220px;position:relative;"><canvas id="fin-chart-structure"></canvas></div>
+          </div>
+        </div>
+
+        <!-- 三大報表數字明細 -->
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-table text-amber-400"></i>財務數字明細
+              <span class="text-slate-400 text-xs font-normal ml-1">（單位：億元）</span>
+            </h3>
+            <div class="flex gap-1">
+              <button onclick="switchFinTable('income')" id="fintab-income"
+                class="fintab-btn px-2 py-1 rounded text-xs font-bold bg-blue-900 text-blue-300 border border-blue-700">損益表</button>
+              <button onclick="switchFinTable('balance')" id="fintab-balance"
+                class="fintab-btn px-2 py-1 rounded text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white">資產負債</button>
+              <button onclick="switchFinTable('cashflow')" id="fintab-cashflow"
+                class="fintab-btn px-2 py-1 rounded text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white">現金流量</button>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs" id="fin-detail-table">
+              <thead id="fin-detail-thead"></thead>
+              <tbody id="fin-detail-tbody" class="divide-y divide-slate-800"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- AI 財務分析報告 -->
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-robot text-violet-400"></i>AI 財務健診報告
+              <span class="text-xs text-slate-500 font-normal ml-1">由 Claude 自動生成</span>
+            </h3>
+            <button id="fin-ai-btn" onclick="generateFinAI()"
+              class="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-900/60 text-violet-300 border border-violet-700/50 hover:bg-violet-800/60 transition flex items-center gap-1">
+              <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析
+            </button>
+          </div>
+          <!-- AI 載入中 -->
+          <div id="fin-ai-loading" class="hidden py-6 text-center">
+            <i class="fa-solid fa-circle-notch fa-spin text-violet-400 text-2xl mb-3"></i>
+            <div class="text-slate-400 text-sm">Claude 正在分析財務數據，請稍候...</div>
+          </div>
+          <!-- AI 結果 -->
+          <div id="fin-ai-result" class="hidden">
+            <div id="fin-ai-text"
+              class="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap
+                     bg-slate-800/40 rounded-xl p-4 border border-slate-700"></div>
+            <p class="text-xs text-slate-600 mt-3">
+              <i class="fa-solid fa-circle-info mr-1"></i>
+              以上為 AI 自動生成分析，僅供參考，不構成投資建議。財報數據來源：{{source}}
+            </p>
+          </div>
+          <!-- 預設提示 -->
+          <div id="fin-ai-placeholder" class="py-6 text-center text-slate-500 text-sm">
+            <i class="fa-solid fa-lightbulb text-slate-600 text-2xl mb-3 block"></i>
+            點擊「產生 AI 分析」，Claude 將根據三大報表數據，為您生成詳細財務健診報告
+          </div>
+        </div>
+
+      </div><!-- /finreport-content -->
+    </div><!-- /panel-finreport -->
+
   </div><!-- /analysisSection -->
 </div><!-- /main -->
 
 <script>
+// ════════════════════════════════════════════════════════════════
+// ★ Claude API 設定
+// API Key 請設定於伺服器端環境變數 ANTHROPIC_API_KEY
+// 前端透過後端 /api/claude_proxy 呼叫，不在此填寫任何 Key
+// ════════════════════════════════════════════════════════════════
+const CLAUDE_API_URL = '/api/claude_proxy';   // 統一走後端代理
+const CLAUDE_MODEL   = 'claude-sonnet-4-20250514';
+
 // ════════════════════════════════════════════════════════════════
 // 台灣股票/ETF 中文名稱對照表
 // ════════════════════════════════════════════════════════════════
@@ -1781,6 +1938,8 @@ async function loadPopular() {
     });
     // ──────────────────────────────────────────────────────────
 
+    // 最前面固定插入 0000 大盤指數
+    stocks.unshift({ code: '0000', name: '大盤指數' });
     _popularAllStocks = stocks;
     renderPopularList();
   } catch(e) { console.error('載入熱門清單失敗', e); }
@@ -2068,13 +2227,15 @@ function renderTechSignalDetail(data) {
     cards.push(makeCard('fa-solid fa-crosshairs','KD（9日）',`K: ${kVal.toFixed(1)} / D: ${dVal.toFixed(1)}`,kdSt,kdDesc,'超買≥80 ／ 超賣≤20；K穿越D向上為買訊'));
   }
   if (tech.support&&tech.resist) {
-    const pos=rec.price_position;
-    let srSt='neutral', srDesc='';
-    if(pos>=80){srSt='sell';srDesc=`股價接近壓力區（${pos.toFixed(1)}%），距壓力位 ${tech.resist} 已非常近，短線面臨較大賣壓，突破前宜謹慎。`;}
-    else if(pos>=50){srSt='buy';srDesc=`股價偏上方（${pos.toFixed(1)}%），多方略占優勢，可觀察能否有效突破壓力 ${tech.resist}。`;}
-    else if(pos>=20){srSt='neutral';srDesc=`股價偏下方（${pos.toFixed(1)}%），接近支撐 ${tech.support}，需留意是否守穩，跌破將是警訊。`;}
-    else{srSt='sell';srDesc=`股價接近支撐區（${pos.toFixed(1)}%），貼近 ${tech.support}，若有效跌破可能加速下跌。`;}
-    cards.push(makeCard('fa-solid fa-ruler-horizontal','支撐壓力位置',`${pos.toFixed(1)}%`,srSt,srDesc,`支撐：${tech.support} ／ 壓力：${tech.resist}（近60日高低點）`));
+    const pos = rec.price_position;
+    if (pos != null) {
+      let srSt='neutral', srDesc='';
+      if(pos>=80){srSt='sell';srDesc=`股價接近壓力區（${pos.toFixed(1)}%），距壓力位 ${tech.resist} 已非常近，短線面臨較大賣壓，突破前宜謹慎。`;}
+      else if(pos>=50){srSt='buy';srDesc=`股價偏上方（${pos.toFixed(1)}%），多方略占優勢，可觀察能否有效突破壓力 ${tech.resist}。`;}
+      else if(pos>=20){srSt='neutral';srDesc=`股價偏下方（${pos.toFixed(1)}%），接近支撐 ${tech.support}，需留意是否守穩，跌破將是警訊。`;}
+      else{srSt='sell';srDesc=`股價接近支撐區（${pos.toFixed(1)}%），貼近 ${tech.support}，若有效跌破可能加速下跌。`;}
+      cards.push(makeCard('fa-solid fa-ruler-horizontal','支撐壓力位置',`${pos.toFixed(1)}%`,srSt,srDesc,`支撐：${tech.support} ／ 壓力：${tech.resist}（近60日高低點）`));
+    }
   }
   cardsEl.innerHTML = cards.join('');
 
@@ -2114,11 +2275,11 @@ const _fundCache   = {};   // key: ticker → 後端補充後的完整 fundament
 async function translateDesc(engText, ticker) {
   if (_descCache[ticker]) return _descCache[ticker];
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch(CLAUDE_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: CLAUDE_MODEL,
         max_tokens: 600,
         system: '你是專業財經翻譯員。請將以下英文公司簡介翻譯成流暢的繁體中文。只輸出翻譯結果，不加任何說明或引號。',
         messages: [{ role: 'user', content: engText }]
@@ -2334,7 +2495,7 @@ function mCard(label, val, unit, color, raw=false) {
 function renderChip(data) {
   const chip  = data.chip;
   const tech  = data.technical;
-  if (!chip || chip.note === '資料不足，無法估算籌碼') return;
+  if (!chip || chip.note === '資料不足，無法估算籌碼' || !chip.foreign_dir) return;
 
   const foreign = chip.foreign_dir, trust = chip.trust_dir;
   const volRatio = chip.vol_ratio, upDays = chip.up_days_20, downDays = chip.down_days_20;
@@ -2488,7 +2649,7 @@ function renderRecommendation(data) {
   const barColor = totalScore>=6?'#10b981':totalScore>=3?'#22d3ee':totalScore>=0?'#3b82f6':totalScore>=-3?'#f59e0b':'#ef4444';
   const ratingDescs = {'強力買進':'多項指標高度一致偏多，為最強力買入訊號。建議在支撐位分批建倉，設定停損保護獲利。','買進':'技術面或基本面具明確優勢，整體偏多。建議在回撤至支撐位時逢低分批買進。','持有':'多空訊號相對平衡。已持有者續持觀望，未持有者等待更明確訊號。','減碼':'出現偏空訊號，趨勢開始轉弱。建議逐步減少持股，等待更佳時機。','賣出':'多項指標指向弱勢，整體偏空。建議儘早出脫，嚴格執行停損。'};
   const scoreBarEl = document.getElementById('recScoreBar');
-  if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}）＋基本面（${fmtScore(rec.fund_score)}）＝ 總分（${fmtScore(totalScore)}）</div>`;
+  if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}，-8~+8）＋基本面（${fmtScore(rec.fund_score)}，-1~+4）＝ 總分（${fmtScore(totalScore)}）</div>`;
 
   // 評分維度分解
   const dimEl = document.getElementById('recScoreDimensions');
@@ -2498,13 +2659,15 @@ function renderRecommendation(data) {
   }
   const ma5=ind.ma5,ma20=ind.ma20,ma60=ind.ma60,macd=ind.macd,macdSig=ind.macd_signal,rsi=ind.rsi,k=ind.k,d=ind.d;
   const techItems=[];
-  if(ma5&&ma20) techItems.push(ma5>ma20?'MA5>MA20（+2）':'MA5<MA20（-2）');
-  if(ma20&&ma60) techItems.push(ma20>ma60?'MA20>MA60（+2）':'MA20<MA60（-2）');
+  if(ma5&&ma20) techItems.push(ma5>ma20?'MA5>MA20（+1）':'MA5<MA20（-1）');
+  if(ma20&&ma60) techItems.push(ma20>ma60?'MA20>MA60（+1）':'MA20<MA60（-1）');
   if(ma20) techItems.push(close>ma20?'價格>MA20（+1）':'價格<MA20（-1）');
-  if(macd) techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）');
-  if(macd&&macdSig) techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）');
-  if(rsi) techItems.push(rsi>70?'RSI超買（-1）':rsi<30?'RSI超賣（+1）':'RSI中性（0）');
-  if(k&&d) techItems.push(k<20?'KD超賣（+1）':k>80?'KD超買（-1）':'KD中性（0）');
+  if(macd!=null) techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）');
+  if(macd!=null&&macdSig!=null) techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）');
+  if(rsi!=null) techItems.push(rsi>70?'RSI超買（-1）':rsi<30?'RSI超賣（+1）':'RSI中性（0）');
+  if(k!=null&&d!=null) techItems.push(k<20?'KD超賣（+1）':k>80?'KD超買（-1）':'KD中性（0）');
+  // 支撐/壓力位置（對應後端 pos_pct）
+  if(rec.price_position!=null) techItems.push(rec.price_position<=20?'接近支撐（+1）':rec.price_position>=80?'接近壓力（-1）':'位置中性（0）');
   const f=data.fundamentals||{};
   const fundItems=[];
   if(f.pe_ratio) fundItems.push(f.pe_ratio<15?`P/E ${f.pe_ratio.toFixed(1)}x 低估（+1）`:f.pe_ratio>30?`P/E ${f.pe_ratio.toFixed(1)}x 高估（-1）`:`P/E ${f.pe_ratio.toFixed(1)}x 中性`);
@@ -2516,7 +2679,12 @@ function renderRecommendation(data) {
     dimCard('fa-solid fa-chart-area','技術面',rec.tech_score,8,'評分涵蓋：'+techItems.join('、'),rec.tech_score>=0?'#10b981':'#ef4444'),
     dimCard('fa-solid fa-building-columns','基本面',rec.fund_score,4,fundItems.length?'評分涵蓋：'+fundItems.join('、'):'基本面資料不足',rec.fund_score>=0?'#f59e0b':'#ef4444'),
     dimCard('fa-solid fa-users','籌碼面（參考）',chipBull?1:chipBear?-1:0,1,chip?`外資「${chip.foreign_dir}」，投信「${chip.trust_dir}」，相對量 ${chip.vol_ratio}x，近20日上漲 ${chip.up_days_20} 日`:'籌碼資料不足',chipBull?'#14b8a6':chipBear?'#ef4444':'#64748b'),
-    dimCard('fa-solid fa-ruler-horizontal','位置風險',rec.price_position<=20?1:rec.price_position>=80?-1:0,1,`股價位於近60日支撐${rec.support}至壓力${rec.resist}區間的 ${rec.price_position.toFixed(1)}%。`+(rec.price_position<=20?'接近支撐區，風險相對低，適合建倉。':rec.price_position>=80?'接近壓力區，上方空間有限，宜謹慎追高。':'位於中間區域，無明顯超買或超賣疑慮。'),rec.price_position<=20?'#10b981':rec.price_position>=80?'#ef4444':'#94a3b8'),
+    dimCard('fa-solid fa-ruler-horizontal','位置風險',
+      rec.price_position!=null?(rec.price_position<=20?1:rec.price_position>=80?-1:0):0, 1,
+      rec.price_position!=null
+        ? `股價位於近60日支撐${rec.support}至壓力${rec.resist}區間的 ${rec.price_position.toFixed(1)}%。`+(rec.price_position<=20?'接近支撐區，風險相對低，適合建倉。':rec.price_position>=80?'接近壓力區，上方空間有限，宜謹慎追高。':'位於中間區域，無明顯超買或超賣疑慮。')
+        : '指數/此標的無支撐壓力位置資訊。',
+      rec.price_position!=null?(rec.price_position<=20?'#10b981':rec.price_position>=80?'#ef4444':'#94a3b8'):'#64748b'),
   ].join('');
 
   // 買進/賣出理由
@@ -2974,13 +3142,13 @@ function drawCandleChartPeriod(data, period) {
         },
         // ③ MA 均線
         { type:'line', label:`MA${cfg.ma[0]}`, data:ma1,
-          borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0,
+          borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0,
           fill:false, tension:.3, spanGaps:false, order:1 },
         { type:'line', label:`MA${cfg.ma[1]}`, data:ma2,
-          borderColor:'#60a5fa', borderWidth:1.5, pointRadius:0,
+          borderColor:'#60a5fa', borderWidth:2.5, pointRadius:0,
           fill:false, tension:.3, spanGaps:false, order:1 },
         { type:'line', label:`MA${cfg.ma[2]}`, data:ma3,
-          borderColor:'#a78bfa', borderWidth:1.5, pointRadius:0,
+          borderColor:'#a78bfa', borderWidth:2.5, pointRadius:0,
           fill:false, tension:.3, spanGaps:false, order:1 },
       ]
     },
@@ -3530,7 +3698,7 @@ function drawKDChart(data) {
 // ════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  const tabs = ['chart','fundamental','chip','recommendation','montecarlo','scenario','news','frontier','sim','tradeoverview'];
+  const tabs = ['chart','fundamental','chip','tradeoverview','finreport','frontier','sim','news','recommendation','montecarlo','scenario'];
   tabs.forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn   = document.getElementById(`tab-${t}`);
@@ -3538,25 +3706,23 @@ function switchTab(tab) {
     if (btn)   btn.classList.toggle('active', t === tab);
   });
   if (tab === 'news' && currentData) { loadNews(); }
-  // 切換到效益邊緣線時，自動將目前個股代碼加入輸入框（若尚未包含）
   if (tab === 'frontier' && currentData) {
     const efInput = document.getElementById('efTickers');
     const currentTicker = currentData.ticker;
     const existing = efInput.value.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
     if (!existing.includes(currentTicker.toUpperCase())) {
       efInput.value = (efInput.value.trim() + ' ' + currentTicker).trim();
-      // 短暫高亮提示使用者已加入
       efInput.style.borderColor = '#10b981';
       efInput.style.transition = 'border-color .3s';
       setTimeout(() => { efInput.style.borderColor = ''; }, 1500);
     }
   }
-  // 切換到 SIM 時自動執行（若已有股票資料）
   if (tab === 'sim' && currentData && !document.getElementById('simMetrics').classList.contains('hidden') === false) {
     runSIMAnalysis();
   }
   if (tab === 'sim' && currentData) runSIMAnalysis();
   if (tab === 'tradeoverview' && currentData) renderTradeOverview(currentData);
+  if (tab === 'finreport' && currentData) loadFinReport(currentData.ticker);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -3638,7 +3804,18 @@ async function runEfficientFrontier() {
       body: JSON.stringify({ tickers, n_sim: nSim, period }),
       signal: AbortSignal.timeout(180000)
     });
-    const d = await resp.json();
+
+    // 安全解析 JSON（避免伺服器超時時回傳空 body）
+    let d;
+    try {
+      d = await resp.json();
+    } catch(jsonErr) {
+      document.getElementById('efLoading').classList.add('hidden');
+      document.getElementById('efError').classList.remove('hidden');
+      document.getElementById('efErrorMsg').textContent =
+        `伺服器回應異常（可能計算超時）。建議：1) 減少股票數量（≤8支）2) 降低模擬次數（2,000）3) 稍後再試`;
+      return;
+    }
     document.getElementById('efLoading').classList.add('hidden');
 
     if (d.status !== 'success') {
@@ -3652,7 +3829,10 @@ async function runEfficientFrontier() {
   } catch(e) {
     document.getElementById('efLoading').classList.add('hidden');
     document.getElementById('efError').classList.remove('hidden');
-    document.getElementById('efErrorMsg').textContent = '錯誤：' + e.message;
+    const isTimeout = e.message && (e.message.includes('timeout') || e.message.includes('abort'));
+    document.getElementById('efErrorMsg').textContent = isTimeout
+      ? '計算超時，請減少股票數量（建議≤8支）或降低模擬次數後重試'
+      : '錯誤：' + e.message;
   }
 }
 
@@ -4846,7 +5026,7 @@ function renderHotTableHeader() {
 // ── 建立熱門股票清單（第1列固定為大盤指數，後面依優先順序補足至 pageSize 筆）────────────
 function buildHotList(pageSize) {
   // 第1列永遠是台灣加權指數（代碼 0000 → 後端用 ^TWII 抓）
-  const INDEX_ITEM = { code: '0000', name: '台灣加權指數' };
+  const INDEX_ITEM = { code: '0000', name: '大盤指數' };
   const priorityCodes = [
     '2330','2317','2454','2382','2308','2881','2882','2891','2886','2303',
     '2412','1301','1303','2408','2357','3008','2395','4938','1519','2603',
@@ -4904,6 +5084,60 @@ function buildHotList(pageSize) {
   return [INDEX_ITEM, ...list.slice(0, pageSize)];
 }
 
+
+// ── 熱門 ETF 清單（點擊直接開啟總覽面板，篩選 ETF）──────────────────
+const HOT_ETF_CODES = [
+  { code:'0050',   name:'元大台灣50'        },
+  { code:'0056',   name:'元大高股息'        },
+  { code:'006208', name:'富邦台50'          },
+  { code:'00878',  name:'國泰永續高股息'    },
+  { code:'00713',  name:'元大台灣高息低波'  },
+  { code:'00919',  name:'群益台灣精選高息'  },
+  { code:'00929',  name:'復華台灣科技優息'  },
+  { code:'00915',  name:'凱基優選高股息30'  },
+  { code:'00679B', name:'元大美債20年'      },
+  { code:'00757',  name:'統一MSCI台灣ESG'   },
+  { code:'00850',  name:'元大臺灣ESG永續'   },
+  { code:'00900',  name:'富邦特選高股息30'  },
+  { code:'00907',  name:'永豐優息存股'      },
+  { code:'00930',  name:'永豐台灣ESG'       },
+  { code:'00934',  name:'中信成長高股息'    },
+  { code:'00939',  name:'統一台灣高息動能'  },
+  { code:'00940',  name:'元大台灣價值高息'  },
+];
+
+async function openHotETFPanel() {
+  // 將熱門 ETF 清單注入 hotStockList，然後開啟總覽面板
+  hotPageSize  = HOT_ETF_CODES.length;
+  // 同步 select 顯示（找最接近的值）
+  const sel = document.getElementById('hotPageSize');
+  if (sel) {
+    // 找最接近的 option
+    let best = null, bestDiff = Infinity;
+    for (const opt of sel.options) {
+      const v = parseInt(opt.value);
+      const diff = Math.abs(v - hotPageSize);
+      if (diff < bestDiff) { bestDiff = diff; best = opt; }
+    }
+    if (best) sel.value = best.value;
+  }
+  // 直接用 ETF 清單（大盤指數 + ETF）
+  hotStockList = [{ code:'0000', name:'大盤指數' }, ...HOT_ETF_CODES];
+  // 清除非 ETF 快取（保留已有的 ETF 資料）
+  const keepCodes = new Set(hotStockList.map(s => s.code));
+  Object.keys(hotStockData).forEach(k => { if (!keepCodes.has(k)) delete hotStockData[k]; });
+  hotLoadAbort = false;
+  document.getElementById('hotStockModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  hotViewMode = 'trade';
+  ['trade','risedrop','ma','invest'].forEach(m => {
+    const btn = document.getElementById('hotViewBtn-' + m);
+    if (btn) btn.classList.toggle('active', m === 'trade');
+  });
+  renderHotTableHeader();
+  loadHotStocksSequential();
+}
+
 // ── 開啟熱門股票總覽面板 ─────────────────────────────────────────────
 async function openHotStockPanel() {
   document.getElementById('hotStockModal').classList.remove('hidden');
@@ -4914,9 +5148,28 @@ async function openHotStockPanel() {
     if (btn) btn.classList.toggle('active', m === 'trade');
   });
   renderHotTableHeader();
-  hotPageSize  = parseInt(document.getElementById('hotPageSize').value) || 5;
+  const newPageSize = parseInt(document.getElementById('hotPageSize').value) || 5;
+  const listChanged = newPageSize !== hotPageSize;
+  hotPageSize  = newPageSize;
   hotStockList = buildHotList(hotPageSize);
   hotLoadAbort = false;
+
+  // ── 若已有部分資料（上次載入的），先立即顯示，再補抓缺漏 ──
+  const alreadyLoaded = hotStockList.filter(s => hotStockData[s.code] !== undefined).length;
+  if (alreadyLoaded > 0 && !listChanged) {
+    renderHotTable();
+    updateHotSummary();
+    const missing = hotStockList.filter(s => hotStockData[s.code] === undefined);
+    if (missing.length === 0) {
+      updateHotProgress(hotStockList.length, hotStockList.length, '資料已是最新（共 ' + hotStockList.length + ' 支）');
+      document.getElementById('hotSummaryRow').classList.remove('hidden');
+      document.getElementById('hotProgress').classList.remove('hidden');
+      return;
+    }
+    // 只載入缺少的股票
+    await loadHotStocksSequential(missing.map(s => s.code));
+    return;
+  }
   await loadHotStocksSequential();
 }
 
@@ -4927,8 +5180,12 @@ function closeHotStockPanel() {
 }
 
 function changeHotPageSize() {
-  hotPageSize  = parseInt(document.getElementById('hotPageSize').value) || 50;
-  hotStockData = {};
+  const newSize = parseInt(document.getElementById('hotPageSize').value) || 50;
+  // 若頁數不變，不重置已有資料
+  if (newSize !== hotPageSize) {
+    hotStockData = {};
+  }
+  hotPageSize  = newSize;
   hotStockList = buildHotList(hotPageSize);
   hotLoadAbort = false;
   loadHotStocksSequential();
@@ -4955,17 +5212,28 @@ async function reloadSingleHotStock(code) {
 }
 
 // ── 逐批載入（每批 10 支並行，每秒更新進度） ────────────────────────
-async function loadHotStocksSequential() {
+// onlyCodes: 若傳入，只載入這些代碼（補抓模式）；否則載入全部 hotStockList
+async function loadHotStocksSequential(onlyCodes) {
   const tbody = document.getElementById('hotStockTableBody');
-  tbody.innerHTML = '';
+  if (!onlyCodes) tbody.innerHTML = '';  // 補抓模式不清空表格
   document.getElementById('hotSummaryRow').classList.add('hidden');
   document.getElementById('hotProgress').classList.remove('hidden');
-  const total = hotStockList.length;
-  let loaded = 0;
-  const BATCH = 10;   // 由 5 提升為 10，加快速度
-  updateHotProgress(0, total, '準備載入...');
 
-  // 每秒刷新進度條（即使批次尚未完成也即時顯示）
+  // 補抓模式：只處理缺少的，total 從已有筆數開始計
+  const targetList = onlyCodes
+    ? hotStockList.filter(s => onlyCodes.includes(s.code))
+    : hotStockList;
+  const total = hotStockList.length;
+  let loaded = hotStockList.filter(s => !onlyCodes && hotStockData[s.code] !== undefined).length;
+  const BATCH = 20;
+  updateHotProgress(loaded, total, onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...') : '準備載入...');
+
+  // 若補抓模式且有已載入資料，先顯示已有的
+  if (onlyCodes && loaded > 0) {
+    renderHotTable();
+  }
+
+  // 每秒刷新進度條
   let _progressInterval = setInterval(() => {
     updateHotProgress(loaded, total, '已載入 ' + loaded + ' / ' + total + ' 支...');
   }, 1000);
@@ -4976,7 +5244,6 @@ async function loadHotStocksSequential() {
         const r = await fetch('/api/stock_analysis/' + code);
         const d = await r.json();
         if (d.status === 'success') return d.data;
-        // 明確失敗（非網路錯誤），不重試
         if (r.status !== 500 && r.status !== 503) return null;
       } catch (e) { /* 網路異常，繼續重試 */ }
       if (attempt < maxRetry) await new Promise(r => setTimeout(r, 400 * attempt));
@@ -4984,16 +5251,17 @@ async function loadHotStocksSequential() {
     return null;
   };
 
-  for (let i = 0; i < total; i += BATCH) {
+  for (let i = 0; i < targetList.length; i += BATCH) {
     if (hotLoadAbort) break;
-    const batch = hotStockList.slice(i, i + BATCH);
+    const batch = targetList.slice(i, i + BATCH);
     await Promise.all(batch.map(async (s) => {
       if (hotStockData[s.code] !== undefined) { loaded++; return; }
       hotStockData[s.code] = await fetchWithRetry(s.code);
       loaded++;
+      // ── 取得任一支就立即更新表格 ──
+      renderHotTable();
     }));
-    renderHotTable();
-    if (i + BATCH < total) await new Promise(r => setTimeout(r, 80));  // 批次間短暫間隔
+    // 批次間不等待，最大化並行速度
   }
 
   clearInterval(_progressInterval);
@@ -5109,6 +5377,9 @@ function renderHotTable() {
 
   tbody.innerHTML = rows.map((row, idx) => {
     const name = STOCK_DICT_CSV[row.code] || STOCK_NAMES_ZH[row.code] || row.name || row.code;
+    // 大盤(code=0000)在第0位，其餘股票序號從1起
+    const isIndexRow = (row.code === '0000');
+    const rowNum = isIndexRow ? '' : idx;  // idx=0是大盤，股票從idx=1開始即序號1
 
     // base cols: #, code, name, close, chgpct, volume
     const baseLoading = '<td colspan="6" class="py-2 px-3 text-center">' +
@@ -5118,14 +5389,14 @@ function renderHotTable() {
 
     if (row.loading) {
       return '<tr class="text-slate-500">' +
-        '<td class="py-2 px-3">' + (idx+1) + '</td>' +
+        '<td class="py-2 px-3">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
         '<td class="py-2 px-3 font-bold">' + row.code + '</td>' +
         '<td class="py-2 px-3">' + name + '</td>' +
         baseLoading + '</tr>';
     }
     if (row.error) {
       return '<tr class="text-slate-500">' +
-        '<td class="py-2 px-3">' + (idx+1) + '</td>' +
+        '<td class="py-2 px-3">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
         '<td class="py-2 px-3 font-bold text-red-400">' + row.code + '</td>' +
         '<td class="py-2 px-3">' + name + '</td>' +
         baseError +
@@ -5141,7 +5412,7 @@ function renderHotTable() {
     const chgSign = row.chgpct > 0 ? '+' : '';
 
     // 大盤指數特殊樣式
-    const isIndex = (row.code === '0000');
+    const isIndex = isIndexRow;  // 已在上方定義
     const trClass = isIndex
       ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10'
       : 'border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/30';
@@ -5158,7 +5429,7 @@ function renderHotTable() {
       : '<span class="font-bold ' + chgCls + '">' + row.close.toFixed(2) + '</span>';
 
     const baseCols =
-      '<td class="py-2 px-3 text-slate-500">' + (isIndex ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : (idx)) + '</td>' +
+      '<td class="py-2 px-3 text-slate-500">' + (isIndex ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3">' + codeDisplay + '</td>' +
       '<td class="py-2 px-3">' + nameDisplay + '</td>' +
       '<td class="py-2 px-3 text-right mono">' + closeDisplay + '</td>' +
@@ -5271,7 +5542,7 @@ function renderHotTable() {
         ? signals.map(s => {
             const isBuy = row.reasons_buy.includes(s);
             const cls = isBuy ? 'signal-buy' : 'signal-sell';
-            return '<span class="signal-tag ' + cls + '">' + s.replace(/（[^）]*）/g,'').slice(0,14) + '</span>';
+            return '<span class="signal-tag ' + cls + '">' + s.replace(/（[^）]*）/g,'') + '</span>';
           }).join('')
         : '<span class="text-slate-600 text-xs">資料不足</span>';
 
@@ -5518,6 +5789,460 @@ function renderTradeOverview(data) {
         interaction: { mode:'index', intersect:false }
       }
     });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 財報分析（Financial Report）
+// ════════════════════════════════════════════════════════════════
+let _finData        = null;   // 後端回傳的原始財報資料
+let _finView        = 'annual';   // 'annual' | 'quarterly'
+let _finTableType   = 'income';   // 'income' | 'balance' | 'cashflow'
+let _finCharts      = {};     // Chart.js 實例
+let _finAILoading   = false;
+
+// ── 載入財報 ─────────────────────────────────────────────────────
+async function loadFinReport(ticker) {
+  if (!ticker || ticker === '0000') {
+    document.getElementById('finreport-error-msg').textContent = '指數無財報資料';
+    showFinState('error'); return;
+  }
+  if (_finData && _finData.ticker === ticker) {
+    renderFinReport(_finData); return;  // 快取命中
+  }
+  showFinState('loading');
+  try {
+    const r = await fetch(`/api/finreport/${ticker}`, { signal: AbortSignal.timeout(30000) });
+    const d = await r.json();
+    if (d.status !== 'success') {
+      document.getElementById('finreport-error-msg').textContent = d.message || '財報載入失敗';
+      showFinState('error'); return;
+    }
+    _finData = d.data;
+    renderFinReport(_finData);
+  } catch(e) {
+    document.getElementById('finreport-error-msg').textContent = '載入逾時，請稍後再試';
+    showFinState('error');
+  }
+}
+
+function showFinState(state) {
+  ['loading','error','content'].forEach(s => {
+    const el = document.getElementById(`finreport-${s}`);
+    if (el) el.classList.toggle('hidden', s !== state);
+  });
+}
+
+// ── 年報/季報切換 ────────────────────────────────────────────────
+function switchFinView(view) {
+  _finView = view;
+  ['annual','quarterly'].forEach(v => {
+    const btn = document.getElementById(`fin-btn-${v}`);
+    if (!btn) return;
+    if (v === view) {
+      btn.style.background='#1e40af'; btn.style.color='#fff';
+      btn.style.borderColor='#3b82f6';
+    } else {
+      btn.style.background=''; btn.style.color='#94a3b8';
+      btn.style.borderColor='#475569';
+    }
+  });
+  if (_finData) renderFinReport(_finData);
+}
+
+// ── 財務明細表切換 ───────────────────────────────────────────────
+function switchFinTable(type) {
+  _finTableType = type;
+  ['income','balance','cashflow'].forEach(t => {
+    const btn = document.getElementById(`fintab-${t}`);
+    if (!btn) return;
+    if (t === type) {
+      btn.className = 'fintab-btn px-2 py-1 rounded text-xs font-bold bg-blue-900 text-blue-300 border border-blue-700';
+    } else {
+      btn.className = 'fintab-btn px-2 py-1 rounded text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white';
+    }
+  });
+  if (_finData) renderFinDetailTable(_finData);
+}
+
+// ── 主渲染 ────────────────────────────────────────────────────────
+function renderFinReport(data) {
+  showFinState('content');
+
+  // 資料來源標籤
+  document.getElementById('finreport-source-badge').innerHTML =
+    `<i class="fa-solid fa-database mr-1"></i>資料來源：${data.source || '--'}`;
+
+  // KPI 摘要
+  renderFinKPI(data);
+  // 圖表
+  renderFinCharts(data);
+  // 明細表
+  renderFinDetailTable(data);
+  // 重置 AI 狀態
+  document.getElementById('fin-ai-placeholder').classList.remove('hidden');
+  document.getElementById('fin-ai-result').classList.add('hidden');
+  document.getElementById('fin-ai-loading').classList.add('hidden');
+}
+
+// ── KPI 卡片 ─────────────────────────────────────────────────────
+function renderFinKPI(data) {
+  const ratios = (_finView === 'annual'
+    ? data.ratios?.annual
+    : data.ratios?.quarterly) || [];
+  const latest = ratios[0] || {};   // 最新一期
+
+  const kpiEl = document.getElementById('fin-kpi-row');
+  const kpis = [
+    { label: '最新營收', val: latest.revenue_b != null ? `${latest.revenue_b.toFixed(0)} 億` : '--', color: '#60a5fa', icon: 'fa-solid fa-coins' },
+    { label: '毛利率',   val: latest.gpm != null ? `${latest.gpm.toFixed(1)}%` : '--',  color: latest.gpm>30?'#10b981':latest.gpm>15?'#f59e0b':'#ef4444', icon: 'fa-solid fa-percent' },
+    { label: '營益率',   val: latest.opm != null ? `${latest.opm.toFixed(1)}%` : '--',  color: latest.opm>10?'#10b981':latest.opm>0?'#f59e0b':'#ef4444',  icon: 'fa-solid fa-chart-pie' },
+    { label: 'ROE',     val: latest.roe  != null ? `${latest.roe.toFixed(1)}%`  : '--', color: latest.roe>15?'#10b981':latest.roe>8?'#f59e0b':'#ef4444',   icon: 'fa-solid fa-arrow-trend-up' },
+    { label: '負債比',   val: latest.debt_ratio != null ? `${latest.debt_ratio.toFixed(1)}%` : '--', color: latest.debt_ratio<50?'#10b981':latest.debt_ratio<70?'#f59e0b':'#ef4444', icon: 'fa-solid fa-scale-unbalanced' },
+    { label: '營業CF',  val: latest.op_cashflow_b != null ? `${latest.op_cashflow_b.toFixed(0)} 億` : '--', color: latest.op_cashflow_b>0?'#10b981':'#ef4444', icon: 'fa-solid fa-water' },
+  ];
+
+  kpiEl.innerHTML = kpis.map(k => `
+    <div class="ind-card text-center">
+      <div class="text-xs text-slate-500 mb-1 flex items-center justify-center gap-1">
+        <i class="${k.icon}" style="color:${k.color};font-size:10px;"></i>${k.label}
+      </div>
+      <div class="text-xl font-black mono" style="color:${k.color}">${k.val}</div>
+      <div class="text-xs text-slate-600 mt-1">${latest.period ? latest.period.slice(0,7) : ''}</div>
+    </div>`).join('');
+}
+
+// ── 圖表渲染 ─────────────────────────────────────────────────────
+function destroyFinChart(key) {
+  if (_finCharts[key]) { _finCharts[key].destroy(); _finCharts[key] = null; }
+}
+
+function renderFinCharts(data) {
+  const ratios = (_finView === 'annual'
+    ? data.ratios?.annual
+    : data.ratios?.quarterly) || [];
+
+  if (!ratios.length) return;
+
+  // 時間軸標籤（倒序 → 正序顯示）
+  const labels = [...ratios].reverse().map(r => {
+    const p = r.period || '';
+    return _finView === 'quarterly' ? p.slice(0,7) : p.slice(0,4);
+  });
+  const rev_r = [...ratios].reverse();
+
+  const gridColor  = '#1e293b';
+  const tickColor  = '#64748b';
+  const baseOpts   = {
+    responsive: true, maintainAspectRatio: false,
+    animation: { duration: 300 },
+    plugins: {
+      legend: { labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 14 } },
+      tooltip: { mode: 'index', intersect: false }
+    },
+    scales: {
+      x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } },
+      y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor } }
+    },
+    interaction: { mode: 'index', intersect: false }
+  };
+
+  // 1. 營收 & 毛利率（雙軸）
+  destroyFinChart('revenue');
+  const revCtx = document.getElementById('fin-chart-revenue');
+  if (revCtx) {
+    _finCharts['revenue'] = new Chart(revCtx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: '營收(億)', type: 'bar',
+            data: rev_r.map(r => r.revenue_b),
+            backgroundColor: 'rgba(59,130,246,0.5)', borderColor: '#3b82f6',
+            borderWidth: 1, yAxisID: 'y',
+          },
+          {
+            label: '毛利率(%)', type: 'line',
+            data: rev_r.map(r => r.gpm),
+            borderColor: '#10b981', borderWidth: 2, pointRadius: 3,
+            fill: false, tension: 0.3, yAxisID: 'y2',
+          },
+        ]
+      },
+      options: { ...baseOpts,
+        scales: {
+          x: baseOpts.scales.x,
+          y:  { ...baseOpts.scales.y, position: 'left',  title: { display: true, text: '億元', color: '#64748b', font:{size:9} } },
+          y2: { ...baseOpts.scales.y, position: 'right', title: { display: true, text: '%', color: '#64748b', font:{size:9} },
+                grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+  }
+
+  // 2. 獲利能力
+  destroyFinChart('profit');
+  const profCtx = document.getElementById('fin-chart-profit');
+  if (profCtx) {
+    _finCharts['profit'] = new Chart(profCtx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'ROE(%)',  data: rev_r.map(r => r.roe),  borderColor: '#f59e0b', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.3 },
+          { label: '淨利率(%)', data: rev_r.map(r => r.npm), borderColor: '#60a5fa', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.3 },
+          { label: '營益率(%)', data: rev_r.map(r => r.opm), borderColor: '#a78bfa', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.3 },
+        ]
+      },
+      options: { ...baseOpts,
+        scales: {
+          x: baseOpts.scales.x,
+          y: { ...baseOpts.scales.y, title: { display: true, text: '%', color: '#64748b', font:{size:9} } }
+        }
+      }
+    });
+  }
+
+  // 3. 現金流量
+  destroyFinChart('cashflow');
+  const cfCtx = document.getElementById('fin-chart-cashflow');
+  if (cfCtx) {
+    _finCharts['cashflow'] = new Chart(cfCtx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: '營業CF(億)', data: rev_r.map(r => r.op_cashflow_b),
+            backgroundColor: rev_r.map(r => (r.op_cashflow_b||0) >= 0 ? 'rgba(16,185,129,0.55)' : 'rgba(239,68,68,0.55)'),
+            borderColor: rev_r.map(r => (r.op_cashflow_b||0) >= 0 ? '#10b981' : '#ef4444'),
+            borderWidth: 1,
+          },
+          {
+            label: '自由CF(億)', type: 'line',
+            data: rev_r.map(r => r.fcf_b),
+            borderColor: '#f97316', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.3,
+          },
+        ]
+      },
+      options: baseOpts
+    });
+  }
+
+  // 4. 財務結構
+  destroyFinChart('structure');
+  const stCtx = document.getElementById('fin-chart-structure');
+  if (stCtx) {
+    _finCharts['structure'] = new Chart(stCtx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: '負債比(%)', data: rev_r.map(r => r.debt_ratio), borderColor: '#ef4444', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.3, yAxisID: 'y' },
+          { label: '流動比(倍)', data: rev_r.map(r => r.cur_ratio), borderColor: '#34d399', borderWidth: 2, pointRadius: 3, fill: false, tension: 0.3, yAxisID: 'y2' },
+        ]
+      },
+      options: { ...baseOpts,
+        scales: {
+          x: baseOpts.scales.x,
+          y:  { ...baseOpts.scales.y, position: 'left',  title: { display: true, text: '%', color:'#64748b', font:{size:9} } },
+          y2: { ...baseOpts.scales.y, position: 'right', title: { display: true, text: '倍', color:'#64748b', font:{size:9} },
+                grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+  }
+}
+
+// ── 財務明細表 ────────────────────────────────────────────────────
+const FIN_TABLE_DEFS = {
+  income: {
+    title: '綜合損益表',
+    rows: [
+      { key: 'total_revenue',      label: '營業收入（億）', fmt: 'b' },
+      { key: 'gross_profit',       label: '毛利（億）',     fmt: 'b' },
+      { key: 'gpm',                label: '毛利率（%）',    fmt: 'pct', src: 'ratios' },
+      { key: 'operating_income',   label: '營業利益（億）', fmt: 'b' },
+      { key: 'opm',                label: '營益率（%）',    fmt: 'pct', src: 'ratios' },
+      { key: 'net_income',         label: '稅後淨利（億）', fmt: 'b' },
+      { key: 'npm',                label: '淨利率（%）',    fmt: 'pct', src: 'ratios' },
+    ]
+  },
+  balance: {
+    title: '資產負債表',
+    rows: [
+      { key: 'total_assets',                          label: '總資產（億）',   fmt: 'b' },
+      { key: 'assets_b',                              label: '總資產（億）',   fmt: 'b', src:'ratios' },
+      { key: 'current_assets',                        label: '流動資產（億）', fmt: 'b' },
+      { key: 'current_liabilities',                   label: '流動負債（億）', fmt: 'b' },
+      { key: 'total_liabilities_net_minority_interest',label: '總負債（億）',  fmt: 'b' },
+      { key: 'debt_ratio',                            label: '負債比（%）',    fmt: 'pct', src:'ratios' },
+      { key: 'cur_ratio',                             label: '流動比（倍）',   fmt: 'x',   src:'ratios' },
+      { key: 'equity_b',                              label: '股東權益（億）', fmt: 'b',   src:'ratios' },
+    ]
+  },
+  cashflow: {
+    title: '現金流量表',
+    rows: [
+      { key: 'operating_cash_flow',  label: '營業現金流（億）', fmt: 'b' },
+      { key: 'op_cashflow_b',        label: '營業現金流（億）', fmt: 'b', src:'ratios' },
+      { key: 'capital_expenditure',  label: '資本支出（億）',   fmt: 'b' },
+      { key: 'fcf_b',                label: '自由現金流（億）', fmt: 'b', src:'ratios' },
+      { key: 'roe',                  label: 'ROE（%）',        fmt: 'pct', src:'ratios' },
+      { key: 'roa',                  label: 'ROA（%）',        fmt: 'pct', src:'ratios' },
+    ]
+  }
+};
+
+function renderFinDetailTable(data) {
+  const def   = FIN_TABLE_DEFS[_finTableType];
+  const vData = _finView === 'annual' ? data.annual : data.quarterly;
+  const rData = _finView === 'annual' ? data.ratios?.annual : data.ratios?.quarterly;
+  const rawRows = vData?.[_finTableType] || [];
+  const ratioRows = rData || [];
+
+  // 期間標頭
+  const periods = rawRows.map(r => r.period?.slice(0,7) || '');
+  const thead = document.getElementById('fin-detail-thead');
+  const tbody = document.getElementById('fin-detail-tbody');
+
+  thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">
+    <th class="py-2 px-3 text-left text-xs font-bold">項目</th>
+    ${periods.map(p=>`<th class="py-2 px-3 text-right text-xs font-bold">${p}</th>`).join('')}
+  </tr>`;
+
+  function getVal(row, key, ratioRow) {
+    if (row && row[key] !== undefined) return row[key];
+    if (ratioRow && ratioRow[key] !== undefined) return ratioRow[key];
+    return null;
+  }
+
+  function fmtVal(v, fmt) {
+    if (v == null) return '<span class="text-slate-700">--</span>';
+    const n = parseFloat(v);
+    if (isNaN(n)) return '<span class="text-slate-700">--</span>';
+    let txt, cls='text-slate-200';
+    if (fmt === 'b')   { txt = n.toFixed(1); cls = n>=0?'text-slate-200':'text-red-400'; }
+    else if (fmt === 'pct') { txt = n.toFixed(1)+'%'; cls = n>=0?'text-emerald-400':'text-red-400'; }
+    else if (fmt === 'x')  { txt = n.toFixed(2)+'x'; cls = n>=1.5?'text-emerald-400':n>=1?'text-amber-400':'text-red-400'; }
+    else                   { txt = n.toFixed(2); }
+    return `<span class="${cls} font-mono">${txt}</span>`;
+  }
+
+  // 過濾掉重複 key（source=ratios 優先選 ratios 裡的，否則 raw 裡找）
+  const seen = new Set();
+  const filteredRows = def.rows.filter(r => {
+    if (seen.has(r.label)) return false;
+    seen.add(r.label);
+    return true;
+  });
+
+  tbody.innerHTML = filteredRows.map(r => {
+    const cells = rawRows.map((raw, i) => {
+      const ratio = ratioRows[i] || {};
+      const val = r.src === 'ratios' ? getVal(null, r.key, ratio) : (getVal(raw, r.key, ratio));
+      return `<td class="py-2 px-3 text-right">${fmtVal(val, r.fmt)}</td>`;
+    }).join('');
+    return `<tr class="border-b border-slate-800/50 hover:bg-slate-800/30">
+      <td class="py-2 px-3 text-slate-400 text-xs font-semibold">${r.label}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+}
+
+// ── AI 財務分析報告 ──────────────────────────────────────────────
+async function generateFinAI() {
+  if (_finAILoading || !_finData || !currentData) return;
+  _finAILoading = true;
+
+  const btn = document.getElementById('fin-ai-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>分析中...'; }
+  document.getElementById('fin-ai-placeholder').classList.add('hidden');
+  document.getElementById('fin-ai-result').classList.add('hidden');
+  document.getElementById('fin-ai-loading').classList.remove('hidden');
+
+  try {
+    const ratios = _finData.ratios?.annual || [];
+    const ticker = currentData.ticker;
+    const stockName = getStockNameZh(ticker) || ticker;
+    const source = _finData.source || 'yfinance';
+
+    // 整理財報摘要給 Claude
+    const summaryLines = ratios.map(r => {
+      const yr = (r.period||'').slice(0,4);
+      return [
+        `${yr}年：`,
+        r.revenue_b     != null ? `營收 ${r.revenue_b.toFixed(0)} 億` : '',
+        r.gpm           != null ? `毛利率 ${r.gpm.toFixed(1)}%` : '',
+        r.opm           != null ? `營益率 ${r.opm.toFixed(1)}%` : '',
+        r.npm           != null ? `淨利率 ${r.npm.toFixed(1)}%` : '',
+        r.roe           != null ? `ROE ${r.roe.toFixed(1)}%` : '',
+        r.roa           != null ? `ROA ${r.roa.toFixed(1)}%` : '',
+        r.debt_ratio    != null ? `負債比 ${r.debt_ratio.toFixed(1)}%` : '',
+        r.cur_ratio     != null ? `流動比 ${r.cur_ratio.toFixed(2)}x` : '',
+        r.op_cashflow_b != null ? `營業CF ${r.op_cashflow_b.toFixed(0)} 億` : '',
+        r.fcf_b         != null ? `自由CF ${r.fcf_b.toFixed(0)} 億` : '',
+      ].filter(Boolean).join('、');
+    }).join('\n');
+
+    const latest = currentData.latest || {};
+    const fund   = currentData.fundamentals || {};
+
+    const prompt = `你是一位專業的台灣股票財務分析師，請根據以下財務資料，為【${stockName}（${ticker}）】撰寫一份完整的「財務健診報告」。
+
+## 財務資料摘要（資料來源：${source}）
+${summaryLines || '（資料不足）'}
+
+## 目前股價資訊
+- 股價：${latest.close || '--'} 元（${latest.date || '--'}）
+- 本益比：${fund.pe_ratio != null ? fund.pe_ratio + 'x' : 'N/A'}
+- 股價淨值比：${fund.pb_ratio != null ? fund.pb_ratio + 'x' : 'N/A'}
+- 近12月殖利率：${fund.div_yield != null ? fund.div_yield + '%' : 'N/A'}
+
+## 請依以下架構撰寫（每節 3-5 句，繁體中文，不要用 Markdown，用純文字段落）：
+
+1. 【營收成長分析】近年營收趨勢、成長率、是否穩定擴張
+2. 【獲利能力分析】毛利率、營益率、淨利率的變化與水準
+3. 【ROE 與股東報酬】ROE 趨勢、與產業均值的比較、盈利品質
+4. 【財務結構評估】負債比率、流動比率、財務穩健性
+5. 【現金流量品質】營業現金流、自由現金流、資本支出效率
+6. 【綜合評價】整體財務健康狀況、主要優勢與潛在風險
+7. 【投資參考】基於財務數據的中長期投資觀點（非買賣建議）
+
+注意：若某年度資料不完整（顯示 N/A 或空白），請跳過該年份，不要推測。最後加上「以上分析僅供參考，不構成投資建議」。`;
+
+    // 呼叫 Claude API（透過後端代理）
+    const response = await fetch(CLAUDE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!response.ok) throw new Error(`API 回應 ${response.status}`);
+    const aiData = await response.json();
+    const aiText = aiData.content?.find(b => b.type === 'text')?.text || '（無法取得分析結果）';
+
+    document.getElementById('fin-ai-text').textContent = aiText;
+    // 更新來源說明
+    const srcNote = document.querySelector('#fin-ai-result p');
+    if (srcNote) srcNote.textContent = `以上為 AI 自動生成分析，僅供參考，不構成投資建議。財報數據來源：${source}`;
+    document.getElementById('fin-ai-loading').classList.add('hidden');
+    document.getElementById('fin-ai-result').classList.remove('hidden');
+
+  } catch(e) {
+    document.getElementById('fin-ai-loading').classList.add('hidden');
+    document.getElementById('fin-ai-placeholder').innerHTML =
+      `<i class="fa-solid fa-circle-exclamation text-red-400 text-2xl mb-2 block"></i>
+       <span class="text-red-400">AI 分析失敗：${e.message}</span>`;
+    document.getElementById('fin-ai-placeholder').classList.remove('hidden');
+  } finally {
+    _finAILoading = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>重新產生'; }
   }
 }
 
