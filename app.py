@@ -2613,6 +2613,119 @@ def _fetch_mops_finreport(ticker: str, headers: dict) -> dict:
     return result if result['annual']['income'] else None
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# 自選股 API（後端持久化儲存）
+# 儲存位置：DATA_DIR/watchlist.json（＋ GitHub Cache 備份）
+# 格式：{ "codes": ["2330", "00878", ...] }   依加入順序排列
+# ═══════════════════════════════════════════════════════════════
+
+WL_FILE = os.path.join(DATA_DIR, 'watchlist.json')
+
+def _wl_read() -> list:
+    """讀取自選股代碼清單（含 GitHub Cache 備援）"""
+    # 1. 先從本地磁碟讀
+    if os.path.exists(WL_FILE):
+        try:
+            with open(WL_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('codes', [])
+        except Exception:
+            pass
+    # 2. 本地沒有，從 GitHub Cache 還原
+    try:
+        from github_cache import GitHubCache
+        gh = GitHubCache()
+        if gh.enabled:
+            content, _ = gh._get('watchlist/watchlist.json')
+            if content:
+                data = json.loads(content)
+                codes = data.get('codes', [])
+                # 回寫本地
+                _wl_write(codes)
+                print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
+                return codes
+    except Exception as e:
+        print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
+    return []
+
+def _wl_write(codes: list):
+    """寫入自選股代碼清單（本地 + GitHub Cache 備份）"""
+    # 去重保持順序
+    seen = set()
+    unique = [c for c in codes if not (c in seen or seen.add(c))]
+    payload = {'codes': unique, 'updated_at': pd.Timestamp.now().isoformat()}
+    # 寫本地
+    try:
+        with open(WL_FILE, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"  [自選股] 本地寫入失敗: {e}")
+    # 同步 GitHub Cache（非同步不阻塞，失敗 silent）
+    try:
+        from github_cache import GitHubCache
+        gh = GitHubCache()
+        if gh.enabled:
+            gh._put('watchlist/watchlist.json',
+                    json.dumps(payload, ensure_ascii=False),
+                    f'watchlist: {len(unique)} stocks')
+    except Exception as e:
+        print(f"  [自選股] GitHub 備份失敗（非致命）: {e}")
+
+
+@app.route('/api/watchlist', methods=['GET'])
+def watchlist_get():
+    """取得自選股清單"""
+    return jsonify({'status': 'success', 'codes': _wl_read()})
+
+
+@app.route('/api/watchlist', methods=['POST'])
+def watchlist_save():
+    """儲存完整自選股清單（前端每次操作後整批送出）"""
+    try:
+        data = request.get_json(force=True)
+        codes = data.get('codes', [])
+        if not isinstance(codes, list):
+            return jsonify({'status': 'error', 'message': 'codes 必須為陣列'}), 400
+        # 驗證代碼格式
+        codes = [str(c).strip().upper() for c in codes if str(c).strip()]
+        _wl_write(codes)
+        return jsonify({'status': 'success', 'codes': codes, 'count': len(codes)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/watchlist/add', methods=['POST'])
+def watchlist_add():
+    """加入單支股票到自選股"""
+    try:
+        data = request.get_json(force=True)
+        code = str(data.get('code', '')).strip().upper()
+        if not code:
+            return jsonify({'status': 'error', 'message': '請提供股票代碼'}), 400
+        codes = _wl_read()
+        if code in codes:
+            return jsonify({'status': 'already_exists', 'codes': codes, 'count': len(codes)})
+        codes.append(code)
+        _wl_write(codes)
+        return jsonify({'status': 'success', 'codes': codes, 'count': len(codes)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/watchlist/remove', methods=['POST'])
+def watchlist_remove():
+    """從自選股移除單支股票"""
+    try:
+        data = request.get_json(force=True)
+        code = str(data.get('code', '')).strip().upper()
+        codes = [c for c in _wl_read() if c != code]
+        _wl_write(codes)
+        return jsonify({'status': 'success', 'codes': codes, 'count': len(codes)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("=" * 60)
