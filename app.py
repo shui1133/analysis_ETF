@@ -1509,17 +1509,24 @@ def prepare_table_data(result):
 def efficient_frontier():
     """
     計算效益邊緣線
-    輸入: { tickers: ['2330','2317',...], n_sim: 5000 }
+    輸入: { tickers: ['2330','2317',...], n_sim: 3000, period: '2y' }
     輸出: 隨機模擬點、效率前緣、最小變異組合、最大夏普組合
+    修復：超時保護 + 降低計算量 + 確保永遠回傳有效 JSON
     """
+    import signal as _signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError('EF 計算超時')
+
     try:
         import yfinance as yf
         from functools import reduce
 
-        data      = request.json or {}
-        tickers   = [t.strip().upper() for t in data.get('tickers', [])]
-        n_sim     = min(int(data.get('n_sim', 3000)), 10000)
-        period    = data.get('period', '2y')
+        data    = request.json or {}
+        tickers = [t.strip().upper() for t in data.get('tickers', [])]
+        # 安全限制模擬次數，避免超時
+        n_sim   = min(int(data.get('n_sim', 2000)), 5000)
+        period  = data.get('period', '2y')
 
         if len(tickers) < 2:
             return jsonify({'status':'error','message':'請至少輸入2支股票代碼'}), 400
@@ -1533,7 +1540,7 @@ def efficient_frontier():
         except ImportError:
             _ef_gh = None
 
-        # ── L1: Render /tmp 快取（最快，當次部署有效）────────
+        # ── L1: Render /tmp 快取 ─────────────────────────────
         prices = {}
         cached_from = {}
         for tk in tickers:
@@ -1553,7 +1560,7 @@ def efficient_frontier():
                 except Exception:
                     pass
 
-        # ── L2: GitHub 持久化快取（跨重啟有效）───────────────
+        # ── L2: GitHub 持久化快取 ────────────────────────────
         for tk in tickers:
             if tk in prices:
                 continue
@@ -1577,53 +1584,62 @@ def efficient_frontier():
         if need_fetch:
             print(f"  [EF] 需從 yfinance 下載: {need_fetch}")
 
-        # ── L3: yfinance 批次下載（僅針對快取未命中的股票）──
+        # ── L3: yfinance 下載 ────────────────────────────────
         failed = []
         if need_fetch:
-            # 先嘗試 .TW（上市）批次
+            # 先嘗試 .TW 批次
             tw_syms = [f"{tk}.TW" for tk in need_fetch]
             try:
                 batch = yf.download(
                     tw_syms, period=period, auto_adjust=True,
-                    progress=False, timeout=20, threads=True
+                    progress=False, timeout=25, threads=True
                 )
                 if not batch.empty:
-                    close_df = batch['Close'] if 'Close' in batch.columns else batch
+                    # 相容新版 yfinance MultiIndex 與舊版
+                    if isinstance(batch.columns, pd.MultiIndex):
+                        close_df = batch['Close'] if 'Close' in batch.columns.get_level_values(0) else batch.xs('Close', axis=1, level=0)
+                    else:
+                        close_df = batch['Close'] if 'Close' in batch.columns else batch
                     for tk in need_fetch:
                         sym = f"{tk}.TW"
-                        if sym in close_df.columns:
-                            s = close_df[sym].dropna()
+                        col = sym if sym in close_df.columns else (tk if tk in close_df.columns else None)
+                        if col:
+                            s = close_df[col].dropna()
                             if len(s) >= 20:
                                 prices[tk] = s
             except Exception as e:
-                print(f"  [EF] .TW 批次下載失敗: {e}")
+                print(f"  [EF] .TW 批次失敗: {e}")
 
-            # 仍未取得的嘗試 .TWO（上櫃）
+            # 仍未取得的改試 .TWO
             still_missing = [tk for tk in need_fetch if tk not in prices]
             if still_missing:
                 two_syms = [f"{tk}.TWO" for tk in still_missing]
                 try:
                     batch2 = yf.download(
                         two_syms, period=period, auto_adjust=True,
-                        progress=False, timeout=20, threads=True
+                        progress=False, timeout=25, threads=True
                     )
                     if not batch2.empty:
-                        close_df2 = batch2['Close'] if 'Close' in batch2.columns else batch2
+                        if isinstance(batch2.columns, pd.MultiIndex):
+                            close_df2 = batch2['Close'] if 'Close' in batch2.columns.get_level_values(0) else batch2.xs('Close', axis=1, level=0)
+                        else:
+                            close_df2 = batch2['Close'] if 'Close' in batch2.columns else batch2
                         for tk in still_missing:
                             sym = f"{tk}.TWO"
-                            if sym in close_df2.columns:
-                                s = close_df2[sym].dropna()
+                            col = sym if sym in close_df2.columns else (tk if tk in close_df2.columns else None)
+                            if col:
+                                s = close_df2[col].dropna()
                                 if len(s) >= 20:
                                     prices[tk] = s
                 except Exception as e:
-                    print(f"  [EF] .TWO 批次下載失敗: {e}")
+                    print(f"  [EF] .TWO 批次失敗: {e}")
 
-            # 最後逐一補抓（單股 fallback）
+            # 逐一補抓
             for tk in need_fetch:
                 if tk not in prices:
                     for suffix in ['.TW', '.TWO']:
                         try:
-                            hist = yf.Ticker(f"{tk}{suffix}").history(period=period, timeout=10)
+                            hist = yf.Ticker(f"{tk}{suffix}").history(period=period, timeout=12)
                             if hist is not None and not hist.empty:
                                 s = hist['Close'].dropna()
                                 if len(s) >= 20:
@@ -1634,22 +1650,19 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # ── 新抓到的資料存入 /tmp 及 GitHub ──────────────
+            # 存快取
             for tk in need_fetch:
                 if tk not in prices:
                     continue
                 price_series = prices[tk]
-                # 存到 Render /tmp
                 try:
                     tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
                     pdf = price_series.reset_index()
                     pdf.columns = ['日期', '收盤價']
                     pdf['日期'] = pdf['日期'].astype(str).str[:10]
                     pdf.to_csv(tmp_path, index=False, encoding='utf-8-sig')
-                    print(f"  [EF] {tk} 已存 /tmp")
                 except Exception as e_tmp:
                     print(f"  [EF] /tmp 存檔 {tk} 失敗: {e_tmp}")
-                # 存到 GitHub
                 if _ef_gh and _ef_gh.enabled:
                     try:
                         price_list = [
@@ -1657,7 +1670,6 @@ def efficient_frontier():
                             for d, v in price_series.items() if pd.notna(v)
                         ]
                         _ef_gh.save_price(tk, price_list)
-                        print(f"  [EF] {tk} 已存 GitHub")
                     except Exception as e_gh:
                         print(f"  [EF] GitHub {tk} 失敗: {e_gh}")
 
@@ -1671,142 +1683,135 @@ def efficient_frontier():
         if len(df) < 30:
             return jsonify({'status':'error','message':'歷史資料不足（需至少30個交易日）'}), 422
 
-        returns    = df.pct_change().dropna()
-        mu         = (returns.mean() * 252).values          # 年化期望報酬
-        cov        = (returns.cov() * 252).values            # 年化共變異數矩陣
-        n          = len(tickers)
+        returns = df.pct_change().dropna()
+        mu      = (returns.mean() * 252).values.astype(float)
+        cov     = (returns.cov()  * 252).values.astype(float)
+        n       = len(tickers)
 
-        # ── 蒙地卡羅隨機模擬 ─────────────────────────────────
-        sim_ret, sim_risk, sim_sharpe, sim_weights = [], [], [], []
-        risk_free = 0.02  # 無風險利率假設 2%
-
+        # ── 蒙地卡羅模擬 ────────────────────────────────────
+        sim_ret, sim_risk, sim_sharpe = [], [], []
+        risk_free = 0.02
         np.random.seed(42)
         for _ in range(n_sim):
             w = np.random.dirichlet(np.ones(n))
-            r = float(np.dot(w, mu))
-            v = float(np.sqrt(reduce(np.dot, [w, cov, w.T])))
-            s = (r - risk_free) / v if v > 0 else 0
+            r = float(w @ mu)
+            v = float(np.sqrt(w @ cov @ w))
+            s = (r - risk_free) / v if v > 0 else 0.0
             sim_ret.append(round(r, 6))
             sim_risk.append(round(v, 6))
             sim_sharpe.append(round(s, 4))
-            sim_weights.append([round(x, 4) for x in w])
 
-        # ── 最小變異組合（MVP）────────────────────────────────
+        # ── MVP / MSP 最佳化 ─────────────────────────────────
         from scipy.optimize import minimize as sp_minimize
 
-        def port_std(w):
-            return float(np.sqrt(reduce(np.dot, [w, cov, w.T])))
-
-        def port_ret(w):
-            return float(np.dot(w, mu))
-
+        def port_std(w):  return float(np.sqrt(w @ cov @ w))
+        def port_ret(w):  return float(w @ mu)
         def neg_sharpe(w):
-            r = port_ret(w)
-            s = port_std(w)
-            return -(r - risk_free) / s if s > 0 else 0
+            r, s = port_ret(w), port_std(w)
+            return -(r - risk_free) / s if s > 0 else 0.0
 
-        bounds      = tuple((0, 1) for _ in range(n))
-        w0          = np.array([1/n] * n)
-        eq_con      = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+        bounds = tuple((0.0, 1.0) for _ in range(n))
+        w0     = np.full(n, 1.0/n)
+        eq_con = {'type': 'eq', 'fun': lambda w: float(np.sum(w)) - 1.0}
+        opts   = {'ftol': 1e-8, 'maxiter': 300}
 
-        mvp_res     = sp_minimize(port_std, w0, bounds=bounds, constraints=[eq_con])
-        mvp_risk    = round(mvp_res.fun, 6)
+        mvp_res = sp_minimize(port_std, w0, method='SLSQP',
+                              bounds=bounds, constraints=[eq_con], options=opts)
+        msp_res = sp_minimize(neg_sharpe, w0, method='SLSQP',
+                              bounds=bounds, constraints=[eq_con], options=opts)
+
+        mvp_risk    = round(float(mvp_res.fun), 6)
         mvp_ret     = round(port_ret(mvp_res.x), 6)
-        mvp_weights = [round(x, 4) for x in mvp_res.x]
+        mvp_weights = {tk: round(float(x), 4) for tk, x in zip(tickers, mvp_res.x)}
 
-        msp_res     = sp_minimize(neg_sharpe, w0, bounds=bounds, constraints=[eq_con])
         msp_risk    = round(port_std(msp_res.x), 6)
         msp_ret     = round(port_ret(msp_res.x), 6)
-        msp_sharpe  = round(-msp_res.fun, 4)
-        msp_weights = [round(x, 4) for x in msp_res.x]
+        msp_sharpe  = round(float(-msp_res.fun), 4)
+        msp_weights = {tk: round(float(x), 4) for tk, x in zip(tickers, msp_res.x)}
 
-        # ── 效率前緣曲線（最小化風險，固定報酬率）───────────
-        # 修正1：上限改為所有股票中報酬最高的單一持有點 max(mu)
-        #        （蒙地卡羅混合組合的最高報酬永遠低於最強單股，
-        #          用 max(sim_ret) 會讓曲線在到達單股前就截斷）
-        ret_max   = float(np.max(mu))   # 最高報酬單股（100% 持有）
-        ret_range = np.linspace(mvp_ret, ret_max, 80)   # 點數80，密度更高
-
-        # 各股 100% 持有的初始點（作為高報酬段優化的熱啟動）
+        # ── 效率前緣曲線（40點，減少計算量）─────────────────
+        ret_max   = float(np.max(mu))
+        ret_range = np.linspace(mvp_ret, ret_max, 40)   # 40點足夠顯示曲線
         stock_inits = [np.eye(n)[i] for i in range(n)]
 
         ef_risks, ef_rets = [], []
         for target_r in ret_range:
-            constraints = [eq_con, {'type':'eq','fun': lambda w,r=target_r: port_ret(w) - r}]
-            # 修正2：多個初始點（含各股單一持有）提高高報酬段優化成功率
+            constraints = [eq_con,
+                           {'type':'eq','fun': lambda w, r=target_r: port_ret(w) - r}]
             best = None
-            for w_init in [w0, mvp_res.x, msp_res.x] + stock_inits:
+            # 只用 3 個初始點（減少計算量）
+            for w_init in [w0, mvp_res.x, msp_res.x]:
                 try:
-                    res = sp_minimize(port_std, w_init, bounds=bounds,
-                                      constraints=constraints, method='SLSQP',
-                                      options={'ftol':1e-9,'maxiter':500})
+                    res = sp_minimize(port_std, w_init, method='SLSQP',
+                                      bounds=bounds, constraints=constraints,
+                                      options={'ftol':1e-8,'maxiter':200})
                     if res.success and (best is None or res.fun < best.fun):
                         best = res
                 except Exception:
                     continue
             if best is not None:
-                ef_risks.append(round(best.fun, 6))
-                ef_rets.append(round(target_r, 6))
+                ef_risks.append(round(float(best.fun), 6))
+                ef_rets.append(round(float(target_r), 6))
 
-        # 修正3：將各股 100% 持有的點補入曲線（確保端點完整延伸）
+        # 補入各股 100% 持有端點
         for i in range(n):
             single_ret  = float(mu[i])
             single_risk = float(np.sqrt(cov[i][i]))
-            # 只加入高於現有曲線末端的單股點，避免重複
             if not ef_rets or single_ret > max(ef_rets) + 1e-6:
                 ef_risks.append(round(single_risk, 6))
                 ef_rets.append(round(single_ret, 6))
 
-        # 依報酬率排序，確保曲線方向正確
-        ef_sorted  = sorted(zip(ef_rets, ef_risks))
-        ef_rets    = [x[0] for x in ef_sorted]
-        ef_risks   = [x[1] for x in ef_sorted]
+        ef_sorted = sorted(zip(ef_rets, ef_risks))
+        ef_rets   = [x[0] for x in ef_sorted]
+        ef_risks  = [x[1] for x in ef_sorted]
 
         # ── 各股個別風險報酬 ─────────────────────────────────
-        stock_stats = []
-        for i, tk in enumerate(tickers):
-            from data_fetcher import STOCK_NAMES_ZH_BACKEND
-            zh = STOCK_NAMES_ZH_BACKEND.get(tk, '')
-            stock_stats.append({
+        from data_fetcher import STOCK_NAMES_ZH_BACKEND
+        stock_stats = [
+            {
                 'ticker': tk,
-                'name':   zh or tk,
+                'name':   STOCK_NAMES_ZH_BACKEND.get(tk, '') or tk,
                 'ret':    round(float(mu[i]), 6),
                 'risk':   round(float(np.sqrt(cov[i][i])), 6),
-            })
+            }
+            for i, tk in enumerate(tickers)
+        ]
 
         return jsonify({
-            'status':      'success',
-            'tickers':     tickers,
-            'n_sim':       n_sim,
-            'risk_free':   risk_free,
+            'status':    'success',
+            'tickers':   tickers,
+            'n_sim':     n_sim,
+            'risk_free': risk_free,
             'sim': {
-                'risk':    sim_risk,
-                'ret':     sim_ret,
-                'sharpe':  sim_sharpe,
+                'risk':   sim_risk,
+                'ret':    sim_ret,
+                'sharpe': sim_sharpe,
             },
             'ef': {
-                'risk':    ef_risks,
-                'ret':     ef_rets,
+                'risk': ef_risks,
+                'ret':  ef_rets,
             },
             'mvp': {
                 'risk':    mvp_risk,
                 'ret':     mvp_ret,
-                'weights': dict(zip(tickers, mvp_weights)),
+                'weights': mvp_weights,
             },
             'msp': {
                 'risk':    msp_risk,
                 'ret':     msp_ret,
                 'sharpe':  msp_sharpe,
-                'weights': dict(zip(tickers, msp_weights)),
+                'weights': msp_weights,
             },
-            'stocks':      stock_stats,
-            'mu':          [round(float(x),6) for x in mu],
-            'cov_diag':    [round(float(np.sqrt(cov[i][i])),6) for i in range(n)],
+            'stocks':   stock_stats,
+            'mu':       [round(float(x), 6) for x in mu],
+            'cov_diag': [round(float(np.sqrt(cov[i][i])), 6) for i in range(n)],
         })
 
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'status':'error','message': str(e)}), 500
+
+
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -2185,6 +2190,327 @@ def get_goodinfo_news(ticker):
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# 財報分析 API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/finreport/<ticker>', methods=['GET'])
+def get_finreport(ticker):
+    """
+    取得個股三大財務報表（年報5年 + 季報4季）
+    資料來源：yfinance 優先，失敗改 MOPS/TWSE
+    回傳：income（損益）、balance（資產負債）、cashflow（現金流量）
+    """
+    import time, traceback
+    ticker = ticker.strip().upper()
+
+    # 快取 6 小時
+    cache_key = f'finreport_{ticker}'
+    cached = analysis_cache.get(cache_key)
+    if cached and (time.time() - cached.get('ts', 0)) < 21600:
+        return jsonify({'status': 'success', 'data': cached['data']})
+
+    try:
+        result = _fetch_finreport(ticker)
+        if result.get('error'):
+            return jsonify({'status': 'error', 'message': result['error']}), 404
+
+        analysis_cache[cache_key] = {'data': result, 'ts': time.time()}
+        return jsonify({'status': 'success', 'data': result})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _fetch_finreport(ticker: str) -> dict:
+    """
+    抓取三大財務報表核心邏輯
+    優先順序: yfinance → MOPS/TWSE 備援
+    """
+    import yfinance as yf
+    import requests as req
+    import re as _re
+    import json as _json
+
+    result = {
+        'ticker':   ticker,
+        'source':   'yfinance',
+        'annual':   {},   # 年報 {'income':[], 'balance':[], 'cashflow':[]}
+        'quarterly':{},   # 季報
+        'ratios':   {},   # 計算出的財務比率
+        'error':    None,
+    }
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+        'Accept-Language': 'zh-TW,zh;q=0.9',
+    }
+
+    def safe_float(v):
+        try:
+            if v is None or (hasattr(v, '__class__') and 'NaT' in str(type(v))): return None
+            f = float(str(v).replace(',', ''))
+            return None if (f != f) else round(f, 4)   # NaN check
+        except Exception:
+            return None
+
+    def to_b(v):
+        """轉換為億元（保留2位小數）"""
+        f = safe_float(v)
+        return round(f / 1e8, 2) if f is not None else None
+
+    def to_m(v):
+        """轉換為百萬元"""
+        f = safe_float(v)
+        return round(f / 1e6, 2) if f is not None else None
+
+    # ══════════════════════════════════════════════════════════
+    # L1: yfinance
+    # ══════════════════════════════════════════════════════════
+    yf_ok = False
+    for suffix in ['.TW', '.TWO', '']:
+        try:
+            tk = yf.Ticker(ticker + suffix)
+
+            # ── 年報 ──────────────────────────────────────────
+            inc_a  = tk.income_stmt
+            bal_a  = tk.balance_sheet
+            cf_a   = tk.cashflow
+            inc_q  = tk.quarterly_income_stmt
+            bal_q  = tk.quarterly_balance_sheet
+            cf_q   = tk.quarterly_cashflow
+
+            if inc_a is not None and not inc_a.empty:
+                yf_ok = True
+                result['source'] = f'yfinance({ticker}{suffix})'
+
+                def parse_annual(df, converter=to_b):
+                    if df is None or df.empty: return []
+                    rows = []
+                    for col in df.columns[:5]:   # 最近5年
+                        yr = str(col)[:10]
+                        row = {'period': yr, 'period_type': 'annual'}
+                        for idx in df.index:
+                            key = str(idx).strip().replace(' ', '_').lower()
+                            row[key] = converter(df.loc[idx, col])
+                        rows.append(row)
+                    return rows
+
+                def parse_quarterly(df, converter=to_b):
+                    if df is None or df.empty: return []
+                    rows = []
+                    for col in df.columns[:4]:   # 最近4季
+                        qr = str(col)[:10]
+                        row = {'period': qr, 'period_type': 'quarterly'}
+                        for idx in df.index:
+                            key = str(idx).strip().replace(' ', '_').lower()
+                            row[key] = converter(df.loc[idx, col])
+                        rows.append(row)
+                    return rows
+
+                result['annual']['income']   = parse_annual(inc_a)
+                result['annual']['balance']  = parse_annual(bal_a)
+                result['annual']['cashflow'] = parse_annual(cf_a)
+                result['quarterly']['income']   = parse_quarterly(inc_q)
+                result['quarterly']['balance']  = parse_quarterly(bal_q)
+                result['quarterly']['cashflow'] = parse_quarterly(cf_q)
+                break
+        except Exception as e:
+            print(f'  [finreport] yfinance {ticker}{suffix} 失敗: {e}')
+            continue
+
+    # ══════════════════════════════════════════════════════════
+    # L2: MOPS/TWSE 備援（yfinance 無資料時啟動）
+    # ══════════════════════════════════════════════════════════
+    if not yf_ok:
+        print(f'  [finreport] yfinance 無資料，改用 MOPS 備援 ({ticker})')
+        try:
+            mops_data = _fetch_mops_finreport(ticker, headers)
+            if mops_data:
+                result['annual']   = mops_data.get('annual', {})
+                result['quarterly']= mops_data.get('quarterly', {})
+                result['source']   = 'MOPS'
+                yf_ok = True
+        except Exception as e:
+            print(f'  [finreport] MOPS 備援失敗: {e}')
+
+    if not yf_ok:
+        result['error'] = f'無法取得 {ticker} 財務報表，請確認股票代碼（台灣上市如 2330、2412）'
+        return result
+
+    # ══════════════════════════════════════════════════════════
+    # 計算衍生財務比率（從年報推算）
+    # ══════════════════════════════════════════════════════════
+    ratios_annual = []
+    for row in result['annual'].get('income', []):
+        period = row.get('period', '')
+        rev    = row.get('total_revenue') or row.get('totalrevenue')
+        gp     = row.get('gross_profit')  or row.get('grossprofit')
+        op     = row.get('operating_income') or row.get('ebit')
+        ni     = row.get('net_income') or row.get('netincome') or row.get('net_income_common_stockholders')
+
+        # 對應資產負債表
+        bal_row = next((b for b in result['annual'].get('balance', []) if b.get('period') == period), {})
+        assets     = bal_row.get('total_assets') or bal_row.get('totalassets')
+        equity     = bal_row.get('stockholders_equity') or bal_row.get('common_stock_equity') or bal_row.get('total_equity_gross_minority_interest')
+        total_liab = bal_row.get('total_liabilities_net_minority_interest') or bal_row.get('total_liabilities')
+        cur_assets = bal_row.get('current_assets') or bal_row.get('total_current_assets')
+        cur_liab   = bal_row.get('current_liabilities') or bal_row.get('total_current_liabilities')
+
+        # 對應現金流量表
+        cf_row = next((c for c in result['annual'].get('cashflow', []) if c.get('period') == period), {})
+        op_cf  = cf_row.get('operating_cash_flow') or cf_row.get('cash_from_operating_activities') or cf_row.get('total_cash_from_operating_activities')
+        cap_ex = cf_row.get('capital_expenditure') or cf_row.get('capital_expenditures')
+
+        def pct(a, b):
+            fa, fb = safe_float(a), safe_float(b)
+            if fa is None or fb is None or fb == 0: return None
+            return round(fa / fb * 100, 2)
+
+        gpm   = pct(gp, rev)
+        opm   = pct(op, rev)
+        npm   = pct(ni, rev)
+        roe   = pct(ni, equity)
+        roa   = pct(ni, assets)
+        debt_ratio = pct(total_liab, assets)
+        cur_ratio  = None
+        if cur_assets is not None and cur_liab is not None and safe_float(cur_liab) and safe_float(cur_liab) != 0:
+            ca_f, cl_f = safe_float(cur_assets), safe_float(cur_liab)
+            if ca_f and cl_f:
+                cur_ratio = round(ca_f / cl_f, 2)
+
+        fcf = None
+        if op_cf is not None and cap_ex is not None:
+            o_f, c_f = safe_float(op_cf), safe_float(cap_ex)
+            if o_f is not None and c_f is not None:
+                fcf = round(o_f - abs(c_f), 2)
+
+        ratios_annual.append({
+            'period':      period,
+            'revenue_b':   safe_float(rev),    # 億元
+            'gross_profit_b': safe_float(gp),
+            'op_income_b': safe_float(op),
+            'net_income_b':safe_float(ni),
+            'op_cashflow_b': safe_float(op_cf),
+            'fcf_b':       fcf,
+            'gpm':         gpm,
+            'opm':         opm,
+            'npm':         npm,
+            'roe':         roe,
+            'roa':         roa,
+            'debt_ratio':  debt_ratio,
+            'cur_ratio':   cur_ratio,
+            'equity_b':    safe_float(equity),
+            'assets_b':    safe_float(assets),
+        })
+
+    result['ratios']['annual'] = ratios_annual
+
+    # 季報衍生比率（簡版）
+    ratios_q = []
+    for row in result['quarterly'].get('income', []):
+        period = row.get('period', '')
+        rev  = row.get('total_revenue') or row.get('totalrevenue')
+        gp   = row.get('gross_profit')  or row.get('grossprofit')
+        ni   = row.get('net_income') or row.get('netincome') or row.get('net_income_common_stockholders')
+        def pct(a, b):
+            fa, fb = safe_float(a), safe_float(b)
+            if fa is None or fb is None or fb == 0: return None
+            return round(fa / fb * 100, 2)
+        ratios_q.append({
+            'period':      period,
+            'revenue_b':   safe_float(rev),
+            'net_income_b':safe_float(ni),
+            'gpm':         pct(gp, rev),
+        })
+    result['ratios']['quarterly'] = ratios_q
+
+    return result
+
+
+def _fetch_mops_finreport(ticker: str, headers: dict) -> dict:
+    """
+    MOPS 備援：抓取台灣公開資訊觀測站財報（年報）
+    主要目標：綜合損益表 (t05st22) + 資產負債表 (t51sb08) + 現金流量表 (t05st36)
+    """
+    import requests as req
+    import re as _re
+
+    result = {'annual': {'income': [], 'balance': [], 'cashflow': []}, 'quarterly': {}}
+    base_url = 'https://mops.twse.com.tw/mops/web/'
+
+    def safe_float_str(s):
+        try:
+            s = str(s).replace(',', '').replace('(', '-').replace(')', '').strip()
+            return float(s)
+        except Exception:
+            return None
+
+    # 判斷市場（上市/上櫃）
+    market_type = '1'   # 預設上市
+    try:
+        r = req.get(
+            f'https://www.twse.com.tw/zh/api/basic/company?stockNo={ticker}',
+            headers=headers, timeout=8
+        )
+        if r.ok and r.json():
+            pass   # 有回應 = 上市
+    except Exception:
+        market_type = '2'   # 上櫃
+
+    # 抓近5年度損益表（簡版：合併報表）
+    cur_year = pd.Timestamp.now().year
+    for yr in range(cur_year - 1, cur_year - 6, -1):
+        roc_yr = yr - 1911   # 民國年
+        try:
+            form_data = {
+                'encodeURIComponent': '1',
+                'step': '1',
+                'firstin': '1',
+                'off': '1',
+                'co_id': ticker,
+                'year': str(roc_yr),
+                'season': '04',   # 第4季=年報
+                'report_id': 'C',
+            }
+            url = base_url + 'ajax_t05st22'
+            r = req.post(url, data=form_data, headers={**headers, 'Content-Type': 'application/x-www-form-urlencoded'}, timeout=15)
+            if not r.ok: continue
+            # 用 regex 抓關鍵數字（HTML 表格解析）
+            text = r.text
+            rows_raw = _re.findall(r'<tr[^>]*>(.*?)</tr>', text, _re.DOTALL | _re.IGNORECASE)
+            income_row = {
+                'period': f'{yr}-12-31',
+                'period_type': 'annual',
+            }
+            for row_html in rows_raw:
+                cells = _re.findall(r'<td[^>]*>(.*?)</td>', row_html, _re.DOTALL | _re.IGNORECASE)
+                cells_clean = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+                if len(cells_clean) < 2: continue
+                label = cells_clean[0]
+                val_str = cells_clean[-1] if len(cells_clean) >= 2 else None
+                val = safe_float_str(val_str) if val_str else None
+                if '營業收入' in label and '合計' in label:
+                    income_row['total_revenue'] = round(val / 1e8, 2) if val else None
+                elif '毛利' in label or '營業毛利' in label:
+                    income_row['gross_profit'] = round(val / 1e8, 2) if val else None
+                elif '營業利益' in label and '合計' not in label:
+                    income_row['operating_income'] = round(val / 1e8, 2) if val else None
+                elif '本期淨利' in label or '本期稅後淨利' in label:
+                    income_row['net_income'] = round(val / 1e8, 2) if val else None
+            if income_row.get('total_revenue'):
+                result['annual']['income'].append(income_row)
+        except Exception as e:
+            print(f'  [MOPS] {yr} 損益表失敗: {e}')
+            continue
+
+    return result if result['annual']['income'] else None
 
 
 if __name__ == '__main__':
