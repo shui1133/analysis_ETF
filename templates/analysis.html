@@ -5723,7 +5723,6 @@ function renderHotTable() {
   tbody.innerHTML = rows.map((row, idx) => _buildHotRowHtml(row, idx+1, false)).join('');
   updateHotSummary();
 }
-}
 
 function updateHotSummary() {
   let loaded=0, up=0, down=0, flat=0, bull=0, bear=0, topGain=-Infinity;
