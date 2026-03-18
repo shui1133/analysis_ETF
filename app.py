@@ -14,7 +14,6 @@ import platform
 import numpy as np
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
-from github_cache import CacheManager, start_scheduler
 import io
 import requests as _req
 
@@ -47,7 +46,6 @@ app.json = NumpyJSONProvider(app)
 DATA_DIR = get_data_dir()
 print(f"資料目錄: {DATA_DIR}")
 os.makedirs(DATA_DIR, exist_ok=True)
-cache_mgr = CacheManager(data_dir=DATA_DIR)
 
 # 全域快取
 cached_results    = {}
@@ -394,42 +392,6 @@ def get_stock_analysis(ticker):
         indicators = raw.get('indicators', {})
         info       = raw.get('info', {})
         divs       = raw.get('dividend_data', [])
-
-        # ── ★ 同步寫入 GitHub 快取（三層持久化）────────────────
-        # data_fetcher 內部的舊版 _gh_cache 僅在 enabled 時寫入；
-        # 這裡再透過新版 CacheManager 確保本機 meta 時間戳記正確更新，
-        # 並補充 gh_save 以防 data_fetcher 那層因 token 未設定而略過。
-        if raw.get('source') != 'simulated' and not raw.get('is_simulated', False):
-            try:
-                from github_cache import local_save_price, gh_save_price, \
-                                        local_save_dividend, gh_save_dividend, \
-                                        local_save_fundamental, gh_save_fundamental
-                # 股價（統一為英文欄位存檔）
-                price_list = [
-                    {'date': str(r['date'])[:10],
-                     'open':   round(float(r.get('open',   r.get('close', 0))), 2),
-                     'high':   round(float(r.get('high',   r.get('close', 0))), 2),
-                     'low':    round(float(r.get('low',    r.get('close', 0))), 2),
-                     'close':  round(float(r['close']), 2),
-                     'volume': int(r.get('volume', 0))}
-                    for r in ohlcv if r.get('close')
-                ]
-                if price_list:
-                    local_save_price(DATA_DIR, ticker, price_list)
-                    gh_save_price(ticker, price_list)
-
-                # 配息
-                if divs:
-                    local_save_dividend(DATA_DIR, ticker, divs)
-                    gh_save_dividend(ticker, divs)
-
-                # 基本面
-                if info:
-                    local_save_fundamental(DATA_DIR, ticker, info)
-                    gh_save_fundamental(ticker, info)
-
-            except Exception as e_cache:
-                print(f'  [stock_analysis] 快取寫入失敗（非致命）: {e_cache}')
 
         # ── 若 yfinance 缺少基本面資料，從 TWSE/MOPS 補充 ──────
         needs_supplement = (
@@ -1637,29 +1599,50 @@ def efficient_frontier():
         if len(tickers) > 15:
             return jsonify({'status':'error','message':'最多支援15支股票'}), 400
 
-        # ── 初始化：移除舊版獨立 GitHubCache 實例，改用全域 cache_mgr ──
-        # （cache_mgr 已在模組頂層建立，三層快取邏輯統一由它管理）
+        # ── 初始化 GitHub 快取 ───────────────────────────────
+        try:
+            from github_cache import GitHubCache
+            _ef_gh = GitHubCache()
+        except ImportError:
+            _ef_gh = None
 
-        # ── L1 + L2：透過 cache_mgr 統一取得（本機 → GitHub）────
+        # ── L1: Render /tmp 快取 ─────────────────────────────
         prices = {}
         cached_from = {}
         for tk in tickers:
-            rows = cache_mgr.get_price(tk, fetcher=None)  # fetcher=None：不觸發 L3 網路
-            if rows and len(rows) >= 20:
+            tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
+            if os.path.exists(tmp_path):
                 try:
-                    # 相容 ohlcv 格式（含 open/high/low）與簡化格式（僅 date/close）
-                    date_col  = next((c for c in rows[0] if c in ['日期', 'date', 'Date']), None)
-                    close_col = next((c for c in rows[0] if c in ['收盤價', 'close', 'Close']), None)
-                    if date_col and close_col:
+                    tmp_df    = pd.read_csv(tmp_path, encoding='utf-8-sig')
+                    date_col  = next((c for c in tmp_df.columns if c in ['日期','date','Date']), None)
+                    close_col = next((c for c in tmp_df.columns if c in ['收盤價','close','Close']), None)
+                    if date_col and close_col and len(tmp_df) >= 20:
                         s = pd.Series(
-                            [float(r[close_col]) for r in rows],
-                            index=pd.to_datetime([r[date_col] for r in rows])
+                            tmp_df[close_col].values,
+                            index=pd.to_datetime(tmp_df[date_col])
+                        ).dropna()
+                        prices[tk] = s
+                        cached_from[tk] = '/tmp'
+                except Exception:
+                    pass
+
+        # ── L2: GitHub 持久化快取 ────────────────────────────
+        for tk in tickers:
+            if tk in prices:
+                continue
+            if _ef_gh and _ef_gh.enabled and _ef_gh.is_fresh(tk, 'price'):
+                rows = _ef_gh.load_price(tk)
+                if rows and len(rows) >= 20:
+                    try:
+                        s = pd.Series(
+                            [float(r.get('close', r.get('收盤價', 0))) for r in rows],
+                            index=pd.to_datetime([r.get('date', r.get('日期','')) for r in rows])
                         ).dropna()
                         if len(s) >= 20:
                             prices[tk] = s
-                            cached_from[tk] = 'local/github'
-                except Exception:
-                    pass
+                            cached_from[tk] = 'GitHub'
+                    except Exception:
+                        pass
 
         need_fetch = [tk for tk in tickers if tk not in prices]
         if cached_from:
@@ -1733,22 +1716,28 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # 存快取（使用 cache_mgr 統一格式：英文欄位 date/close）
+            # 存快取
             for tk in need_fetch:
                 if tk not in prices:
                     continue
                 price_series = prices[tk]
                 try:
-                    price_list = [
-                        {'date': str(d)[:10], 'close': round(float(v), 2)}
-                        for d, v in price_series.items() if pd.notna(v)
-                    ]
-                    # local_save_price 同時更新 meta 時間戳記，確保 is_local_fresh() 正確判斷
-                    from github_cache import local_save_price, gh_save_price
-                    local_save_price(DATA_DIR, tk, price_list)
-                    gh_save_price(tk, price_list)
-                except Exception as e_save:
-                    print(f"  [EF] 存快取 {tk} 失敗: {e_save}")
+                    tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
+                    pdf = price_series.reset_index()
+                    pdf.columns = ['日期', '收盤價']
+                    pdf['日期'] = pdf['日期'].astype(str).str[:10]
+                    pdf.to_csv(tmp_path, index=False, encoding='utf-8-sig')
+                except Exception as e_tmp:
+                    print(f"  [EF] /tmp 存檔 {tk} 失敗: {e_tmp}")
+                if _ef_gh and _ef_gh.enabled:
+                    try:
+                        price_list = [
+                            {'date': str(d)[:10], 'close': round(float(v), 2)}
+                            for d, v in price_series.items() if pd.notna(v)
+                        ]
+                        _ef_gh.save_price(tk, price_list)
+                    except Exception as e_gh:
+                        print(f"  [EF] GitHub {tk} 失敗: {e_gh}")
 
         if failed:
             return jsonify({'status':'error',
@@ -2306,6 +2295,189 @@ def claude_proxy():
         return jsonify({'error': str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════
+# AI 財務健診報告 API（每日 13:30 起算限制一次；GitHub 持久化）
+# GET  /api/ai_report/<ticker>  → 讀取快取（若有效則直接回傳）
+# POST /api/ai_report/<ticker>  → 呼叫 Claude API 並儲存至 GitHub
+# ═══════════════════════════════════════════════════════════════
+
+def _ai_report_period_key():
+    """
+    回傳當前「報告期間」識別字串。
+    規則：台灣時間每日 13:30 起算為新的一天。
+      - 13:30 前 → 屬於「前一日 13:30 起的那個期間」
+      - 13:30 後 → 屬於「今日 13:30 起的期間」
+    格式：YYYYMMDD（期間開始日期）
+    """
+    import pytz
+    tz_tw = pytz.timezone('Asia/Taipei')
+    now_tw = datetime.now(tz_tw)
+    cutoff = now_tw.replace(hour=13, minute=30, second=0, microsecond=0)
+    if now_tw < cutoff:
+        # 還沒到今天 13:30，屬於昨天的那個期間
+        period_date = (now_tw - timedelta(days=1)).date()
+    else:
+        period_date = now_tw.date()
+    return period_date.strftime('%Y%m%d')
+
+
+def _ai_report_gh_path(ticker: str, period_key: str) -> str:
+    return f"ai_reports/{ticker}/{period_key}.json"
+
+
+def _ai_report_read_gh(ticker: str, period_key: str):
+    """從 GitHub 讀取 AI 報告，回傳 dict 或 None"""
+    try:
+        from github_cache import GitHubCache
+        gh = GitHubCache()
+        if not gh.enabled:
+            return None
+        path = _ai_report_gh_path(ticker, period_key)
+        content, _ = gh._get(path)
+        if content:
+            return json.loads(content)
+    except Exception as e:
+        print(f"  [AI Report] GitHub 讀取失敗: {e}")
+    return None
+
+
+def _ai_report_write_gh(ticker: str, period_key: str, data: dict):
+    """將 AI 報告寫入 GitHub"""
+    try:
+        from github_cache import GitHubCache
+        gh = GitHubCache()
+        if not gh.enabled:
+            return False
+        path = _ai_report_gh_path(ticker, period_key)
+        gh._put(path, json.dumps(data, ensure_ascii=False, indent=2),
+                f"ai_report: {ticker} {period_key}")
+        print(f"  [AI Report] ✅ {ticker} 報告已寫入 GitHub（期間 {period_key}）")
+        return True
+    except Exception as e:
+        print(f"  [AI Report] ❌ GitHub 寫入失敗: {e}")
+        return False
+
+
+@app.route('/api/ai_report/<ticker>', methods=['GET'])
+def ai_report_get(ticker):
+    """
+    讀取 AI 財務健診報告（優先 GitHub 快取）
+    回傳：
+      { status:'cached', data:{...}, period_key:'YYYYMMDD', used:true/false }
+      { status:'not_found', period_key:'YYYYMMDD' }
+    """
+    ticker = ticker.strip().upper()
+    period_key = _ai_report_period_key()
+
+    # 1. 先查 GitHub
+    cached = _ai_report_read_gh(ticker, period_key)
+    if cached:
+        return jsonify({
+            'status': 'cached',
+            'period_key': period_key,
+            'used': True,
+            'data': cached
+        })
+
+    # 2. 無快取 → 告知前端尚未查詢
+    return jsonify({
+        'status': 'not_found',
+        'period_key': period_key,
+        'used': False
+    })
+
+
+@app.route('/api/ai_report/<ticker>', methods=['POST'])
+def ai_report_post(ticker):
+    """
+    呼叫 Claude API 產生 AI 財務健診報告，並存入 GitHub。
+    每個期間（13:30 起算）只能成功產生一次；已有快取時直接回傳快取，不重複扣費。
+    """
+    import requests as req
+
+    ticker = ticker.strip().upper()
+    period_key = _ai_report_period_key()
+
+    # ── 1. 若 GitHub 已有快取，直接回傳，不重新呼叫 ──────────────
+    cached = _ai_report_read_gh(ticker, period_key)
+    if cached:
+        return jsonify({
+            'status': 'cached',
+            'period_key': period_key,
+            'used': True,
+            'data': cached
+        })
+
+    # ── 2. 取得 Claude API Key ────────────────────────────────────
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        return jsonify({'status': 'error', 'message': '伺服器未設定 ANTHROPIC_API_KEY'}), 500
+
+    # ── 3. 從前端接收 prompt ──────────────────────────────────────
+    try:
+        body = request.get_json(force=True)
+        messages = body.get('messages', [])
+        model    = body.get('model', 'claude-sonnet-4-20250514')
+        max_tokens = int(body.get('max_tokens', 1500))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'請求格式錯誤: {e}'}), 400
+
+    if not messages:
+        return jsonify({'status': 'error', 'message': 'messages 不可為空'}), 400
+
+    # ── 4. 呼叫 Claude API ───────────────────────────────────────
+    try:
+        resp = req.post(
+            'https://api.anthropic.com/v1/messages',
+            headers={
+                'Content-Type':      'application/json',
+                'x-api-key':         api_key,
+                'anthropic-version': '2023-06-01',
+            },
+            json={
+                'model':      model,
+                'max_tokens': max_tokens,
+                'messages':   messages,
+            },
+            timeout=90
+        )
+        if not resp.ok:
+            return jsonify({'status': 'error',
+                            'message': f'Claude API 回應 {resp.status_code}',
+                            'detail':  resp.text[:300]}), resp.status_code
+
+        ai_json = resp.json()
+        ai_text = ''
+        for block in ai_json.get('content', []):
+            if block.get('type') == 'text':
+                ai_text += block['text']
+
+        if not ai_text.strip():
+            return jsonify({'status': 'error', 'message': '取得的 AI 分析內容為空'}), 500
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    # ── 5. 儲存至 GitHub ─────────────────────────────────────────
+    import pytz
+    tz_tw   = pytz.timezone('Asia/Taipei')
+    now_tw  = datetime.now(tz_tw)
+    report_data = {
+        'ticker':      ticker,
+        'period_key':  period_key,
+        'generated_at': now_tw.isoformat(),
+        'report_text': ai_text,
+    }
+    _ai_report_write_gh(ticker, period_key, report_data)
+
+    return jsonify({
+        'status':     'generated',
+        'period_key': period_key,
+        'used':       True,
+        'data':       report_data
+    })
+
 
 @app.route('/api/finreport/<ticker>', methods=['GET'])
 def get_finreport(ticker):
@@ -2624,104 +2796,6 @@ def _fetch_mops_finreport(ticker: str, headers: dict) -> dict:
     return result if result['annual']['income'] else None
 
 
-# ═══════════════════════════════════════════════════════════════
-# GitHub 快取診斷 API
-# GET /api/cache_status
-# ═══════════════════════════════════════════════════════════════
-
-@app.route('/api/cache_status', methods=['GET'])
-def cache_status():
-    """
-    診斷 GitHub 快取設定狀態。
-    瀏覽器開啟此 URL 即可確認 token 是否正確設定。
-    回傳：
-      - token_set      : GH_CACHE_TOKEN 是否已設定
-      - token_valid    : token 是否通過 GitHub API 驗證
-      - repo           : 目標 Repo
-      - branch         : 目標分支
-      - write_enabled  : 寫入功能是否啟用
-      - local_data_dir : 本機快取目錄
-      - local_files    : 本機快取檔案數量
-      - github_data_readable : GitHub data/ 目錄是否可讀
-    """
-    import requests as _req
-    from github_cache import GITHUB_REPO, GITHUB_BRANCH, _gh_writer, _gh_raw_get
-
-    token = os.environ.get('GH_CACHE_TOKEN', '')
-    token_set = bool(token)
-    token_valid = False
-    repo_accessible = False
-    github_data_readable = False
-    http_status = None
-
-    if token_set:
-        try:
-            r = _req.get(
-                f'https://api.github.com/repos/{GITHUB_REPO}',
-                headers={
-                    'Authorization': f'token {token}',
-                    'Accept': 'application/vnd.github.v3+json'
-                },
-                timeout=8
-            )
-            http_status = r.status_code
-            token_valid = (r.status_code == 200)
-            repo_accessible = token_valid
-        except Exception as e:
-            http_status = f'例外: {e}'
-
-    # 測試 GitHub data/ 目錄是否可讀（不需 token，public repo）
-    test_content = _gh_raw_get('data/readme.txt')
-    github_data_readable = test_content is not None
-
-    # 本機快取檔案統計
-    local_files = []
-    try:
-        for f in os.listdir(DATA_DIR):
-            if f.endswith(('_price.csv', '_dividend.csv', '_fundamental.json', '_meta.json')):
-                local_files.append(f)
-    except Exception:
-        pass
-
-    result = {
-        'status': 'ok',
-        'github': {
-            'repo':                  GITHUB_REPO,
-            'branch':                GITHUB_BRANCH,
-            'token_set':             token_set,
-            'token_valid':           token_valid,
-            'write_enabled':         _gh_writer.enabled,
-            'github_api_http':       http_status,
-            'github_data_readable':  github_data_readable,
-        },
-        'local': {
-            'data_dir':   DATA_DIR,
-            'file_count': len(local_files),
-            'files':      sorted(local_files)[:30],  # 最多顯示30筆
-        },
-        'diagnosis': [],
-    }
-
-    # 自動診斷建議
-    diag = result['diagnosis']
-    if not token_set:
-        diag.append('❌ GH_CACHE_TOKEN 未設定 → GitHub 寫入完全停用')
-        diag.append('   修復：Render Dashboard → Environment → 新增 GH_CACHE_TOKEN=ghp_xxx')
-    elif not token_valid:
-        diag.append(f'❌ Token 驗證失敗（HTTP {http_status}）→ 請重新產生 GitHub PAT')
-        diag.append('   GitHub → Settings → Developer settings → Personal access tokens')
-        diag.append('   需要權限：Contents: Read and write（Fine-grained）或 repo（Classic）')
-    else:
-        diag.append('✅ GitHub Token 正常，寫入功能已啟用')
-
-    if not github_data_readable:
-        diag.append('⚠️  GitHub data/ 目錄不可讀（可能 data/readme.txt 不存在，屬正常首次狀態）')
-
-    if len(local_files) == 0:
-        diag.append('⚠️  本機快取目前為空（Render 重啟後正常，需等待首次 API 呼叫觸發寫入）')
-
-    return jsonify(result)
-
 
 # ═══════════════════════════════════════════════════════════════
 # 自選股 API（後端持久化儲存）
@@ -2743,16 +2817,17 @@ def _wl_read() -> list:
             pass
     # 2. 本地沒有，從 GitHub Cache 還原
     try:
-        from github_cache import _gh_raw_get
-        import json as _json
-        content = _gh_raw_get('watchlist/watchlist.json')
-        if content:
-            data = _json.loads(content)
-            codes = data.get('codes', [])
-            # 回寫本地
-            _wl_write(codes)
-            print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
-            return codes
+        from github_cache import GitHubCache
+        gh = GitHubCache()
+        if gh.enabled:
+            content, _ = gh._get('watchlist/watchlist.json')
+            if content:
+                data = json.loads(content)
+                codes = data.get('codes', [])
+                # 回寫本地
+                _wl_write(codes)
+                print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
+                return codes
     except Exception as e:
         print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
     return []
@@ -2771,13 +2846,12 @@ def _wl_write(codes: list):
         print(f"  [自選股] 本地寫入失敗: {e}")
     # 同步 GitHub Cache（非同步不阻塞，失敗 silent）
     try:
-        from github_cache import _gh_writer
-        if _gh_writer.enabled:
-            _gh_writer.put(
-                'watchlist/watchlist.json',
-                json.dumps(payload, ensure_ascii=False),
-                f'watchlist: {len(unique)} stocks'
-            )
+        from github_cache import GitHubCache
+        gh = GitHubCache()
+        if gh.enabled:
+            gh._put('watchlist/watchlist.json',
+                    json.dumps(payload, ensure_ascii=False),
+                    f'watchlist: {len(unique)} stocks')
     except Exception as e:
         print(f"  [自選股] GitHub 備份失敗（非致命）: {e}")
 
@@ -2834,40 +2908,6 @@ def watchlist_remove():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-
-# ── 排程器：無論 gunicorn 或直接執行都要啟動 ──────────────────
-_scheduler_started = False  # 防止同一 process 重複啟動
-
-def _init_scheduler():
-    """在非 reloader 子程序中啟動一次排程器"""
-    global _scheduler_started
-    if _scheduler_started:
-        return
-    # Werkzeug reloader 會 fork 出子程序，WERKZEUG_RUN_MAIN=true 代表真正的子程序
-    # gunicorn 沒有此環境變數，直接啟動
-    is_reloader_main = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
-    is_gunicorn      = 'gunicorn' in os.environ.get('SERVER_SOFTWARE', '') \
-                       or os.environ.get('RENDER') is not None
-    if is_gunicorn or is_reloader_main or not os.environ.get('WERKZEUG_RUN_MAIN'):
-        # 修正：POPULAR_STOCKS 是 list[dict]，需提取 'code' 欄位
-        if POPULAR_STOCKS and isinstance(POPULAR_STOCKS[0], dict):
-            pop_codes = [s['code'] for s in POPULAR_STOCKS]
-        else:
-            pop_codes = list(POPULAR_STOCKS)
-        start_scheduler(
-            cache=cache_mgr,
-            fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
-            watchlist_reader=_wl_read,
-            popular_stocks=pop_codes,
-        )
-        _scheduler_started = True
-
-_init_scheduler()
-
-
-# ── Gunicorn pre-fork 環境下，確保排程只啟動一次 ──────────────
-# Gunicorn 在 --workers > 1 時每個 worker 都會 import app，
-# _init_scheduler() 已在模組頂層呼叫，無需在 __main__ 重複呼叫。
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
