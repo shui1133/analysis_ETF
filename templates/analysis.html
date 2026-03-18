@@ -2054,6 +2054,10 @@ function searchStock() {
 // ════════════════════════════════════════════════════════════════
 // 載入股票分析資料
 // ════════════════════════════════════════════════════════════════
+// ── 前端股票資料快取（5分鐘 TTL）────────────────────────────────
+const _stockDataCache = {};   // { ticker: { data, ts } }
+const _STOCK_CACHE_TTL = 5 * 60 * 1000;  // 5分鐘
+
 async function loadStock(ticker) {
   ticker = ticker.toUpperCase();
   document.getElementById('searchInput').value = ticker;
@@ -2062,6 +2066,19 @@ async function loadStock(ticker) {
   document.querySelectorAll('.stock-tag').forEach(t => t.classList.remove('active'));
   const tag = document.getElementById(`tag-${ticker}`);
   if (tag) tag.classList.add('active');
+
+  // ── 前端快取命中：直接渲染，跳過 API 呼叫 ──────────────
+  const cached = _stockDataCache[ticker];
+  if (cached && (Date.now() - cached.ts < _STOCK_CACHE_TTL)) {
+    currentData = cached.data;
+    hide('welcomeSection');
+    hide('errorSection');
+    hide('loadingSection');
+    show('analysisSection');
+    renderAll(cached.data);
+    switchTab(currentTab);
+    return;
+  }
 
   // 顯示載入
   show('loadingSection');
@@ -2080,6 +2097,9 @@ async function loadStock(ticker) {
       show('errorSection');
       return;
     }
+
+    // 存入前端快取
+    _stockDataCache[ticker] = { data: d.data, ts: Date.now() };
 
     currentData = d.data;
     renderAll(d.data);
@@ -3178,9 +3198,9 @@ function drawCandleChartPeriod(data, period) {
   const ma3    = sl(ch.ma3);
   const cfg    = PERIOD_CFG[period];
 
-  // 根數越多 → K棒越細；自動調整寬度
-  const barPct  = n <= 30 ? 0.75 : n <= 60 ? 0.65 : n <= 120 ? 0.55 : 0.45;
-  const wickPct = n <= 30 ? 0.18 : n <= 60 ? 0.14 : 0.10;
+  // 根數越多 → K棒越細；加粗 2~2.5 倍（原值 × 2.2），影線固定極細避免重疊
+  const barPct  = n <= 30 ? Math.min(0.92, 0.75 * 2.2) : n <= 60 ? Math.min(0.92, 0.65 * 2.2) : n <= 120 ? Math.min(0.88, 0.55 * 2.2) : Math.min(0.82, 0.45 * 2.2);
+  const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;  // 影線固定極細，確保不與實體重疊
 
   // 台股：紅漲綠跌
   const upClr   = 'rgba(239,68,68,0.92)';
@@ -3205,10 +3225,10 @@ function drawCandleChartPeriod(data, period) {
           borderColor:     bodyColors,
           borderWidth: 0,
           barPercentage:   barPct,
-          categoryPercentage: 0.85,
-          order: 2,
+          categoryPercentage: 0.9,
+          order: 1,
         },
-        // ② 上下影線（高~低，細長條）
+        // ② 上下影線（高~低，極細長條，畫在實體下層）
         {
           type: 'bar',
           label: 'wick',
@@ -3217,8 +3237,8 @@ function drawCandleChartPeriod(data, period) {
           borderColor:     wickColors,
           borderWidth: 0,
           barPercentage:   wickPct,
-          categoryPercentage: 0.85,
-          order: 3,
+          categoryPercentage: 0.9,
+          order: 2,
         },
         // ③ MA 均線
         { type:'line', label:`MA${cfg.ma[0]}`, data:ma1,
@@ -3882,7 +3902,7 @@ async function runEfficientFrontier() {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ tickers, n_sim: nSim, period }),
-      signal: AbortSignal.timeout(180000)
+      signal: AbortSignal.timeout(600000)
     });
 
     // 安全解析 JSON（避免伺服器超時時回傳空 body）
@@ -3893,7 +3913,7 @@ async function runEfficientFrontier() {
       document.getElementById('efLoading').classList.add('hidden');
       document.getElementById('efError').classList.remove('hidden');
       document.getElementById('efErrorMsg').textContent =
-        `伺服器回應異常（可能計算超時）。建議：1) 減少股票數量（≤8支）2) 降低模擬次數（2,000）3) 稍後再試`;
+        `伺服器回應異常（可能計算超時）。建議：1) 減少股票數量（≤12支）2) 降低模擬次數（2,000）3) 稍後再試`;
       return;
     }
     document.getElementById('efLoading').classList.add('hidden');
@@ -3911,7 +3931,7 @@ async function runEfficientFrontier() {
     document.getElementById('efError').classList.remove('hidden');
     const isTimeout = e.message && (e.message.includes('timeout') || e.message.includes('abort'));
     document.getElementById('efErrorMsg').textContent = isTimeout
-      ? '計算超時，請減少股票數量（建議≤8支）或降低模擬次數後重試'
+      ? '計算超時，請減少股票數量（建議≤12支）或降低模擬次數後重試'
       : '錯誤：' + e.message;
   }
 }
@@ -6939,7 +6959,8 @@ let _wlDragSrc   = null;   // 拖曳來源 index
 
 // ── 開啟自選股面板 ──────────────────────────────────────────────
 async function openWatchlistPanel() {
-  document.getElementById('watchlistModal').classList.remove('hidden');
+  const modal = document.getElementById('watchlistModal');
+  modal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
@@ -6947,7 +6968,14 @@ async function openWatchlistPanel() {
   renderWlTableHeader();
   _updateAddCurrentBtn();
 
-  // 從後端載入最新清單（8秒 timeout 後自動 fallback 到 localStorage）
+  // ── 先用現有快取立刻顯示（讓面板馬上有內容）──────────────
+  _updateWlCountBadge(_wlCodes.length);
+  if (_wlCodes.length > 0) {
+    _showWlEmpty(false);
+    renderWlTable();   // 用快取先畫，哪怕資料不完整也好
+  }
+
+  // 背景同步最新清單（不阻擋畫面）
   _showWlLoading(true);
   await wlLoad();
   _updateWlCountBadge(_wlCodes.length);
@@ -6960,7 +6988,7 @@ async function openWatchlistPanel() {
   _showWlEmpty(false);
   _showWlLoading(false);
 
-  // 已快取的先顯示，補抓缺少的
+  // 補抓缺少資料的股票
   const missing = _wlCodes.filter(c => _wlData[c] === undefined);
   if (missing.length === 0) {
     renderWlTable();
