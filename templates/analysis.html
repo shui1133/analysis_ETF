@@ -7163,8 +7163,8 @@ function updateWlSummary() {
   const up   = rows.filter(r => r.chgpct > 0).length;
   const down = rows.filter(r => r.chgpct < 0).length;
   const flat = rows.filter(r => r.chgpct === 0).length;
-  const bull = rows.filter(r => r.matrend && r.matrend.includes('多頭')).length;
-  const bear = rows.filter(r => r.matrend && r.matrend.includes('空頭')).length;
+  const bull = rows.filter(r => r.matrend === 1).length;
+  const bear = rows.filter(r => r.matrend === -1).length;
   const sorted = [...rows].sort((a,b)=>b.chgpct-a.chgpct);
   const topGain = sorted[0] ? (sorted[0].chgpct >= 0 ? '+' : '') + sorted[0].chgpct.toFixed(2) + '%' : '--';
   const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
