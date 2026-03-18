@@ -1601,50 +1601,29 @@ def efficient_frontier():
         if len(tickers) > 15:
             return jsonify({'status':'error','message':'最多支援15支股票'}), 400
 
-        # ── 初始化 GitHub 快取 ───────────────────────────────
-        try:
-            from github_cache import GitHubCache
-            _ef_gh = GitHubCache()
-        except ImportError:
-            _ef_gh = None
+        # ── 初始化：移除舊版獨立 GitHubCache 實例，改用全域 cache_mgr ──
+        # （cache_mgr 已在模組頂層建立，三層快取邏輯統一由它管理）
 
-        # ── L1: Render /tmp 快取 ─────────────────────────────
+        # ── L1 + L2：透過 cache_mgr 統一取得（本機 → GitHub）────
         prices = {}
         cached_from = {}
         for tk in tickers:
-            tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
-            if os.path.exists(tmp_path):
+            rows = cache_mgr.get_price(tk, fetcher=None)  # fetcher=None：不觸發 L3 網路
+            if rows and len(rows) >= 20:
                 try:
-                    tmp_df    = pd.read_csv(tmp_path, encoding='utf-8-sig')
-                    date_col  = next((c for c in tmp_df.columns if c in ['日期','date','Date']), None)
-                    close_col = next((c for c in tmp_df.columns if c in ['收盤價','close','Close']), None)
-                    if date_col and close_col and len(tmp_df) >= 20:
+                    # 相容 ohlcv 格式（含 open/high/low）與簡化格式（僅 date/close）
+                    date_col  = next((c for c in rows[0] if c in ['日期', 'date', 'Date']), None)
+                    close_col = next((c for c in rows[0] if c in ['收盤價', 'close', 'Close']), None)
+                    if date_col and close_col:
                         s = pd.Series(
-                            tmp_df[close_col].values,
-                            index=pd.to_datetime(tmp_df[date_col])
-                        ).dropna()
-                        prices[tk] = s
-                        cached_from[tk] = '/tmp'
-                except Exception:
-                    pass
-
-        # ── L2: GitHub 持久化快取 ────────────────────────────
-        for tk in tickers:
-            if tk in prices:
-                continue
-            if _ef_gh and _ef_gh.enabled and _ef_gh.is_fresh(tk, 'price'):
-                rows = _ef_gh.load_price(tk)
-                if rows and len(rows) >= 20:
-                    try:
-                        s = pd.Series(
-                            [float(r.get('close', r.get('收盤價', 0))) for r in rows],
-                            index=pd.to_datetime([r.get('date', r.get('日期','')) for r in rows])
+                            [float(r[close_col]) for r in rows],
+                            index=pd.to_datetime([r[date_col] for r in rows])
                         ).dropna()
                         if len(s) >= 20:
                             prices[tk] = s
-                            cached_from[tk] = 'GitHub'
-                    except Exception:
-                        pass
+                            cached_from[tk] = 'local/github'
+                except Exception:
+                    pass
 
         need_fetch = [tk for tk in tickers if tk not in prices]
         if cached_from:
@@ -1718,28 +1697,22 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # 存快取
+            # 存快取（使用 cache_mgr 統一格式：英文欄位 date/close）
             for tk in need_fetch:
                 if tk not in prices:
                     continue
                 price_series = prices[tk]
                 try:
-                    tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
-                    pdf = price_series.reset_index()
-                    pdf.columns = ['日期', '收盤價']
-                    pdf['日期'] = pdf['日期'].astype(str).str[:10]
-                    pdf.to_csv(tmp_path, index=False, encoding='utf-8-sig')
-                except Exception as e_tmp:
-                    print(f"  [EF] /tmp 存檔 {tk} 失敗: {e_tmp}")
-                if _ef_gh and _ef_gh.enabled:
-                    try:
-                        price_list = [
-                            {'date': str(d)[:10], 'close': round(float(v), 2)}
-                            for d, v in price_series.items() if pd.notna(v)
-                        ]
-                        _ef_gh.save_price(tk, price_list)
-                    except Exception as e_gh:
-                        print(f"  [EF] GitHub {tk} 失敗: {e_gh}")
+                    price_list = [
+                        {'date': str(d)[:10], 'close': round(float(v), 2)}
+                        for d, v in price_series.items() if pd.notna(v)
+                    ]
+                    # local_save_price 同時更新 meta 時間戳記，確保 is_local_fresh() 正確判斷
+                    from github_cache import local_save_price, gh_save_price
+                    local_save_price(DATA_DIR, tk, price_list)
+                    gh_save_price(tk, price_list)
+                except Exception as e_save:
+                    print(f"  [EF] 存快取 {tk} 失敗: {e_save}")
 
         if failed:
             return jsonify({'status':'error',
@@ -2636,17 +2609,16 @@ def _wl_read() -> list:
             pass
     # 2. 本地沒有，從 GitHub Cache 還原
     try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if gh.enabled:
-            content, _ = gh._get('watchlist/watchlist.json')
-            if content:
-                data = json.loads(content)
-                codes = data.get('codes', [])
-                # 回寫本地
-                _wl_write(codes)
-                print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
-                return codes
+        from github_cache import _gh_raw_get
+        import json as _json
+        content = _gh_raw_get('watchlist/watchlist.json')
+        if content:
+            data = _json.loads(content)
+            codes = data.get('codes', [])
+            # 回寫本地
+            _wl_write(codes)
+            print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
+            return codes
     except Exception as e:
         print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
     return []
@@ -2665,12 +2637,13 @@ def _wl_write(codes: list):
         print(f"  [自選股] 本地寫入失敗: {e}")
     # 同步 GitHub Cache（非同步不阻塞，失敗 silent）
     try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if gh.enabled:
-            gh._put('watchlist/watchlist.json',
-                    json.dumps(payload, ensure_ascii=False),
-                    f'watchlist: {len(unique)} stocks')
+        from github_cache import _gh_writer
+        if _gh_writer.enabled:
+            _gh_writer.put(
+                'watchlist/watchlist.json',
+                json.dumps(payload, ensure_ascii=False),
+                f'watchlist: {len(unique)} stocks'
+            )
     except Exception as e:
         print(f"  [自選股] GitHub 備份失敗（非致命）: {e}")
 
@@ -2729,24 +2702,38 @@ def watchlist_remove():
 
 
 # ── 排程器：無論 gunicorn 或直接執行都要啟動 ──────────────────
+_scheduler_started = False  # 防止同一 process 重複啟動
+
 def _init_scheduler():
     """在非 reloader 子程序中啟動一次排程器"""
+    global _scheduler_started
+    if _scheduler_started:
+        return
     # Werkzeug reloader 會 fork 出子程序，WERKZEUG_RUN_MAIN=true 代表真正的子程序
     # gunicorn 沒有此環境變數，直接啟動
     is_reloader_main = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
     is_gunicorn      = 'gunicorn' in os.environ.get('SERVER_SOFTWARE', '') \
                        or os.environ.get('RENDER') is not None
     if is_gunicorn or is_reloader_main or not os.environ.get('WERKZEUG_RUN_MAIN'):
+        # 修正：POPULAR_STOCKS 是 list[dict]，需提取 'code' 欄位
+        if POPULAR_STOCKS and isinstance(POPULAR_STOCKS[0], dict):
+            pop_codes = [s['code'] for s in POPULAR_STOCKS]
+        else:
+            pop_codes = list(POPULAR_STOCKS)
         start_scheduler(
             cache=cache_mgr,
             fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
             watchlist_reader=_wl_read,
-            popular_stocks=list(POPULAR_STOCKS.keys()) if isinstance(POPULAR_STOCKS, dict)
-                           else list(POPULAR_STOCKS),
+            popular_stocks=pop_codes,
         )
+        _scheduler_started = True
 
 _init_scheduler()
 
+
+# ── Gunicorn pre-fork 環境下，確保排程只啟動一次 ──────────────
+# Gunicorn 在 --workers > 1 時每個 worker 都會 import app，
+# _init_scheduler() 已在模組頂層呼叫，無需在 __main__ 重複呼叫。
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

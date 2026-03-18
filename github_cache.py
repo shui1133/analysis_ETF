@@ -248,7 +248,12 @@ def _gh_raw_get(path: str, timeout: int = 10) -> str | None:
         return None
 
 def _gh_meta_fresh(ticker: str, data_type: str) -> bool:
-    """判斷 GitHub 端的 meta 時間戳記是否仍在 TTL 內"""
+    """
+    判斷 GitHub 端的 meta 時間戳記是否仍在 TTL 內。
+    與 is_local_fresh() 行為一致：
+      - TTL 超過 → 過期
+      - 今日已過 13:30 且上次更新在 13:30 之前 → 強制過期（確保盤後資料當日更新）
+    """
     content = _gh_raw_get(f"data/{ticker}/meta.json")
     if not content:
         return False
@@ -257,11 +262,23 @@ def _gh_meta_fresh(ticker: str, data_type: str) -> bool:
         ts_str = meta.get(f"{data_type}_at")
         if not ts_str:
             return False
-        elapsed = (datetime.now() - datetime.fromisoformat(ts_str)).total_seconds()
-        fresh = elapsed < TTL_MAP.get(data_type, 86400)
-        print(f"  [GitHub-R] {ticker}/{data_type} 快取 {'有效' if fresh else '已過期'}"
-              f"（{elapsed/3600:.1f}h 前更新）")
-        return fresh
+        updated_dt = datetime.fromisoformat(ts_str)
+        now = datetime.now()
+        elapsed = (now - updated_dt).total_seconds()
+
+        # TTL 超過 → 過期
+        if elapsed >= TTL_MAP.get(data_type, 86400):
+            print(f"  [GitHub-R] {ticker}/{data_type} 快取已過期（TTL {elapsed/3600:.1f}h）")
+            return False
+
+        # 今日已過 13:30 且上次更新在今天 13:30 之前 → 強制視為過期
+        market_close_today = now.replace(hour=13, minute=30, second=0, microsecond=0)
+        if now >= market_close_today and updated_dt < market_close_today:
+            print(f"  [GitHub-R] {ticker}/{data_type} 盤後強制過期（更新於 {ts_str[:16]}）")
+            return False
+
+        print(f"  [GitHub-R] {ticker}/{data_type} 快取有效（{elapsed/3600:.1f}h 前更新）")
+        return True
     except Exception as e:
         print(f"  [GitHub-R] meta 解析失敗: {e}")
         return False

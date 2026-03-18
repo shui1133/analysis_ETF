@@ -18,17 +18,19 @@ import re
 from io import StringIO
 
 # ── GitHub 持久化快取（選用）────────────────────────────────────
-# 需在 Render 環境變數設定：GH_CACHE_TOKEN 和 GH_CACHE_REPO
+# 需在 Render 環境變數設定：GH_CACHE_TOKEN
+# 注意：fetch_data / fetch_stock_analysis 內部仍使用舊版 GitHubCache 介面
+#       供快取讀寫；新版 CacheManager 統一入口由 app.py 負責呼叫。
 try:
     from github_cache import GitHubCache
     _gh_cache = GitHubCache()
     if _gh_cache.enabled:
-        print("[GitHubCache] ✅ 已啟用 GitHub 持久化快取")
+        print("[GitHubCache] ✅ 已啟用 GitHub 持久化快取（寫入）")
     else:
-        print("[GitHubCache] ⚠️  未設定環境變數，快取停用（只用記憶體）")
+        print("[GitHubCache] ℹ️  未設定 GH_CACHE_TOKEN，GitHub 寫入停用（仍可讀取 public repo）")
 except ImportError:
     _gh_cache = None
-    print("[GitHubCache] ⚠️  github_cache.py 不存在，快取停用")
+    print("[GitHubCache] ⚠️  github_cache.py 不存在，GitHub 快取停用")
 
 
 def get_data_dir():
@@ -813,6 +815,42 @@ class ETFDataFetcher:
         except Exception as e:
             print(f"  ❌ 儲存 {ticker} 失敗: {e}")
             import traceback; traceback.print_exc()
+
+    # ─────────────────────────────────────────────────────────────
+    # CacheManager 所需的三個獨立 fetch 方法
+    # （github_cache.py 的 CacheManager.get_price/dividend/fundamental
+    #   在 L3 網路抓取時會呼叫這三個方法）
+    # ─────────────────────────────────────────────────────────────
+    def fetch_price(self, ticker: str) -> list | None:
+        """
+        取得股價資料，回傳 [{date, open, high, low, close, volume}, ...] 或 None。
+        委派至 fetch_stock_analysis 以重用已有的 yfinance 邏輯。
+        """
+        raw = self.fetch_stock_analysis(ticker)
+        if raw and raw.get('ohlcv'):
+            return raw['ohlcv']
+        # 降級：僅取 price_data（date + close）
+        if raw and raw.get('price_data'):
+            return raw['price_data']
+        return None
+
+    def fetch_dividend(self, ticker: str) -> list | None:
+        """
+        取得配息資料，回傳 [{date, dividend}, ...] 或 None。
+        """
+        raw = self.fetch_stock_analysis(ticker)
+        if raw:
+            return raw.get('dividend_data') or None
+        return None
+
+    def fetch_fundamental(self, ticker: str) -> dict | None:
+        """
+        取得基本面資料，回傳 info dict 或 None。
+        """
+        raw = self.fetch_stock_analysis(ticker)
+        if raw:
+            return raw.get('info') or None
+        return None
 
     # ─────────────────────────────────────────────────────────────
     # 批量取得（供回測使用）
