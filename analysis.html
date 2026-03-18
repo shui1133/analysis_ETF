@@ -2054,9 +2054,13 @@ function searchStock() {
 // ════════════════════════════════════════════════════════════════
 // 載入股票分析資料
 // ════════════════════════════════════════════════════════════════
-// ── 前端股票資料快取（5分鐘 TTL）────────────────────────────────
-const _stockDataCache = {};   // { ticker: { data, ts } }
-const _STOCK_CACHE_TTL = 5 * 60 * 1000;  // 5分鐘
+// ── 四層快取：記憶體(5分鐘) → localStorage(24h) → GitHub → 後端 yfinance API ─
+// 個股、熱門股票、熱門 ETF、自選股 全部共用同一套快取策略
+// localStorage 使用 hotStockCache_v1（與熱門面板相同 key，互相受益）
+// localStorage 每日 13:30 後強制失效（配合台股收盤後更新）
+// GitHub 快取：透過後端 GET /api/stock_cache/<ticker> 讀取，寫入由後端自動處理
+const _stockDataCache = {};   // 記憶體層 { ticker: { data, ts } }
+const _STOCK_CACHE_TTL = 5 * 60 * 1000;  // 記憶體層 5分鐘
 
 async function loadStock(ticker) {
   ticker = ticker.toUpperCase();
@@ -2067,25 +2071,46 @@ async function loadStock(ticker) {
   const tag = document.getElementById(`tag-${ticker}`);
   if (tag) tag.classList.add('active');
 
-  // ── 前端快取命中：直接渲染，跳過 API 呼叫 ──────────────
-  const cached = _stockDataCache[ticker];
-  if (cached && (Date.now() - cached.ts < _STOCK_CACHE_TTL)) {
-    currentData = cached.data;
-    hide('welcomeSection');
-    hide('errorSection');
-    hide('loadingSection');
+  // ── ① 記憶體快取命中（5分鐘內）：直接渲染 ──────────────
+  const mem = _stockDataCache[ticker];
+  if (mem && (Date.now() - mem.ts < _STOCK_CACHE_TTL)) {
+    currentData = mem.data;
+    hide('welcomeSection'); hide('errorSection'); hide('loadingSection');
     show('analysisSection');
-    renderAll(cached.data);
+    renderAll(mem.data);
     switchTab(currentTab);
     return;
   }
 
-  // 顯示載入
+  // ── ② localStorage 快取命中（24h，每日13:30後失效）────────
+  // hotCacheLoad / hotCacheSave 定義於熱門股票區塊（共用 hotStockCache_v1）
+  const lsCached = hotCacheLoad(ticker);
+  if (lsCached) {
+    _stockDataCache[ticker] = { data: lsCached, ts: Date.now() };
+    currentData = lsCached;
+    hide('welcomeSection'); hide('errorSection'); hide('loadingSection');
+    show('analysisSection');
+    renderAll(lsCached);
+    switchTab(currentTab);
+    return;
+  }
+
+  // ── ③ GitHub 快取命中（後端讀取，每日 13:30 後由後端判斷是否過期）──
   show('loadingSection');
-  hide('welcomeSection');
-  hide('analysisSection');
-  hide('errorSection');
+  hide('welcomeSection'); hide('analysisSection'); hide('errorSection');
   document.getElementById('loadingText').textContent = `正在取得 ${ticker} 資料...`;
+  const ghCached = await ghStockCacheLoad(ticker);
+  if (ghCached) {
+    _stockDataCache[ticker] = { data: ghCached, ts: Date.now() };
+    hotCacheSave(ticker, ghCached);   // 回填 localStorage，下次不再查 GitHub
+    currentData = ghCached;
+    hide('loadingSection'); show('analysisSection');
+    renderAll(ghCached);
+    switchTab(currentTab);
+    return;
+  }
+
+  // ── ④ 呼叫後端 API（後端整合 yfinance / TWSE / MOPS）────────
 
   try {
     const r = await fetch(`/api/stock_analysis/${ticker}`);
@@ -2093,24 +2118,22 @@ async function loadStock(ticker) {
 
     if (d.status !== 'success') {
       document.getElementById('errorMsg').textContent = d.message || '查詢失敗';
-      hide('loadingSection');
-      show('errorSection');
+      hide('loadingSection'); show('errorSection');
       return;
     }
 
-    // 存入前端快取
+    // 同時寫入記憶體快取與 localStorage（讓熱門/自選股面板也能受益）
     _stockDataCache[ticker] = { data: d.data, ts: Date.now() };
+    hotCacheSave(ticker, d.data);
 
     currentData = d.data;
     renderAll(d.data);
-    hide('loadingSection');
-    show('analysisSection');
+    hide('loadingSection'); show('analysisSection');
     switchTab(currentTab);
 
   } catch(e) {
     document.getElementById('errorMsg').textContent = '網路錯誤：' + e.message;
-    hide('loadingSection');
-    show('errorSection');
+    hide('loadingSection'); show('errorSection');
   }
 }
 
@@ -5062,7 +5085,7 @@ function renderSIM(d) {
 let hotStockList     = [];
 let hotStockData     = {};
 
-// ── localStorage 快取工具（有效期 24h，每日 14:00 後強制更新）──
+// ── localStorage 快取工具（有效期 24h，每日 13:30 後強制更新）──
 const HOT_CACHE_KEY    = 'hotStockCache_v1';
 const HOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24 小時
 
@@ -5071,10 +5094,10 @@ function _hotCacheIsFresh(ts) {
   const now  = Date.now();
   const age  = now - ts;
   if (age > HOT_CACHE_TTL_MS) return false;
-  // 每日 14:00 後強制刷新：判斷快取時間是否在今日 14:00 之前
-  const today14 = new Date();
-  today14.setHours(14, 0, 0, 0);
-  if (now >= today14.getTime() && ts < today14.getTime()) return false;
+  // 每日 13:30 後強制刷新：判斷快取時間是否在今日 13:30 之前
+  const today1330 = new Date();
+  today1330.setHours(13, 30, 0, 0);
+  if (now >= today1330.getTime() && ts < today1330.getTime()) return false;
   return true;
 }
 
@@ -5097,6 +5120,23 @@ function hotCacheLoad(code) {
 
 function hotCacheClear() {
   try { localStorage.removeItem(HOT_CACHE_KEY); } catch(e) {}
+}
+
+// ── GitHub 行情快取（後端讀取）─────────────────────────────────────
+// 優先順序：記憶體 → localStorage → GitHub → yfinance API
+// GET /api/stock_cache/<ticker>
+//   成功回傳：{ status:'cached', data:{...} }
+//   無快取：  { status:'not_found' }
+// 寫入由後端 /api/stock_analysis 成功後自動處理（後端負責存 GitHub）
+async function ghStockCacheLoad(ticker) {
+  try {
+    const r = await fetch(`/api/stock_cache/${encodeURIComponent(ticker)}`,
+                          { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d.status === 'cached' && d.data) return d.data;
+  } catch(e) { /* GitHub 不可用時靜默降級到 yfinance */ }
+  return null;
 }
 
 // 快取命中率統計（顯示於進度文字）
@@ -5471,20 +5511,18 @@ async function loadHotStocksSequential(onlyCodes) {
   const total = hotStockList.length;
   const BATCH = 20;
 
-  // ── 先從 localStorage 快取填充，減少 API 請求 ──
+  // ── 先從 localStorage 快取填充，減少 API 請求（補抓模式亦適用）──
   _cacheHits = 0;
-  if (!onlyCodes) {
-    for (const s of targetList) {
-      if (hotStockData[s.code] !== undefined) continue;
-      const cached = hotCacheLoad(s.code);
-      if (cached) {
-        hotStockData[s.code] = cached;
-        _cacheHits++;
-      }
+  for (const s of targetList) {
+    if (hotStockData[s.code] !== undefined) continue;
+    const cached = hotCacheLoad(s.code);
+    if (cached) {
+      hotStockData[s.code] = cached;
+      _cacheHits++;
     }
-    if (_cacheHits > 0) {
-      renderHotTable();
-    }
+  }
+  if (_cacheHits > 0) {
+    renderHotTable();
   }
 
   // ── 以已載入數量為基準（快取命中後才計算，避免重複計算）──
@@ -5498,6 +5536,29 @@ async function loadHotStocksSequential(onlyCodes) {
   // 若補抓模式且有已載入資料，先顯示已有的
   if (onlyCodes && loaded > 0) {
     renderHotTable();
+  }
+
+  // ── GitHub 快取層（localStorage 未命中的批次查詢）──────────────
+  const afterLS = targetList.filter(s => hotStockData[s.code] === undefined);
+  if (afterLS.length > 0) {
+    const ghResults = await Promise.all(afterLS.map(async s => {
+      if (hotLoadAbort) return null;
+      const ghData = await ghStockCacheLoad(s.code);
+      return ghData ? { code: s.code, data: ghData } : null;
+    }));
+    let ghHits = 0;
+    for (const r of ghResults) {
+      if (r && r.data) {
+        hotStockData[r.code] = r.data;
+        hotCacheSave(r.code, r.data);   // 回填 localStorage
+        ghHits++;
+      }
+    }
+    if (ghHits > 0) {
+      loaded = countLoaded();
+      updateHotProgress(loaded, total, 'GitHub 快取命中 ' + ghHits + ' 支，載入剩餘資料...');
+      renderHotTable();
+    }
   }
 
   const fetchWithRetry = async (code, maxRetry = 3) => {
@@ -6974,35 +7035,58 @@ async function openWatchlistPanel() {
   renderWlTableHeader();
   _updateAddCurrentBtn();
 
-  // ── 先用現有快取立刻顯示（讓面板馬上有內容）──────────────
+  // ── ① 立即顯示 localStorage 快取（面板馬上有內容，不等 API）──
   _updateWlCountBadge(_wlCodes.length);
-  if (_wlCodes.length > 0) {
-    _showWlEmpty(false);
-    renderWlTable();   // 用快取先畫，哪怕資料不完整也好
-  }
-
-  // 背景同步最新清單（不阻擋畫面）
-  _showWlLoading(true);
-  await wlLoad();
-  _updateWlCountBadge(_wlCodes.length);
-
   if (_wlCodes.length === 0) {
     _showWlEmpty(true);
-    _showWlLoading(false);
-    return;
+  } else {
+    _showWlEmpty(false);
+    renderWlTable();   // 用快取先畫
   }
-  _showWlEmpty(false);
-  _showWlLoading(false);
 
-  // 補抓缺少資料的股票
-  const missing = _wlCodes.filter(c => _wlData[c] === undefined);
-  if (missing.length === 0) {
-    renderWlTable();
-    updateWlSummary();
-    _wlAbort = false;   // ★ 確保旗標重置
-    return;
+  // ── ② 背景同步後端清單（不 await，不阻塞畫面互動）──────────
+  wlApiFetch('/api/watchlist').then(async d => {
+    if (_wlAbort) return;   // 面板已關閉就不繼續
+    if (d.status === 'success') {
+      _wlCodes = d.codes || [];
+      _lsSave(_wlCodes);
+    }
+    // 後端不可用時繼續用現有 _wlCodes（localStorage 已載入）
+
+    _updateWlCountBadge(_wlCodes.length);
+    if (_wlCodes.length === 0) {
+      _showWlEmpty(true);
+      return;
+    }
+    _showWlEmpty(false);
+
+    // 補抓缺少行情資料的股票
+    const missing = _wlCodes.filter(c => _wlData[c] === undefined);
+    if (missing.length === 0) {
+      renderWlTable();
+      updateWlSummary();
+      _wlAbort = false;
+      return;
+    }
+    _showWlLoading(true);
+    await _loadWlStocks(missing);
+    _showWlLoading(false);
+  }).catch(() => {
+    // API 完全失敗：保留已顯示的 localStorage 內容即可
+  });
+
+  // ── ③ 有快取資料就立即補抓行情（不等後端清單同步）──────────
+  if (_wlCodes.length > 0) {
+    const missing = _wlCodes.filter(c => _wlData[c] === undefined);
+    if (missing.length > 0) {
+      _showWlLoading(true);
+      await _loadWlStocks(missing);
+      _showWlLoading(false);
+    } else {
+      renderWlTable();
+      updateWlSummary();
+    }
   }
-  await _loadWlStocks(missing);
 }
 
 function closeWatchlistPanel() {
@@ -7133,19 +7217,57 @@ async function _loadWlStocks(codes) {
   const total = _wlCodes.length;
   document.getElementById('wlProgress').classList.remove('hidden');
   document.getElementById('wlSummaryRow').classList.add('hidden');
-  _updateWlProgress(_wlCodes.filter(c => _wlData[c] !== undefined).length, total, '載入中...');
+
+  // ── ① 先從 localStorage 快取填充（24h，每日13:30後失效）────
+  let lsHits = 0;
+  for (const code of codes) {
+    if (_wlData[code] !== undefined) continue;
+    const lsCached = hotCacheLoad(code);   // 共用 hotStockCache_v1
+    if (lsCached) {
+      _wlData[code] = lsCached;
+      lsHits++;
+    }
+  }
+  if (lsHits > 0) renderWlTable();
+
+  // ── ② GitHub 快取層（localStorage 未命中的補查）────────────
+  const afterLS = codes.filter(c => _wlData[c] === undefined);
+  if (afterLS.length > 0 && !_wlAbort) {
+    const ghResults = await Promise.all(afterLS.map(async code => {
+      if (_wlAbort) return null;
+      const ghData = await ghStockCacheLoad(code);
+      return ghData ? { code, data: ghData } : null;
+    }));
+    let ghHits = 0;
+    for (const r of ghResults) {
+      if (r && r.data) {
+        _wlData[r.code] = r.data;
+        hotCacheSave(r.code, r.data);   // 回填 localStorage
+        ghHits++;
+      }
+    }
+    if (ghHits > 0) renderWlTable();
+  }
+
+  const stillMissing = codes.filter(c => _wlData[c] === undefined);
+  _updateWlProgress(
+    _wlCodes.filter(c => _wlData[c] !== undefined).length, total,
+    lsHits > 0 ? '快取命中 ' + lsHits + ' 支，載入剩餘 ' + stillMissing.length + ' 支...' : '載入中...'
+  );
   renderWlTable();
 
+  // ── ③ 對仍缺資料的股票呼叫後端 yfinance API ──────────────
   const BATCH = 5;
-  for (let i = 0; i < codes.length; i += BATCH) {
+  for (let i = 0; i < stillMissing.length; i += BATCH) {
     if (_wlAbort) break;
-    const batch = codes.slice(i, i + BATCH);
+    const batch = stillMissing.slice(i, i + BATCH);
     await Promise.all(batch.map(async code => {
       if (_wlData[code] !== undefined) return;
       try {
         const r = await fetch('/api/stock_analysis/' + code, { signal: AbortSignal.timeout(20000) });
         const d = await r.json();
         _wlData[code] = (d.status === 'success') ? d.data : null;
+        if (_wlData[code]) hotCacheSave(code, _wlData[code]);   // 寫入 localStorage
       } catch(e) { _wlData[code] = null; }
       const loaded2 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
       _updateWlProgress(loaded2, total, '已載入 ' + loaded2 + ' / ' + total + ' 支...');
@@ -7441,18 +7563,13 @@ function _updateBtnBadge() {
   document.head.appendChild(s);
 })();
 
-// ── 頁面初始化：從後端預載自選股數量 ──────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
-  // 非同步預載（不阻塞頁面）
-  const d = await wlApiFetch('/api/watchlist');
-  if (d.status === 'success') {
-    _wlCodes = d.codes || [];
-    _lsSave(_wlCodes);
-  } else {
-    _wlCodes = _lsLoad();  // 後端失敗用備援
-  }
+// ── 頁面初始化：localStorage 優先立即顯示，API 在背景靜默同步 ──
+document.addEventListener('DOMContentLoaded', () => {
+  // ① 立即從 localStorage 載入 → 按鈕馬上可用，不等 API
+  _wlCodes = _lsLoad();
   _updateBtnBadge();
-  // 監聽個股載入，更新「加入當前個股」按鈕
+
+  // ② 監聽個股載入，更新「加入當前個股」按鈕
   const stockArea = document.getElementById('stockArea');
   if (stockArea) {
     new MutationObserver(() => {
@@ -7460,6 +7577,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       _updateBtnBadge();
     }).observe(stockArea, { attributes: true, attributeFilter: ['class'] });
   }
+
+  // ③ 背景靜默同步後端（不 await，不阻塞任何互動）
+  wlApiFetch('/api/watchlist').then(d => {
+    if (d.status === 'success') {
+      _wlCodes = d.codes || [];
+      _lsSave(_wlCodes);
+      _updateBtnBadge();
+    }
+    // 後端不可用時保留 localStorage 資料，不做任何覆蓋
+  }).catch(() => {});
 });
 </script>
 </body>
