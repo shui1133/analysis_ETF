@@ -1433,7 +1433,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
                      bg-slate-800/40 rounded-xl p-4 border border-slate-700"></div>
             <p class="text-xs text-slate-600 mt-3">
               <i class="fa-solid fa-circle-info mr-1"></i>
-              以上為 AI 自動生成分析，僅供參考，不構成投資建議。財報數據來源：{{source}}
+              以上為 AI 自動生成分析，僅供參考，不構成投資建議。財報數據來源：<span id="fin-ai-source-note"></span>
             </p>
           </div>
           <!-- 預設提示 -->
@@ -1488,16 +1488,16 @@ const STOCK_NAMES_ZH = {
   '00888':'永豐台灣ESG優質','00891':'中信關鍵半導體',
   '00892':'富邦醫療','00893':'國泰智能電動車',
   '00894':'中信小台灣精選','00896':'中信綠能及電動車',
-  '00904':'新光臺灣半導體30','00905':'FH香港科技',
-  '00906':'FTFT台灣Smart','00912':'中信臺灣智慧50',
-  '00913':'中信臺灣ESG','00914':'中信小資高價30',
+  '00904':'新光臺灣半導體30','00905':'FT臺灣Smart',
+  '00906':'FH香港科技','00912':'中信臺灣智慧50',
+  '00913':'中信臺灣ESG',
   '00916':'國泰全球品牌50','00917':'中信特選金融',
   '00918':'大華優利高填息30','00920':'富邦入息REITs+債',
   '00921':'兆豐台灣晶圓製造','00922':'國泰台灣領袖50',
   '00923':'群益台ESG低碳50','00924':'永豐台灣ESG',
   '00925':'富邦臺灣製造業','00926':'凱基金融股',
   '00927':'群益半導體收益','00928':'中信高評級公司債',
-  '00931':'兆豐永續高息等權','00932':'兆豐台灣晶圓製造',
+  '00931':'統一美債20年(00931B)','00932':'兆豐永續高息等權',
   '00933':'國泰台灣產業龍頭','00935':'野村台灣價值成長',
   '00936':'台新臺灣IC設計','00937B':'國泰10Y+金融債',
   '00938':'永豐ESG低碳高息','00941':'台新臺灣高息低波',
@@ -1890,12 +1890,12 @@ const STOCK_DICT_CSV = {
   '00882':'中信中國高股息',  '00883':'台灣標竿',  '00884':'台灣標竿',  '00885':'台灣標竿',  '00886':'台灣標竿',  '00887':'台灣標竿',
   '00888':'永豐台灣ESG',  '00889':'台灣標竿',  '00890':'台灣標竿',  '00891':'中信關鍵半導體',  '00892':'台灣標竿',  '00893':'台灣標竿',
   '00894':'台灣標竿',  '00895':'台灣標竿',  '00896':'中信小資高價30',  '00897':'台灣標竿',  '00898':'台灣標竿',  '00899':'台灣標竿',
-  '00900':'富邦特選高股息30',  '00901':'台灣標竿',  '00902':'台灣標竿',  '00903':'台灣標竿',  '00904':'台灣標竿',  '00905':'台灣標竿',
-  '00906':'台灣標竿',  '00907':'永豐優息存股',  '00908':'台灣標竿',  '00909':'台灣標竿',  '00910':'台灣標竿',  '00911':'台灣標竿',
-  '00912':'台灣標竿',  '00913':'台灣標竿',  '00914':'台灣標竿',  '00915':'凱基優選高股息30',  '00916':'台灣標竿',  '00917':'台灣標竿',
+  '00900':'富邦特選高股息30',  '00901':'台灣標竿',  '00902':'台灣標竿',  '00903':'台灣標竿',  '00904':'新光臺灣半導體30',  '00905':'FT臺灣Smart',
+  '00906':'FH香港科技',  '00907':'永豐優息存股',  '00908':'台灣標竿',  '00909':'台灣標竿',  '00910':'台灣標竿',  '00911':'台灣標竿',
+  '00912':'台灣標竿',  '00913':'台灣標竿',  '00915':'凱基優選高股息30',  '00916':'台灣標竿',  '00917':'台灣標竿',
   '00918':'台灣標竿',  '00919':'群益台灣精選高息',  '00920':'台灣標竿',  '00921':'台灣標竿',  '00922':'台灣標竿',  '00923':'台灣標竿',
   '00924':'台灣標竿',  '00925':'台灣標竿',  '00926':'台灣標竿',  '00927':'台灣標竿',  '00928':'台灣標竿',  '00929':'復華台灣科技優息',
-  '00930':'永豐ESG低碳高息',  '00931':'台灣標竿',  '00932':'台灣標竿',  '00933':'台灣標竿',  '00934':'中信成長高股息',
+  '00930':'永豐ESG低碳高息',  '00931':'統一美債20年',  '00932':'兆豐永續高息等權',  '00933':'國泰台灣產業龍頭',  '00934':'中信成長高股息',
   '00935':'台灣標竿',  '00936':'台灣標竿',  '00937':'台灣標竿',  '00938':'台灣標竿',  '00939':'統一台灣高息動能',  '00940':'元大台灣價值高息',
 };
 
@@ -2054,6 +2054,10 @@ function searchStock() {
 // ════════════════════════════════════════════════════════════════
 // 載入股票分析資料
 // ════════════════════════════════════════════════════════════════
+// ── 前端股票資料快取（5分鐘 TTL）────────────────────────────────
+const _stockDataCache = {};   // { ticker: { data, ts } }
+const _STOCK_CACHE_TTL = 5 * 60 * 1000;  // 5分鐘
+
 async function loadStock(ticker) {
   ticker = ticker.toUpperCase();
   document.getElementById('searchInput').value = ticker;
@@ -2062,6 +2066,19 @@ async function loadStock(ticker) {
   document.querySelectorAll('.stock-tag').forEach(t => t.classList.remove('active'));
   const tag = document.getElementById(`tag-${ticker}`);
   if (tag) tag.classList.add('active');
+
+  // ── 前端快取命中：直接渲染，跳過 API 呼叫 ──────────────
+  const cached = _stockDataCache[ticker];
+  if (cached && (Date.now() - cached.ts < _STOCK_CACHE_TTL)) {
+    currentData = cached.data;
+    hide('welcomeSection');
+    hide('errorSection');
+    hide('loadingSection');
+    show('analysisSection');
+    renderAll(cached.data);
+    switchTab(currentTab);
+    return;
+  }
 
   // 顯示載入
   show('loadingSection');
@@ -2080,6 +2097,9 @@ async function loadStock(ticker) {
       show('errorSection');
       return;
     }
+
+    // 存入前端快取
+    _stockDataCache[ticker] = { data: d.data, ts: Date.now() };
 
     currentData = d.data;
     renderAll(d.data);
@@ -3178,9 +3198,9 @@ function drawCandleChartPeriod(data, period) {
   const ma3    = sl(ch.ma3);
   const cfg    = PERIOD_CFG[period];
 
-  // 根數越多 → K棒越細；自動調整寬度
-  const barPct  = n <= 30 ? 0.75 : n <= 60 ? 0.65 : n <= 120 ? 0.55 : 0.45;
-  const wickPct = n <= 30 ? 0.18 : n <= 60 ? 0.14 : 0.10;
+  // 根數越多 → K棒越細；加粗 2~2.5 倍（原值 × 2.2），影線固定極細避免重疊
+  const barPct  = n <= 30 ? Math.min(0.92, 0.75 * 2.2) : n <= 60 ? Math.min(0.92, 0.65 * 2.2) : n <= 120 ? Math.min(0.88, 0.55 * 2.2) : Math.min(0.82, 0.45 * 2.2);
+  const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;  // 影線固定極細，確保不與實體重疊
 
   // 台股：紅漲綠跌
   const upClr   = 'rgba(239,68,68,0.92)';
@@ -3205,10 +3225,10 @@ function drawCandleChartPeriod(data, period) {
           borderColor:     bodyColors,
           borderWidth: 0,
           barPercentage:   barPct,
-          categoryPercentage: 0.85,
-          order: 2,
+          categoryPercentage: 0.9,
+          order: 1,
         },
-        // ② 上下影線（高~低，細長條）
+        // ② 上下影線（高~低，極細長條，畫在實體下層）
         {
           type: 'bar',
           label: 'wick',
@@ -3217,8 +3237,8 @@ function drawCandleChartPeriod(data, period) {
           borderColor:     wickColors,
           borderWidth: 0,
           barPercentage:   wickPct,
-          categoryPercentage: 0.85,
-          order: 3,
+          categoryPercentage: 0.9,
+          order: 2,
         },
         // ③ MA 均線
         { type:'line', label:`MA${cfg.ma[0]}`, data:ma1,
@@ -3882,7 +3902,7 @@ async function runEfficientFrontier() {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ tickers, n_sim: nSim, period }),
-      signal: AbortSignal.timeout(180000)
+      signal: AbortSignal.timeout(600000)
     });
 
     // 安全解析 JSON（避免伺服器超時時回傳空 body）
@@ -3893,7 +3913,7 @@ async function runEfficientFrontier() {
       document.getElementById('efLoading').classList.add('hidden');
       document.getElementById('efError').classList.remove('hidden');
       document.getElementById('efErrorMsg').textContent =
-        `伺服器回應異常（可能計算超時）。建議：1) 減少股票數量（≤8支）2) 降低模擬次數（2,000）3) 稍後再試`;
+        `伺服器回應異常（可能計算超時）。建議：1) 減少股票數量（≤12支）2) 降低模擬次數（2,000）3) 稍後再試`;
       return;
     }
     document.getElementById('efLoading').classList.add('hidden');
@@ -3911,7 +3931,7 @@ async function runEfficientFrontier() {
     document.getElementById('efError').classList.remove('hidden');
     const isTimeout = e.message && (e.message.includes('timeout') || e.message.includes('abort'));
     document.getElementById('efErrorMsg').textContent = isTimeout
-      ? '計算超時，請減少股票數量（建議≤8支）或降低模擬次數後重試'
+      ? '計算超時，請減少股票數量（建議≤12支）或降低模擬次數後重試'
       : '錯誤：' + e.message;
   }
 }
@@ -5265,11 +5285,10 @@ const HOT_ETF_CODES = [
   { code:'00894',  name:'中信小台灣精選'        },
   { code:'00896',  name:'中信綠能及電動車'      },
   { code:'00904',  name:'新光臺灣半導體30'      },
-  { code:'00905',  name:'FH香港科技'            },
-  { code:'00906',  name:'FTFT台灣Smart'         },
+  { code:'00905',  name:'FT臺灣Smart'            },
+  { code:'00906',  name:'FH香港科技'             },
   { code:'00912',  name:'中信臺灣智慧50'        },
   { code:'00913',  name:'中信臺灣ESG'           },
-  { code:'00914',  name:'中信小資高價30'        },
   { code:'00916',  name:'國泰全球品牌50'        },
   { code:'00917',  name:'中信特選金融'          },
   { code:'00918',  name:'大華優利高填息30'      },
@@ -5282,8 +5301,7 @@ const HOT_ETF_CODES = [
   { code:'00926',  name:'凱基金融股'            },
   { code:'00927',  name:'群益半導體收益'        },
   { code:'00928',  name:'中信高評級公司債'      },
-  { code:'00931',  name:'兆豐永續高息等權'      },
-  { code:'00932',  name:'兆豐台灣晶圓製造'      },
+  { code:'00932',  name:'兆豐永續高息等權'      },
   { code:'00933',  name:'國泰台灣產業龍頭'      },
   { code:'00935',  name:'野村台灣價值成長'      },
   { code:'00936',  name:'台新臺灣IC設計'        },
@@ -5602,10 +5620,11 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   // sticky 左側欄背景
   const stickyBg   = isIndexRow ? 'bg-amber-950' : 'bg-slate-900';
   const stickyBase = 'sticky z-10 ' + stickyBg;
+  // 大盤列已在 thead 裡，不需要額外 sticky 定位
+  const indexTrAttr = isIndexRow ? ' id="hotIndexTr" style="background:#1c0f02"' : '';
 
   if (row.loading) {
-    const trStyle = isIndexRow ? ' id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02"' : '';
-    return '<tr class="text-slate-500"' + trStyle + '>' +
+    return '<tr class="text-slate-500"' + indexTrAttr + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
@@ -5613,8 +5632,7 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       '</tr>';
   }
   if (row.error) {
-    const trStyle = isIndexRow ? ' id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02"' : '';
-    return '<tr class="text-slate-500"' + trStyle + '>' +
+    return '<tr class="text-slate-500"' + indexTrAttr + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold text-red-400 ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
@@ -5626,7 +5644,7 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
   const chgSign = row.chgpct > 0 ? '+' : '';
   const trClass = isIndexRow
-    ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10" id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02'
+    ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10'
     : 'border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/30';
 
   const codeDisplay = isIndexRow
@@ -5738,34 +5756,36 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   }
 
   const actionCol = '<td class="py-2 px-3 text-center"><button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button></td>';
-  return '<tr class="' + trClass + '" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
+  return '<tr class="' + trClass + '"' + indexTrAttr + ' onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
 }
 
-// ── 同步大盤列 <tr> 的 sticky top 至 thead 實際高度 ────────────
-function _updateIndexRowTop(topPx) {
-  const tr = document.getElementById('hotIndexTr');
-  if (tr) tr.style.top = (topPx != null ? topPx : 41) + 'px';
-}
+// ── 同步大盤列（保留空函式以防其他地方呼叫）────────────────────
+function _updateIndexRowTop(topPx) { /* 大盤列已在 thead 內，無需手動 top */ }
 
 // ── 渲染表格 ─────────────────────────────────────────────────────────
 function renderHotTable() {
+  const thead      = document.getElementById('hotTableHead');
   const tbodyIndex = document.getElementById('hotIndexRow');
   const tbody      = document.getElementById('hotStockTableBody');
 
-  // 大盤列：獨立渲染到 hotIndexRow（垂直固定在 thead 下方）
+  // 大盤列：插入 thead 第二行，讓它跟著 sticky thead 一起固定
   const indexItem = hotStockList.find(s => s.code === '0000');
-  if (tbodyIndex && indexItem) {
+  if (thead && indexItem) {
     const d = hotStockData['0000'];
     let iRow;
     if (d === undefined) iRow = { code:'0000', name:'大盤指數', loading:true };
     else iRow = calcHotRow('0000', d) || { code:'0000', name:'大盤指數', error:true };
-    tbodyIndex.innerHTML = _buildHotRowHtml(iRow, 0, true);
-    // 同步 sticky top（thead 高度可能因 view mode 不同而異）
-    requestAnimationFrame(() => {
-      const thead = document.getElementById('hotTableHead');
-      if (thead) _updateIndexRowTop(Math.round(thead.getBoundingClientRect().height));
-    });
+    const indexHtml = _buildHotRowHtml(iRow, 0, true);
+    // 保留第一行（欄位標題），替換/插入第二行（大盤列）
+    const firstRow = thead.querySelector('tr:first-child');
+    // 移除舊大盤行（如果有）
+    const oldIndexInThead = thead.querySelector('#hotIndexTr');
+    if (oldIndexInThead) oldIndexInThead.remove();
+    if (firstRow) firstRow.insertAdjacentHTML('afterend', indexHtml);
+    else thead.insertAdjacentHTML('beforeend', indexHtml);
   }
+  // 清空舊的獨立 tbody（不再使用）
+  if (tbodyIndex) tbodyIndex.innerHTML = '';
 
   // 一般股票列（排除大盤）
   let rows = hotStockList
@@ -5788,7 +5808,6 @@ function renderHotTable() {
 
   tbody.innerHTML = rows.map((row, idx) => _buildHotRowHtml(row, idx+1, false)).join('');
   updateHotSummary();
-}
 }
 
 function updateHotSummary() {
@@ -5819,8 +5838,12 @@ function updateHotSummary() {
 
 // ESC 關閉
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !document.getElementById('hotStockModal').classList.contains('hidden'))
-    closeHotStockPanel();
+  if (e.key === 'Escape') {
+    if (!document.getElementById('watchlistModal').classList.contains('hidden'))
+      closeWatchlistPanel();
+    else if (!document.getElementById('hotStockModal').classList.contains('hidden'))
+      closeHotStockPanel();
+  }
 });
 
 // ════════════════════════════════════════════════════════════════
@@ -6488,11 +6511,9 @@ async function _checkFinAIQuota(ticker) {
 }
 
 function _showFinAIReport(text, source, fromCache) {
-  const srcNote = document.querySelector('#fin-ai-result p');
+  const srcNote = document.getElementById('fin-ai-source-note');
   document.getElementById('fin-ai-text').textContent = text;
-  if (srcNote) {
-    srcNote.textContent = `以上為 AI 自動生成分析，僅供參考，不構成投資建議。財報數據來源：${source}`;
-  }
+  if (srcNote) srcNote.textContent = source || '';
   document.getElementById('fin-ai-loading').classList.add('hidden');
   document.getElementById('fin-ai-result').classList.remove('hidden');
   document.getElementById('fin-ai-placeholder').classList.add('hidden');
@@ -6941,7 +6962,11 @@ let _wlDragSrc   = null;   // 拖曳來源 index
 
 // ── 開啟自選股面板 ──────────────────────────────────────────────
 async function openWatchlistPanel() {
-  document.getElementById('watchlistModal').classList.remove('hidden');
+  const modal = document.getElementById('watchlistModal');
+  // 若面板已開啟，避免重複觸發
+  if (!modal.classList.contains('hidden')) return;
+  _wlAbort = false;   // ★ 重置中止旗標（修正：關閉後再開啟不會卡住）
+  modal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
@@ -6949,7 +6974,14 @@ async function openWatchlistPanel() {
   renderWlTableHeader();
   _updateAddCurrentBtn();
 
-  // 從後端載入最新清單（8秒 timeout 後自動 fallback 到 localStorage）
+  // ── 先用現有快取立刻顯示（讓面板馬上有內容）──────────────
+  _updateWlCountBadge(_wlCodes.length);
+  if (_wlCodes.length > 0) {
+    _showWlEmpty(false);
+    renderWlTable();   // 用快取先畫，哪怕資料不完整也好
+  }
+
+  // 背景同步最新清單（不阻擋畫面）
   _showWlLoading(true);
   await wlLoad();
   _updateWlCountBadge(_wlCodes.length);
@@ -6962,11 +6994,12 @@ async function openWatchlistPanel() {
   _showWlEmpty(false);
   _showWlLoading(false);
 
-  // 已快取的先顯示，補抓缺少的
+  // 補抓缺少資料的股票
   const missing = _wlCodes.filter(c => _wlData[c] === undefined);
   if (missing.length === 0) {
     renderWlTable();
     updateWlSummary();
+    _wlAbort = false;   // ★ 確保旗標重置
     return;
   }
   await _loadWlStocks(missing);
