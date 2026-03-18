@@ -7199,6 +7199,8 @@ function _showWlLoading(show) {
     document.getElementById('wlProgressText').textContent = '同步自選股清單...';
     document.getElementById('wlProgressCount').textContent = '';
     document.getElementById('wlProgressBar').style.width = '30%';
+  } else {
+    el.classList.add('hidden');   // 修正：false 時確實隱藏
   }
 }
 function _updateWlCountBadge(n) {
