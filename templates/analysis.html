@@ -4,9 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>股票分析中心 | FIRE-AI</title>
-<script src="https://cdn.tailwindcss.com"></script>
 <script>
-// 抑制 Tailwind CDN 的 production 警告（單機/自架環境）
+// 必須在 Tailwind 載入之前攔截，才能抑制 production 警告
 (function(){
   const _warn = console.warn.bind(console);
   console.warn = function(...args){
@@ -15,6 +14,7 @@
   };
 })();
 </script>
+<script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
@@ -5460,7 +5460,8 @@ async function loadHotStocksSequential(onlyCodes) {
         const r = await fetch('/api/stock_analysis/' + code);
         const d = await r.json();
         if (d.status === 'success') return d.data;
-        if (r.status !== 500 && r.status !== 503) return null;
+        if (r.status === 500) return null;        // 後端錯誤，不重試
+        if (r.status !== 503) return null;        // 503 才重試（服務暫時不可用）
       } catch (e) { /* 網路異常，繼續重試 */ }
       if (attempt < maxRetry) await new Promise(r => setTimeout(r, 400 * attempt));
     }
