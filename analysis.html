@@ -140,7 +140,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <div class="flex gap-3 items-center mb-3 flex-wrap">
       <div class="relative flex-1 max-w-xs">
         <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
-        <input id="searchInput" type="text" placeholder="輸入股票代碼（如 2330、00878）"
+        <input id="searchInput" type="text" placeholder="輸入股票代碼或中文名稱（如 2330、台積電）"
                class="search-input pl-9" maxlength="10"
                onkeydown="if(event.key==='Enter')searchStock()">
       </div>
@@ -157,6 +157,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               id="btnHotETF"
               class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
+      </button>
+      <button onclick="openWatchlistPanel()"
+              id="btnWatchlist"
+              class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
+        <i class="fa-solid fa-star"></i>自選股
       </button>
     </div>
 
@@ -1321,7 +1326,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <span class="text-amber-400 font-bold text-sm" id="finreport-source-badge">
               <i class="fa-solid fa-database mr-1"></i>資料來源：--
             </span>
-            <span class="text-slate-500 text-xs" id="finreport-period-hint">年報(近5年) + 季報(近4季)</span>
+            <span class="text-slate-500 text-xs" id="finreport-period-hint">年報(近4年) + 季報(近4季)</span>
           </div>
           <div class="flex gap-2">
             <button id="fin-btn-annual" onclick="switchFinView('annual')"
@@ -1524,7 +1529,7 @@ const STOCK_DICT_CSV = {
   '2213':'大眾控',  '2215':'豐銳',  '2222':'震旦行',  '2224':'信立',  '2225':'敦泰',  '2227':'裕日車',  '2228':'劍麟',  '2229':'銀欣',
   '2230':'泰銘',  '2231':'精英',  '2233':'宏輝',  '2236':'東陽實業',  '2238':'台船防蝕科技',  '2239':'鑽固',  '2241':'同致',  '2244':'持械',
   '2246':'秀傳',  '2247':'天鈺',  '2249':'瀚荃',  '2250':'創作',  '2252':'高科大',  '2253':'海格',  '2254':'平鎮',  '2255':'大黑松',
-  '2301':'光寶科',  '2302':'麗正',  '2303':'聯電',  '2305':'全友',  '2306':'宏碁',  '2308':'台達電',  '2312':'金寶',  '2313':'華通',
+  '2301':'光寶科',  '2302':'麗正',  '2303':'聯電',  '2305':'全友',  '2308':'台達電',  '2312':'金寶',  '2313':'華通',
   '2314':'台揚',  '2316':'楠梓電',  '2317':'鴻海',  '2320':'華泰',  '2321':'東訊',  '2323':'中環',  '2324':'仁寶',  '2325':'矽品',
   '2326':'台儀',  '2327':'國巨',  '2328':'廣宇',  '2329':'華泰',  '2330':'台積電',  '2331':'精英',  '2332':'友訊',  '2337':'旺宏',
   '2338':'光罩',  '2340':'台亞',  '2341':'英群',  '2342':'茂矽',  '2343':'國聯光電',  '2344':'華邦電',  '2345':'智邦',  '2347':'聯強',
@@ -1655,8 +1660,8 @@ const STOCK_DICT_CSV = {
   '4105':'台灣精銳',  '4106':'科妍生物科技',  '4107':'邦特生醫',  '4108':'懷特生技新藥',  '4109':'台灣希望',  '4110':'齊亞那',
   '4111':'濬鑫科技',  '4112':'匯橙',  '4113':'聯合骨科器材',  '4114':'健永生技',  '4115':'台睿生技',  '4116':'達亞',  '4117':'永信醫材',
   '4119':'旭富製藥',  '4120':'永信',  '4121':'優你康光學',  '4122':'可寧衛',  '4123':'晟德大藥廠',  '4124':'中天生物科技',  '4125':'台灣超微光電',
-  '4126':'太醫',  '4127':'天晟',  '4128':'中裕新藥',  '4129':'聯合',  '4130':'健亞生物科技',  '4131':'可寧衛',  '4133':'亞諾法',  '4135':'台灣醫美',
-  '4137':'麗豐-KY',  '4139':'鈺緯',  '4141':'龍燈-KY',  '4142':'國光生技',  '4143':'友霖生技醫藥',  '4144':'台灣精誠資訊',  '4145':'普生',  '4146':'健喬',
+  '4126':'太醫',  '4127':'天晟',  '4128':'中天',  '4129':'聯合',  '4130':'健亞生物科技',  '4131':'可寧衛',  '4133':'亞諾法',  '4135':'台灣醫美',
+  '4137':'麗豐-KY',  '4139':'鈺緯',  '4141':'龍燈-KY',  '4142':'國光生技',  '4143':'友霖生技醫藥',  '4144':'台灣精誠資訊',  '4145':'普生',  '4146':'健喬',  '4147':'中裕新藥',
   '4148':'全宇生技-KY',  '4149':'台灣高鐵',  '4151':'台微體',  '4152':'台灣浩鼎',  '4153':'台鹽生技',  '4154':'台灣藥品工業',  '4155':'台灣耗材',  '4157':'太醫',
   '4158':'富禾生醫',  '4159':'TSC',  '4160':'因華生技製藥',  '4161':'可成生技',  '4162':'智擎',  '4163':'鐿鈦科技',  '4164':'台灣新藥',  '4166':'鈦隼生技',
   '4168':'醣基生醫',  '4169':'元晶太陽能',  '4171':'台灣奈米',  '4172':'台灣神隆',  '4173':'台劍生物科技',  '4174':'浩鼎生技',  '4175':'台灣藥品',  '4176':'台灣尖端先進',
@@ -1966,9 +1971,50 @@ function changePopularSize() {
 // 搜尋
 // ════════════════════════════════════════════════════════════════
 function searchStock() {
-  const val = document.getElementById('searchInput').value.trim().toUpperCase();
+  let val = document.getElementById('searchInput').value.trim();
   if (!val) return;
-  loadStock(val);
+
+  // ── 若輸入非純數字/英數（即可能是中文名稱），嘗試反查代碼 ──
+  const isCodeLike = /^[0-9A-Za-z]+$/.test(val);
+  if (!isCodeLike) {
+    // 建立「中文名 → 代碼」的反向查找表（優先用 STOCK_DICT_CSV，再用 STOCK_NAMES_ZH）
+    const query = val.trim();
+    let found = null;
+    // 先全字相符
+    for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
+      if (name === query) { found = code; break; }
+    }
+    if (!found) {
+      for (const [code, name] of Object.entries(STOCK_NAMES_ZH)) {
+        if (name === query) { found = code; break; }
+      }
+    }
+    // 再嘗試包含相符（取第一個）
+    if (!found) {
+      for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
+        if (name.includes(query) || query.includes(name)) { found = code; break; }
+      }
+    }
+    if (!found) {
+      for (const [code, name] of Object.entries(STOCK_NAMES_ZH)) {
+        if (name.includes(query) || query.includes(name)) { found = code; break; }
+      }
+    }
+    if (found) {
+      document.getElementById('searchInput').value = found;
+      loadStock(found);
+      return;
+    }
+    // 找不到對應代碼，顯示錯誤提示
+    document.getElementById('loadingArea').classList.add('hidden');
+    document.getElementById('errorArea').classList.remove('hidden');
+    document.getElementById('stockArea').classList.add('hidden');
+    document.getElementById('emptyArea').classList.add('hidden');
+    document.getElementById('errorMsg').textContent = `找不到「${query}」，請確認股票名稱或改用代碼查詢（如 2412）`;
+    return;
+  }
+
+  loadStock(val.toUpperCase());
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -3431,7 +3477,7 @@ function drawCandleChart(data) {
           label: 'MA5',
           data: ch.ma5,
           borderColor: '#f59e0b',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3442,7 +3488,7 @@ function drawCandleChart(data) {
           label: 'MA20',
           data: ch.ma20,
           borderColor: '#60a5fa',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3453,7 +3499,7 @@ function drawCandleChart(data) {
           label: 'MA60',
           data: ch.ma60,
           borderColor: '#a78bfa',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3464,7 +3510,7 @@ function drawCandleChart(data) {
           label: 'MA120',
           data: ch.ma120,
           borderColor: '#f97316',
-          borderWidth: 1.5,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -3475,7 +3521,7 @@ function drawCandleChart(data) {
           label: 'MA200',
           data: ch.ma200,
           borderColor: '#ec4899',
-          borderWidth: 2,
+          borderWidth: 2.5,
           pointRadius: 0,
           fill: false,
           tension: .3,
@@ -4961,13 +5007,56 @@ function renderSIM(d) {
 // ════════════════════════════════════════════════════════════════
 let hotStockList     = [];
 let hotStockData     = {};
-let hotPageSize      = 5;
+
+// ── localStorage 快取工具（有效期 24h，每日 13:30 後強制更新）──
+// 與後端 github_cache.py 的盤後更新時間對齊（13:30 台灣時間）
+const HOT_CACHE_KEY    = 'hotStockCache_v2';      // 版本號升一，清除舊快取
+const HOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24 小時
+
+function _hotCacheIsFresh(ts) {
+  if (!ts) return false;
+  const now  = Date.now();
+  const age  = now - ts;
+  if (age > HOT_CACHE_TTL_MS) return false;
+  // 每日 13:30 後強制刷新：判斷快取時間是否在今日 13:30 之前
+  // 對齊後端 github_cache.py 的盤後更新排程（每日 13:30 Asia/Taipei）
+  const today1330 = new Date();
+  today1330.setHours(13, 30, 0, 0);
+  if (now >= today1330.getTime() && ts < today1330.getTime()) return false;
+  return true;
+}
+
+function hotCacheSave(code, data) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HOT_CACHE_KEY) || '{}');
+    raw[code] = { data, ts: Date.now() };
+    localStorage.setItem(HOT_CACHE_KEY, JSON.stringify(raw));
+  } catch(e) { /* 儲存空間不足時靜默忽略 */ }
+}
+
+function hotCacheLoad(code) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HOT_CACHE_KEY) || '{}');
+    const entry = raw[code];
+    if (entry && _hotCacheIsFresh(entry.ts)) return entry.data;
+  } catch(e) {}
+  return null;
+}
+
+function hotCacheClear() {
+  try { localStorage.removeItem(HOT_CACHE_KEY); } catch(e) {}
+}
+
+// 快取命中率統計（顯示於進度文字）
+let _cacheHits = 0;
+let hotPageSize      = 20;
 let hotLoadAbort     = false;
 let hotChartRiseDrop = null;
 let hotChartMA       = null;
 let _hotSortKey      = null;
 let _hotSortAsc      = true;
 let hotViewMode      = 'trade';  // 'trade' | 'risedrop' | 'ma'
+let hotIsETF         = false;   // true = 熱門ETF模式（只顯示 00 開頭 ETF）
 
 // 設定熱門股票表格檢視模式
 function setHotViewMode(mode) {
@@ -4983,9 +5072,10 @@ function setHotViewMode(mode) {
 function renderHotTableHeader() {
   const thead = document.getElementById('hotTableHead');
   if (!thead) return;
-  const base = `<th class="py-3 px-3 text-left w-8">#</th>
-    <th class="py-3 px-3 text-left cursor-pointer hover:text-white" onclick="sortHotTable('code')">代號 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
-    <th class="py-3 px-3 text-left">股票名稱</th>
+  // sticky 欄：# / 代號 / 名稱 ── 固定左側，不隨水平捲動移動
+  const base = `<th class="py-3 px-3 text-left w-8 sticky left-0 bg-slate-900 z-10">#</th>
+    <th class="py-3 px-3 text-left cursor-pointer hover:text-white sticky bg-slate-900 z-10" style="left:32px" onclick="sortHotTable('code')">代號 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+    <th class="py-3 px-3 text-left sticky bg-slate-900 z-10" style="left:96px">股票名稱</th>
     <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('close')">成交價 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
     <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('chgpct')">漲跌幅% <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
     <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortHotTable('volume')">成交量(張) <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
@@ -5033,8 +5123,6 @@ function buildHotList(pageSize) {
     '2615','2609','2880','2884','2885','2887','2890','3045','4904',
     '3711','2379','2409','2376','2377','6505','1326','2207','2474','3481',
     '2345','5880','2892','2883','2834','5871','6669','3034','2301','2542',
-    '0050','0056','006208','00878','00713','00679B','00919','00929','00915',
-    '00757','00850','00692','00900','00907','00930','00934','00939','00940',
     '2324','1101','2002','2356','2354','2352','3023','3037','3044','2498',
     '2610','2618','4915','4927','4943','4966','4967','4968','3529','3533',
     '3545','3563','3576','3661','3662','3673','3680','3691','3694','3698',
@@ -5064,17 +5152,20 @@ function buildHotList(pageSize) {
   ];
   const seen = new Set();
   const list = [];
+  const isETFCode = c => c.startsWith('00') || c === '0050' || c === '0056';
   for (const code of priorityCodes) {
     if (seen.has(code)) continue;
+    if (isETFCode(code)) continue;   // 熱門股票不顯示 ETF
     seen.add(code);
     const name = STOCK_DICT_CSV[code] || STOCK_NAMES_ZH[code] || code;
     list.push({ code, name });
     if (list.length >= pageSize) break;
   }
-  // 補足：從 CSV 字典依序補
+  // 補足：從 CSV 字典依序補（同樣排除 ETF）
   if (list.length < pageSize) {
     for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
       if (seen.has(code)) continue;
+      if (isETFCode(code)) continue;  // 排除 ETF
       seen.add(code);
       list.push({ code, name });
       if (list.length >= pageSize) break;
@@ -5087,28 +5178,101 @@ function buildHotList(pageSize) {
 
 // ── 熱門 ETF 清單（點擊直接開啟總覽面板，篩選 ETF）──────────────────
 const HOT_ETF_CODES = [
-  { code:'0050',   name:'元大台灣50'        },
-  { code:'0056',   name:'元大高股息'        },
-  { code:'006208', name:'富邦台50'          },
-  { code:'00878',  name:'國泰永續高股息'    },
-  { code:'00713',  name:'元大台灣高息低波'  },
-  { code:'00919',  name:'群益台灣精選高息'  },
-  { code:'00929',  name:'復華台灣科技優息'  },
-  { code:'00915',  name:'凱基優選高股息30'  },
-  { code:'00679B', name:'元大美債20年'      },
-  { code:'00757',  name:'統一MSCI台灣ESG'   },
-  { code:'00850',  name:'元大臺灣ESG永續'   },
-  { code:'00900',  name:'富邦特選高股息30'  },
-  { code:'00907',  name:'永豐優息存股'      },
-  { code:'00930',  name:'永豐台灣ESG'       },
-  { code:'00934',  name:'中信成長高股息'    },
-  { code:'00939',  name:'統一台灣高息動能'  },
-  { code:'00940',  name:'元大台灣價值高息'  },
+  { code:'0050',   name:'元大台灣50'            },
+  { code:'0056',   name:'元大高股息'            },
+  { code:'006208', name:'富邦台50'              },
+  { code:'00878',  name:'國泰永續高股息'        },
+  { code:'00713',  name:'元大台灣高息低波'      },
+  { code:'00919',  name:'群益台灣精選高息'      },
+  { code:'00929',  name:'復華台灣科技優息'      },
+  { code:'00915',  name:'凱基優選高股息30'      },
+  { code:'00679B', name:'元大美債20年'          },
+  { code:'00757',  name:'統一MSCI台灣ESG'       },
+  { code:'00850',  name:'元大臺灣ESG永續'       },
+  { code:'00900',  name:'富邦特選高股息30'      },
+  { code:'00907',  name:'永豐優息存股'          },
+  { code:'00930',  name:'永豐台灣ESG'           },
+  { code:'00934',  name:'中信成長高股息'        },
+  { code:'00939',  name:'統一台灣高息動能'      },
+  { code:'00940',  name:'元大台灣價值高息'      },
+  { code:'00692',  name:'富邦公司治理'          },
+  { code:'00701',  name:'國泰股利精選30'        },
+  { code:'00730',  name:'富邦臺灣優質高息'      },
+  { code:'00731',  name:'FH富時高息低波'        },
+  { code:'00733',  name:'富邦臺灣中小'          },
+  { code:'00770',  name:'國泰北美科技'          },
+  { code:'00858',  name:'永豐美國500大'         },
+  { code:'00864B', name:'中信優先順位債'        },
+  { code:'00875',  name:'國泰網路資安'          },
+  { code:'00888',  name:'永豐台灣ESG優質'       },
+  { code:'00891',  name:'中信關鍵半導體'        },
+  { code:'00892',  name:'富邦醫療'              },
+  { code:'00893',  name:'國泰智能電動車'        },
+  { code:'00894',  name:'中信小台灣精選'        },
+  { code:'00896',  name:'中信綠能及電動車'      },
+  { code:'00904',  name:'新光臺灣半導體30'      },
+  { code:'00905',  name:'FH香港科技'            },
+  { code:'00906',  name:'FTFT台灣Smart'         },
+  { code:'00912',  name:'中信臺灣智慧50'        },
+  { code:'00913',  name:'中信臺灣ESG'           },
+  { code:'00914',  name:'中信小資高價30'        },
+  { code:'00916',  name:'國泰全球品牌50'        },
+  { code:'00917',  name:'中信特選金融'          },
+  { code:'00918',  name:'大華優利高填息30'      },
+  { code:'00920',  name:'富邦入息REITs+債'      },
+  { code:'00921',  name:'兆豐台灣晶圓製造'      },
+  { code:'00922',  name:'國泰台灣領袖50'        },
+  { code:'00923',  name:'群益台ESG低碳50'       },
+  { code:'00924',  name:'永豐台灣ESG'           },
+  { code:'00925',  name:'富邦臺灣製造業'        },
+  { code:'00926',  name:'凱基金融股'            },
+  { code:'00927',  name:'群益半導體收益'        },
+  { code:'00928',  name:'中信高評級公司債'      },
+  { code:'00931',  name:'兆豐永續高息等權'      },
+  { code:'00932',  name:'兆豐台灣晶圓製造'      },
+  { code:'00933',  name:'國泰台灣產業龍頭'      },
+  { code:'00935',  name:'野村台灣價值成長'      },
+  { code:'00936',  name:'台新臺灣IC設計'        },
+  { code:'00937B', name:'國泰10Y+金融債'        },
+  { code:'00938',  name:'永豐ESG低碳高息'       },
+  { code:'00941',  name:'台新臺灣高息低波'      },
+  { code:'00943',  name:'元大臺灣高股息低波'    },
+  { code:'00944',  name:'第一金工業大台灣'      },
+  { code:'00945',  name:'野村臺灣新科技50'      },
 ];
 
+// ── 建立 ETF 清單（大盤 + HOT_ETF_CODES 依序，支援任意 pageSize）────
+function buildETFList(pageSize) {
+  const INDEX_ITEM = { code: '0000', name: '大盤指數' };
+  const seen = new Set(['0000']);
+  const list = [];
+  // 優先使用 HOT_ETF_CODES 的順序與名稱
+  for (const e of HOT_ETF_CODES) {
+    if (seen.has(e.code)) continue;
+    seen.add(e.code);
+    const name = STOCK_DICT_CSV[e.code] || STOCK_NAMES_ZH[e.code] || e.name;
+    list.push({ code: e.code, name });
+    if (list.length >= pageSize) break;
+  }
+  // 若 HOT_ETF_CODES 不足 pageSize，從字典補充 ETF（00 開頭）
+  if (list.length < pageSize) {
+    const isETFCode = c => c.startsWith('00') || c === '0050' || c === '0056';
+    for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
+      if (seen.has(code)) continue;
+      if (!isETFCode(code)) continue;
+      seen.add(code);
+      list.push({ code, name });
+      if (list.length >= pageSize) break;
+    }
+  }
+  return [INDEX_ITEM, ...list];
+}
+
 async function openHotETFPanel() {
+  hotIsETF = true;   // 標記為 ETF 模式
   // 將熱門 ETF 清單注入 hotStockList，然後開啟總覽面板
-  hotPageSize  = HOT_ETF_CODES.length;
+  const currentPageSize = parseInt(document.getElementById('hotPageSize')?.value) || 20;
+  hotPageSize  = currentPageSize;
   // 同步 select 顯示（找最接近的值）
   const sel = document.getElementById('hotPageSize');
   if (sel) {
@@ -5121,14 +5285,16 @@ async function openHotETFPanel() {
     }
     if (best) sel.value = best.value;
   }
-  // 直接用 ETF 清單（大盤指數 + ETF）
-  hotStockList = [{ code:'0000', name:'大盤指數' }, ...HOT_ETF_CODES];
+  // 直接用 ETF 清單（大盤指數 + 00 開頭 ETF，依 pageSize 截取）
+  hotStockList = buildETFList(hotPageSize);
   // 清除非 ETF 快取（保留已有的 ETF 資料）
   const keepCodes = new Set(hotStockList.map(s => s.code));
   Object.keys(hotStockData).forEach(k => { if (!keepCodes.has(k)) delete hotStockData[k]; });
   hotLoadAbort = false;
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+  const titleEl = document.getElementById('hotModalTitle');
+  if (titleEl) titleEl.textContent = '熱門ETF總覽';
   hotViewMode = 'trade';
   ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
@@ -5140,9 +5306,12 @@ async function openHotETFPanel() {
 
 // ── 開啟熱門股票總覽面板 ─────────────────────────────────────────────
 async function openHotStockPanel() {
+  hotIsETF = false;  // 標記為一般股票模式
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   hotViewMode  = 'trade';
+  const titleEl2 = document.getElementById('hotModalTitle');
+  if (titleEl2) titleEl2.textContent = '熱門股票總覽';
   ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
     if (btn) btn.classList.toggle('active', m === 'trade');
@@ -5186,15 +5355,17 @@ function changeHotPageSize() {
     hotStockData = {};
   }
   hotPageSize  = newSize;
-  hotStockList = buildHotList(hotPageSize);
+  // ETF 模式只顯示 00 開頭 ETF；一般模式顯示熱門股票
+  hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
   hotLoadAbort = false;
   loadHotStocksSequential();
 }
 
 function reloadHotStocks() {
+  hotCacheClear();          // 清除 localStorage 快取，強制重新抓取
   hotStockData = {};
   hotLoadAbort = false;
-  hotStockList = buildHotList(hotPageSize);
+  hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
   loadHotStocksSequential();
 }
 
@@ -5205,7 +5376,9 @@ async function reloadSingleHotStock(code) {
   try {
     const r = await fetch('/api/stock_analysis/' + code);
     const d = await r.json();
-    hotStockData[code] = (d.status === 'success') ? d.data : null;
+    const result = (d.status === 'success') ? d.data : null;
+    hotStockData[code] = result;
+    if (result) hotCacheSave(code, result);   // 更新快取
   } catch(e) { hotStockData[code] = null; }
   renderHotTable();
   updateHotSummary();
@@ -5251,12 +5424,32 @@ async function loadHotStocksSequential(onlyCodes) {
     return null;
   };
 
+  // ── 先從 localStorage 快取填充，減少 API 請求 ──
+  _cacheHits = 0;
+  if (!onlyCodes) {
+    for (const s of targetList) {
+      if (hotStockData[s.code] !== undefined) continue;
+      const cached = hotCacheLoad(s.code);
+      if (cached) {
+        hotStockData[s.code] = cached;
+        loaded++;
+        _cacheHits++;
+      }
+    }
+    if (_cacheHits > 0) {
+      renderHotTable();
+      updateHotProgress(loaded, total, '快取命中 ' + _cacheHits + ' 支，載入剩餘資料...');
+    }
+  }
+
   for (let i = 0; i < targetList.length; i += BATCH) {
     if (hotLoadAbort) break;
     const batch = targetList.slice(i, i + BATCH);
     await Promise.all(batch.map(async (s) => {
       if (hotStockData[s.code] !== undefined) { loaded++; return; }
-      hotStockData[s.code] = await fetchWithRetry(s.code);
+      const result = await fetchWithRetry(s.code);
+      hotStockData[s.code] = result;
+      if (result) hotCacheSave(s.code, result);   // 成功才存快取
       loaded++;
       // ── 取得任一支就立即更新表格 ──
       renderHotTable();
@@ -5265,7 +5458,8 @@ async function loadHotStocksSequential(onlyCodes) {
   }
 
   clearInterval(_progressInterval);
-  updateHotProgress(total, total, '載入完成，共 ' + total + ' 支');
+  const cacheNote = _cacheHits > 0 ? '（快取命中 ' + _cacheHits + ' 支）' : '';
+  updateHotProgress(total, total, '載入完成，共 ' + total + ' 支 ' + cacheNote);
   document.getElementById('hotSummaryRow').classList.remove('hidden');
   updateHotSummary();
 }
@@ -5348,223 +5542,187 @@ function sortHotTable(key) {
   renderHotTable();
 }
 
+// ── 產生單列 HTML（大盤列與一般列共用）─────────────────────────────
+function _buildHotRowHtml(row, idx, isIndexRow) {
+  const name = STOCK_DICT_CSV[row.code] || STOCK_NAMES_ZH[row.code] || row.name || row.code;
+  const rowNum = isIndexRow ? '' : idx;
+  // sticky 左側欄背景
+  const stickyBg   = isIndexRow ? 'bg-amber-950' : 'bg-slate-900';
+  const stickyBase = 'sticky z-10 ' + stickyBg;
+
+  if (row.loading) {
+    return '<tr class="text-slate-500">' +
+      '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
+      '<td class="py-2 px-3 font-bold ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
+      '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
+      '<td colspan="4" class="py-2 px-3 text-center"><i class="fa-solid fa-circle-notch fa-spin text-amber-400 mr-2"></i>載入中...</td>' +
+      '</tr>';
+  }
+  if (row.error) {
+    return '<tr class="text-slate-500">' +
+      '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
+      '<td class="py-2 px-3 font-bold text-red-400 ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
+      '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
+      '<td colspan="4" class="py-2 px-3 text-red-400 text-center"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>' +
+      '<td class="py-2 px-3 text-center"><button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1"><i class="fa-solid fa-rotate-right"></i>重新載入</button></td>' +
+      '</tr>';
+  }
+
+  const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
+  const chgSign = row.chgpct > 0 ? '+' : '';
+  const trClass = isIndexRow
+    ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10'
+    : 'border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/30';
+
+  const codeDisplay = isIndexRow
+    ? '<span class="text-amber-400 font-black text-xs">▲ 大盤</span>'
+    : '<span class="font-black text-blue-400">' + row.code + '</span>';
+  const nameDisplay = isIndexRow
+    ? '<span class="text-amber-300 font-bold">' + name + '</span><span class="ml-1 text-xs text-amber-600">(^TWII)</span>'
+    : '<span class="font-bold text-white">' + name + '</span>';
+  const closeDisplay = isIndexRow
+    ? '<span class="font-black text-lg ' + chgCls + '">' + row.close.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>'
+    : '<span class="font-bold ' + chgCls + '">' + row.close.toFixed(2) + '</span>';
+
+  // 前 3 欄 sticky（水平固定）
+  const baseCols =
+    '<td class="py-2 px-3 text-slate-500 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
+    '<td class="py-2 px-3 ' + stickyBase + '" style="left:32px">' + codeDisplay + '</td>' +
+    '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + nameDisplay + '</td>' +
+    '<td class="py-2 px-3 text-right mono">' + closeDisplay + '</td>' +
+    '<td class="py-2 px-3 text-right mono font-bold ' + chgCls + '">' + chgSign + row.chgpct.toFixed(2) + '%</td>' +
+    '<td class="py-2 px-3 text-right mono">' + (isIndexRow ? '--' : row.vol.toLocaleString()) + '</td>';
+
+  let extraCols = '';
+  if (hotViewMode === 'trade') {
+    const matrendMap = {
+       '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
+       '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
+       '0': ['--','px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-slate-500'],
+      '-1': ['空頭排列','px-2 py-0.5 rounded text-xs font-bold bg-red-900/60 text-red-300 border border-red-700/50'],
+      '-2': ['偏空整理','px-2 py-0.5 rounded text-xs font-bold bg-red-900/30 text-red-400 border border-red-800/50'],
+    };
+    const mt = matrendMap[String(row.matrend)] || matrendMap['0'];
+    extraCols =
+      '<td class="py-2 px-3 text-right mono ' + chgCls + '">' + chgSign + row.change.toFixed(2) + '</td>' +
+      '<td class="py-2 px-3 text-right mono up">' + row.high.toFixed(2) + '</td>' +
+      '<td class="py-2 px-3 text-right mono down">' + row.low.toFixed(2) + '</td>' +
+      '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
+  } else if (hotViewMode === 'risedrop') {
+    const totD = row.updays + row.downdays + row.flatdays || 1;
+    const upW   = Math.round(row.updays   / totD * 100);
+    const flatW = Math.round(row.flatdays / totD * 100);
+    const downW = 100 - upW - flatW;
+    const barHtml =
+      '<div class="flex h-2 rounded-full overflow-hidden w-28 mx-auto">' +
+        '<div class="bg-emerald-500" style="width:' + upW   + '%"></div>' +
+        '<div class="bg-slate-600"   style="width:' + flatW + '%"></div>' +
+        '<div class="bg-red-500"     style="width:' + downW + '%"></div>' +
+      '</div>' +
+      '<div class="text-slate-500 mt-0.5 text-xs">' + row.updays + '↑ ' + row.flatdays + '= ' + row.downdays + '↓</div>';
+    extraCols =
+      '<td class="py-2 px-3 text-right up font-bold">' + row.updays + '</td>' +
+      '<td class="py-2 px-3 text-right down font-bold">' + row.downdays + '</td>' +
+      '<td class="py-2 px-3 text-center flat">' + row.flatdays + '</td>' +
+      '<td class="py-2 px-3 text-center">' + barHtml + '</td>' +
+      '<td class="py-2 px-3 text-right up font-bold">' + row.upvolpct + '%</td>' +
+      '<td class="py-2 px-3 text-right down font-bold">' + row.downvolpct + '%</td>';
+  } else if (hotViewMode === 'ma') {
+    const ma5Cls  = row.ma5  && row.close > row.ma5  ? 'up' : row.ma5  && row.close < row.ma5  ? 'down' : 'flat';
+    const ma10Cls = row.ma10 && row.close > row.ma10 ? 'up' : row.ma10 && row.close < row.ma10 ? 'down' : 'flat';
+    const ma20Cls = row.ma20 && row.close > row.ma20 ? 'up' : row.ma20 && row.close < row.ma20 ? 'down' : 'flat';
+    const ma60Cls = row.ma60 && row.close > row.ma60 ? 'up' : row.ma60 && row.close < row.ma60 ? 'down' : 'flat';
+    const ma120Cls= row.ma120&& row.close > row.ma120? 'up' : row.ma120&& row.close < row.ma120? 'down' : 'flat';
+    const ma200Cls= row.ma200&& row.close > row.ma200? 'up' : row.ma200&& row.close < row.ma200? 'down' : 'flat';
+    const matrendMap = {
+       '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
+       '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
+       '0': ['--','px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-slate-500'],
+      '-1': ['空頭排列','px-2 py-0.5 rounded text-xs font-bold bg-red-900/60 text-red-300 border border-red-700/50'],
+      '-2': ['偏空整理','px-2 py-0.5 rounded text-xs font-bold bg-red-900/30 text-red-400 border border-red-800/50'],
+    };
+    const mt = matrendMap[String(row.matrend)] || matrendMap['0'];
+    const maCell = (val, cls) => {
+      if (!val) return '<td class="py-2 px-3 text-right mono flat">--</td>';
+      const diff = ((row.close - val) / val * 100);
+      const arrow = diff > 0 ? '↗' : diff < 0 ? '↘' : '→';
+      return '<td class="py-2 px-3 text-right mono ' + cls + '">' +
+        val.toFixed(2) + '<span class="text-xs ml-1 opacity-70">' + arrow + '</span></td>';
+    };
+    extraCols =
+      maCell(row.ma5, ma5Cls) + maCell(row.ma10, ma10Cls) + maCell(row.ma20, ma20Cls) +
+      maCell(row.ma60, ma60Cls) + maCell(row.ma120, ma120Cls) + maCell(row.ma200, ma200Cls) +
+      '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
+  } else if (hotViewMode === 'invest') {
+    const ratingHtml = row.rating
+      ? '<span style="background:' + row.rating_bg + ';color:' + row.rating_color + ';border:1px solid ' + row.rating_color + '40;" class="px-2 py-0.5 rounded-full text-xs font-black">' + row.rating_icon + ' ' + row.rating + '</span>'
+      : '<span class="text-slate-500 text-xs">--</span>';
+    const targetTypeLabel = { 'upside':'⬆', 'fair':'➡', 'downside':'⬇', 'none':'' };
+    const targetCls = row.target_type === 'upside' ? 'up' : row.target_type === 'downside' ? 'down' : 'flat';
+    const targetHtml = row.target_price != null
+      ? '<span class="mono font-bold ' + targetCls + '">' + (targetTypeLabel[row.target_type]||'') + ' ' + row.target_price.toFixed(1) + '</span>'
+      : '<span class="flat">--</span>';
+    const peHtml = row.pe_ratio != null
+      ? '<span class="mono ' + (row.pe_ratio < 15 ? 'up' : row.pe_ratio > 30 ? 'down' : '') + '">' + row.pe_ratio.toFixed(1) + 'x</span>'
+      : '<span class="flat text-xs">--</span>';
+    const dyHtml = row.div_yield != null
+      ? '<span class="mono ' + (row.div_yield >= 5 ? 'up' : row.div_yield >= 3 ? 'text-amber-400' : 'flat') + '">' + row.div_yield.toFixed(2) + '%</span>'
+      : '<span class="flat text-xs">--</span>';
+    const trendHtml = '<span style="color:' + row.trend_color + '" class="text-xs font-bold">' + (row.trend_label || '--') + '</span>';
+    const signals = row.reasons_buy.concat(row.reasons_sell).slice(0,3);
+    const signalHtml = signals.length
+      ? signals.map(s => { const isBuy = row.reasons_buy.includes(s); return '<span class="signal-tag ' + (isBuy?'signal-buy':'signal-sell') + '">' + s.replace(/（[^）]*）/g,'') + '</span>'; }).join('')
+      : '<span class="text-slate-600 text-xs">資料不足</span>';
+    extraCols =
+      '<td class="py-2 px-3 text-center">' + ratingHtml + '</td>' +
+      '<td class="py-2 px-3 text-right">' + targetHtml + '</td>' +
+      '<td class="py-2 px-3 text-right">' + peHtml + '</td>' +
+      '<td class="py-2 px-3 text-right">' + dyHtml + '</td>' +
+      '<td class="py-2 px-3">' + trendHtml + '</td>' +
+      '<td class="py-2 px-3"><div class="flex flex-wrap gap-0.5">' + signalHtml + '</div></td>';
+  }
+
+  const actionCol = '<td class="py-2 px-3 text-center"><button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button></td>';
+  return '<tr class="' + trClass + '" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
+}
+
 // ── 渲染表格 ─────────────────────────────────────────────────────────
 function renderHotTable() {
-  const tbody = document.getElementById('hotStockTableBody');
-  let rows = hotStockList.map(s => {
-    const d = hotStockData[s.code];
-    if (d === undefined) return { code: s.code, name: s.name, loading: true };
-    const row = calcHotRow(s.code, d);
-    return row || { code: s.code, name: s.name, error: true };
-  });
+  const tbodyIndex = document.getElementById('hotIndexRow');
+  const tbody      = document.getElementById('hotStockTableBody');
+
+  // 大盤列：獨立渲染到 hotIndexRow（垂直固定在 thead 下方）
+  const indexItem = hotStockList.find(s => s.code === '0000');
+  if (tbodyIndex && indexItem) {
+    const d = hotStockData['0000'];
+    let iRow;
+    if (d === undefined) iRow = { code:'0000', name:'大盤指數', loading:true };
+    else iRow = calcHotRow('0000', d) || { code:'0000', name:'大盤指數', error:true };
+    tbodyIndex.innerHTML = _buildHotRowHtml(iRow, 0, true);
+  }
+
+  // 一般股票列（排除大盤）
+  let rows = hotStockList
+    .filter(s => s.code !== '0000')
+    .map(s => {
+      const d = hotStockData[s.code];
+      if (d === undefined) return { code:s.code, name:s.name, loading:true };
+      return calcHotRow(s.code, d) || { code:s.code, name:s.name, error:true };
+    });
 
   if (_hotSortKey) {
     rows.sort((a, b) => {
-      const av = a[_hotSortKey];
-      const bv = b[_hotSortKey];
-      const na = av == null;
-      const nb = bv == null;
-      if (na && nb) return 0;
-      if (na) return 1;
-      if (nb) return -1;
-      if (typeof av === 'number' && typeof bv === 'number')
-        return _hotSortAsc ? av - bv : bv - av;
-      return _hotSortAsc
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av));
+      const av = a[_hotSortKey], bv = b[_hotSortKey];
+      const na = av == null, nb = bv == null;
+      if (na && nb) return 0; if (na) return 1; if (nb) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return _hotSortAsc ? av-bv : bv-av;
+      return _hotSortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
     });
   }
 
-  tbody.innerHTML = rows.map((row, idx) => {
-    const name = STOCK_DICT_CSV[row.code] || STOCK_NAMES_ZH[row.code] || row.name || row.code;
-    // 大盤(code=0000)在第0位，其餘股票序號從1起
-    const isIndexRow = (row.code === '0000');
-    const rowNum = isIndexRow ? '' : idx;  // idx=0是大盤，股票從idx=1開始即序號1
-
-    // base cols: #, code, name, close, chgpct, volume
-    const baseLoading = '<td colspan="6" class="py-2 px-3 text-center">' +
-      '<i class="fa-solid fa-circle-notch fa-spin text-amber-400 mr-2"></i>載入中...</td>';
-    const baseError   = '<td colspan="5" class="py-2 px-3 text-red-400 text-center">' +
-      '<i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>';
-
-    if (row.loading) {
-      return '<tr class="text-slate-500">' +
-        '<td class="py-2 px-3">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
-        '<td class="py-2 px-3 font-bold">' + row.code + '</td>' +
-        '<td class="py-2 px-3">' + name + '</td>' +
-        baseLoading + '</tr>';
-    }
-    if (row.error) {
-      return '<tr class="text-slate-500">' +
-        '<td class="py-2 px-3">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
-        '<td class="py-2 px-3 font-bold text-red-400">' + row.code + '</td>' +
-        '<td class="py-2 px-3">' + name + '</td>' +
-        baseError +
-        '<td class="py-2 px-3 text-center">' +
-          '<button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" ' +
-            'class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1">' +
-            '<i class="fa-solid fa-rotate-right"></i>重新載入</button>' +
-        '</td>' +
-      '</tr>';
-    }
-
-    const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
-    const chgSign = row.chgpct > 0 ? '+' : '';
-
-    // 大盤指數特殊樣式
-    const isIndex = isIndexRow;  // 已在上方定義
-    const trClass = isIndex
-      ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10'
-      : 'border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/30';
-
-    // Shared base columns
-    const codeDisplay = isIndex
-      ? '<span class="text-amber-400 font-black text-xs">▲ 大盤</span>'
-      : '<span class="font-black text-blue-400">' + row.code + '</span>';
-    const nameDisplay = isIndex
-      ? '<span class="text-amber-300 font-bold">' + name + '</span><span class="ml-1 text-xs text-amber-600">(^TWII)</span>'
-      : '<span class="font-bold text-white">' + name + '</span>';
-    const closeDisplay = isIndex
-      ? '<span class="font-black text-lg ' + chgCls + '">' + row.close.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>'
-      : '<span class="font-bold ' + chgCls + '">' + row.close.toFixed(2) + '</span>';
-
-    const baseCols =
-      '<td class="py-2 px-3 text-slate-500">' + (isIndex ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
-      '<td class="py-2 px-3">' + codeDisplay + '</td>' +
-      '<td class="py-2 px-3">' + nameDisplay + '</td>' +
-      '<td class="py-2 px-3 text-right mono">' + closeDisplay + '</td>' +
-      '<td class="py-2 px-3 text-right mono font-bold ' + chgCls + '">' + chgSign + row.chgpct.toFixed(2) + '%</td>' +
-      '<td class="py-2 px-3 text-right mono">' + (isIndex ? '--' : row.vol.toLocaleString()) + '</td>';
-
-    let extraCols = '';
-
-    if (hotViewMode === 'trade') {
-      const ma5Cls  = row.ma5  && row.close > row.ma5  ? 'up' : row.ma5  && row.close < row.ma5  ? 'down' : 'flat';
-      const ma20Cls = row.ma20 && row.close > row.ma20 ? 'up' : row.ma20 && row.close < row.ma20 ? 'down' : 'flat';
-      const ma60Cls = row.ma60 && row.close > row.ma60 ? 'up' : row.ma60 && row.close < row.ma60 ? 'down' : 'flat';
-      const matrendMap = {
-         '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
-         '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
-         '0': ['--','px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-slate-500'],
-        '-1': ['空頭排列','px-2 py-0.5 rounded text-xs font-bold bg-red-900/60 text-red-300 border border-red-700/50'],
-        '-2': ['偏空整理','px-2 py-0.5 rounded text-xs font-bold bg-red-900/30 text-red-400 border border-red-800/50'],
-      };
-      const mt = matrendMap[String(row.matrend)] || matrendMap['0'];
-      extraCols =
-        '<td class="py-2 px-3 text-right mono ' + chgCls + '">' + chgSign + row.change.toFixed(2) + '</td>' +
-        '<td class="py-2 px-3 text-right mono up">' + row.high.toFixed(2) + '</td>' +
-        '<td class="py-2 px-3 text-right mono down">' + row.low.toFixed(2) + '</td>' +
-        '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
-
-    } else if (hotViewMode === 'risedrop') {
-      const totD = row.updays + row.downdays + row.flatdays || 1;
-      const upW   = Math.round(row.updays   / totD * 100);
-      const flatW = Math.round(row.flatdays / totD * 100);
-      const downW = 100 - upW - flatW;
-      const barHtml =
-        '<div class="flex h-2 rounded-full overflow-hidden w-28 mx-auto">' +
-          '<div class="bg-emerald-500" style="width:' + upW   + '%"></div>' +
-          '<div class="bg-slate-600"   style="width:' + flatW + '%"></div>' +
-          '<div class="bg-red-500"     style="width:' + downW + '%"></div>' +
-        '</div>' +
-        '<div class="text-slate-500 mt-0.5 text-xs">' + row.updays + '↑ ' + row.flatdays + '= ' + row.downdays + '↓</div>';
-      extraCols =
-        '<td class="py-2 px-3 text-right up font-bold">' + row.updays + '</td>' +
-        '<td class="py-2 px-3 text-right down font-bold">' + row.downdays + '</td>' +
-        '<td class="py-2 px-3 text-center flat">' + row.flatdays + '</td>' +
-        '<td class="py-2 px-3 text-center">' + barHtml + '</td>' +
-        '<td class="py-2 px-3 text-right up font-bold">' + row.upvolpct + '%</td>' +
-        '<td class="py-2 px-3 text-right down font-bold">' + row.downvolpct + '%</td>';
-
-    } else if (hotViewMode === 'ma') {
-      const ma5Cls  = row.ma5  && row.close > row.ma5  ? 'up' : row.ma5  && row.close < row.ma5  ? 'down' : 'flat';
-      const ma10Cls = row.ma10 && row.close > row.ma10 ? 'up' : row.ma10 && row.close < row.ma10 ? 'down' : 'flat';
-      const ma20Cls = row.ma20 && row.close > row.ma20 ? 'up' : row.ma20 && row.close < row.ma20 ? 'down' : 'flat';
-      const ma60Cls = row.ma60 && row.close > row.ma60 ? 'up' : row.ma60 && row.close < row.ma60 ? 'down' : 'flat';
-      const ma120Cls= row.ma120&& row.close > row.ma120? 'up' : row.ma120&& row.close < row.ma120? 'down' : 'flat';
-      const ma200Cls= row.ma200&& row.close > row.ma200? 'up' : row.ma200&& row.close < row.ma200? 'down' : 'flat';
-      const matrendMap = {
-         '1': ['多頭排列','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'],
-         '2': ['偏多整理','px-2 py-0.5 rounded text-xs font-bold bg-emerald-900/30 text-emerald-400 border border-emerald-800/50'],
-         '0': ['--','px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-slate-500'],
-        '-1': ['空頭排列','px-2 py-0.5 rounded text-xs font-bold bg-red-900/60 text-red-300 border border-red-700/50'],
-        '-2': ['偏空整理','px-2 py-0.5 rounded text-xs font-bold bg-red-900/30 text-red-400 border border-red-800/50'],
-      };
-      const mt = matrendMap[String(row.matrend)] || matrendMap['0'];
-
-      // show close vs MA as arrow+diff%
-      const maCell = (val, cls) => {
-        if (!val) return '<td class="py-2 px-3 text-right mono flat">--</td>';
-        const diff = ((row.close - val) / val * 100);
-        const arrow = diff > 0 ? '↗' : diff < 0 ? '↘' : '→';
-        return '<td class="py-2 px-3 text-right mono ' + cls + '">' +
-          val.toFixed(2) + '<span class="text-xs ml-1 opacity-70">' + arrow + '</span></td>';
-      };
-      extraCols =
-        maCell(row.ma5,   ma5Cls)  +
-        maCell(row.ma10,  ma10Cls) +
-        maCell(row.ma20,  ma20Cls) +
-        maCell(row.ma60,  ma60Cls) +
-        maCell(row.ma120, ma120Cls)+
-        maCell(row.ma200, ma200Cls)+
-        '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
-
-    } else if (hotViewMode === 'invest') {
-      // 評級徽章
-      const ratingHtml = row.rating
-        ? '<span style="background:' + row.rating_bg + ';color:' + row.rating_color + ';border:1px solid ' + row.rating_color + '40;" class="px-2 py-0.5 rounded-full text-xs font-black">' +
-          row.rating_icon + ' ' + row.rating + '</span>'
-        : '<span class="text-slate-500 text-xs">--</span>';
-
-      // 目標價（含類型標示）
-      const targetTypeLabel = { 'upside':'⬆', 'fair':'➡', 'downside':'⬇', 'none':'' };
-      const targetCls = row.target_type === 'upside' ? 'up' : row.target_type === 'downside' ? 'down' : 'flat';
-      const targetHtml = row.target_price != null
-        ? '<span class="mono font-bold ' + targetCls + '">' + (targetTypeLabel[row.target_type]||'') + ' ' + row.target_price.toFixed(1) + '</span>'
-        : '<span class="flat">--</span>';
-
-      // 本益比
-      const peHtml = row.pe_ratio != null
-        ? '<span class="mono ' + (row.pe_ratio < 15 ? 'up' : row.pe_ratio > 30 ? 'down' : '') + '">' + row.pe_ratio.toFixed(1) + 'x</span>'
-        : '<span class="flat text-xs">--</span>';
-
-      // 殖利率
-      const dyHtml = row.div_yield != null
-        ? '<span class="mono ' + (row.div_yield >= 5 ? 'up' : row.div_yield >= 3 ? 'text-amber-400' : 'flat') + '">' + row.div_yield.toFixed(2) + '%</span>'
-        : '<span class="flat text-xs">--</span>';
-
-      // 趨勢標籤
-      const trendHtml = '<span style="color:' + row.trend_color + '" class="text-xs font-bold">' + (row.trend_label || '--') + '</span>';
-
-      // 主要訊號（最多3個）
-      const signals = row.reasons_buy.concat(row.reasons_sell).slice(0,3);
-      const signalHtml = signals.length
-        ? signals.map(s => {
-            const isBuy = row.reasons_buy.includes(s);
-            const cls = isBuy ? 'signal-buy' : 'signal-sell';
-            return '<span class="signal-tag ' + cls + '">' + s.replace(/（[^）]*）/g,'') + '</span>';
-          }).join('')
-        : '<span class="text-slate-600 text-xs">資料不足</span>';
-
-      extraCols =
-        '<td class="py-2 px-3 text-center">' + ratingHtml + '</td>' +
-        '<td class="py-2 px-3 text-right">' + targetHtml + '</td>' +
-        '<td class="py-2 px-3 text-right">' + peHtml + '</td>' +
-        '<td class="py-2 px-3 text-right">' + dyHtml + '</td>' +
-        '<td class="py-2 px-3">' + trendHtml + '</td>' +
-        '<td class="py-2 px-3"><div class="flex flex-wrap gap-0.5">' + signalHtml + '</div></td>';
-    }
-
-    const actionCol = '<td class="py-2 px-3 text-center">' +
-      '<button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" ' +
-        'class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>' +
-      '</td>';
-
-    return '<tr class="' + trClass + '" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' +
-      baseCols + extraCols + actionCol + '</tr>';
-  }).join('');
-
+  tbody.innerHTML = rows.map((row, idx) => _buildHotRowHtml(row, idx+1, false)).join('');
   updateHotSummary();
+}
 }
 
 function updateHotSummary() {
@@ -5767,11 +5925,11 @@ function renderTradeOverview(data) {
         labels: maDts.map(d => d ? d.slice(5) : ''),
         datasets: [
           { label:'收盤',  data: maCls,          borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA5',   data: getMA('ma5'),    borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA10',  data: getMA('ma10'),   borderColor:'#8b5cf6', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA5',   data: getMA('ma5'),    borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA10',  data: getMA('ma10'),   borderColor:'#8b5cf6', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
           { label:'MA20',  data: getMA('ma20'),   borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
           { label:'MA60',  data: getMA('ma60'),   borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA120', data: getMA('ma120'),  borderColor:'#f97316', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
+          { label:'MA120', data: getMA('ma120'),  borderColor:'#f97316', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
           { label:'MA200', data: getMA('ma200'),  borderColor:'#ec4899', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[6,4] },
         ]
       },
@@ -5812,7 +5970,7 @@ async function loadFinReport(ticker) {
   }
   showFinState('loading');
   try {
-    const r = await fetch(`/api/finreport/${ticker}`, { signal: AbortSignal.timeout(30000) });
+    const r = await fetch(`/api/finreport/${ticker}`, { signal: AbortSignal.timeout(60000) });
     const d = await r.json();
     if (d.status !== 'success') {
       document.getElementById('finreport-error-msg').textContent = d.message || '財報載入失敗';
@@ -5918,9 +6076,11 @@ function destroyFinChart(key) {
 }
 
 function renderFinCharts(data) {
-  const ratios = (_finView === 'annual'
+  const allRatios = (_finView === 'annual'
     ? data.ratios?.annual
     : data.ratios?.quarterly) || [];
+  // 年報只顯示近4年；季報顯示近4季
+  const ratios = allRatios.slice(0, 4);
 
   if (!ratios.length) return;
 
@@ -6099,8 +6259,11 @@ function renderFinDetailTable(data) {
   const def   = FIN_TABLE_DEFS[_finTableType];
   const vData = _finView === 'annual' ? data.annual : data.quarterly;
   const rData = _finView === 'annual' ? data.ratios?.annual : data.ratios?.quarterly;
-  const rawRows = vData?.[_finTableType] || [];
-  const ratioRows = rData || [];
+  const allRawRows = vData?.[_finTableType] || [];
+  // 年報預設只顯示近4年；季報顯示近4季
+  const rawRows   = _finView === 'annual' ? allRawRows.slice(0, 4) : allRawRows.slice(0, 4);
+  const allRatioRows = rData || [];
+  const ratioRows = _finView === 'annual' ? allRatioRows.slice(0, 4) : allRatioRows.slice(0, 4);
 
   // 期間標頭
   const periods = rawRows.map(r => r.period?.slice(0,7) || '');
@@ -6258,7 +6421,7 @@ ${summaryLines || '（資料不足）'}
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
         <div class="flex items-center gap-3">
           <i class="fa-solid fa-fire text-amber-400 text-xl"></i>
-          <h2 class="text-lg font-black text-white">熱門股票總覽</h2>
+          <h2 class="text-lg font-black text-white" id="hotModalTitle">熱門股票總覽</h2>
         </div>
         <div class="flex items-center gap-3">
           <!-- 每頁筆數 -->
@@ -6266,10 +6429,10 @@ ${summaryLines || '（資料不足）'}
             <span class="text-slate-400">每頁筆數：</span>
             <select id="hotPageSize" onchange="changeHotPageSize()"
                     class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-500">
-              <option value="5" selected>5筆</option>
+              <option value="5">5筆</option>
               <option value="10">10筆</option>
               <option value="15">15筆</option>
-              <option value="20">20筆</option>
+              <option value="20" selected>20筆</option>
               <option value="30">30筆</option>
               <option value="40">40筆</option>
               <option value="50">50筆</option>
@@ -6327,9 +6490,10 @@ ${summaryLines || '（資料不足）'}
       </div>
 
       <!-- 表格區域 -->
-      <div class="overflow-auto flex-1 px-2">
+      <div class="overflow-auto flex-1 px-2" id="hotTableWrap">
         <table class="w-full text-xs" style="min-width:900px;">
-          <thead id="hotTableHead" class="sticky top-0 bg-slate-900 z-10"></thead>
+          <thead id="hotTableHead" class="sticky top-0 bg-slate-900 z-20"></thead>
+          <tbody id="hotIndexRow" class="sticky bg-slate-900 z-10" style="top:41px;"></tbody>
           <tbody id="hotStockTableBody" class="divide-y divide-slate-800/60"></tbody>
         </table>
         <!-- 空狀態 -->
@@ -6346,9 +6510,690 @@ ${summaryLines || '（資料不足）'}
                 class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-lg transition text-xs">
           <i class="fa-solid fa-rotate-right"></i>重新載入
         </button>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     自選股 Modal
+═══════════════════════════════════════════════════════════ -->
+<div id="watchlistModal" class="fixed inset-0 z-[60] hidden" style="background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);">
+  <div class="flex items-start justify-center min-h-screen p-4 pt-6">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-screen-xl shadow-2xl flex flex-col" style="max-height:90vh;">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-star text-violet-400 text-xl"></i>
+          <h2 class="text-lg font-black text-white">自選股總覽</h2>
+          <span class="text-slate-500 text-xs" id="wl-count-badge">共 0 支</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <!-- 新增自選股輸入 -->
+          <div class="flex items-center gap-2">
+            <div class="relative">
+              <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+              <input id="wlAddInput" type="text" placeholder="代碼或中文名稱"
+                     class="bg-slate-800 border border-slate-600 text-white rounded-lg pl-7 pr-3 py-1.5 text-xs outline-none focus:border-violet-500 w-36"
+                     maxlength="10"
+                     onkeydown="if(event.key==='Enter')addWatchlistStock()">
+            </div>
+            <button onclick="addWatchlistStock()"
+                    class="bg-violet-600 hover:bg-violet-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1">
+              <i class="fa-solid fa-plus"></i>加入
+            </button>
+            <button onclick="addCurrentToWatchlist()"
+                    class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1"
+                    id="wlAddCurrentBtn" title="加入目前查詢的股票">
+              <i class="fa-solid fa-bookmark"></i>加入當前個股
+            </button>
+          </div>
+          <button onclick="closeWatchlistPanel()"
+                  class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg p-2 transition">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 檢視模式切換（與熱門總覽相同） -->
+      <div class="px-6 py-2 border-b border-slate-700 shrink-0 flex gap-2">
+        <button id="wlViewBtn-trade" onclick="setWlViewMode('trade')"
+                class="tab-btn active text-xs py-1.5 px-3">
+          <i class="fa-solid fa-receipt mr-1"></i>成交資料
+        </button>
+        <button id="wlViewBtn-risedrop" onclick="setWlViewMode('risedrop')"
+                class="tab-btn text-xs py-1.5 px-3">
+          <i class="fa-solid fa-chart-bar mr-1"></i>漲跌成交統計
+        </button>
+        <button id="wlViewBtn-ma" onclick="setWlViewMode('ma')"
+                class="tab-btn text-xs py-1.5 px-3">
+          <i class="fa-solid fa-wave-square mr-1"></i>移動平均線
+        </button>
+        <button id="wlViewBtn-invest" onclick="setWlViewMode('invest')"
+                class="tab-btn text-xs py-1.5 px-3">
+          <i class="fa-solid fa-lightbulb mr-1"></i>投資分析
+        </button>
+      </div>
+
+      <!-- 錯誤提示 -->
+      <div id="wlAddError" class="hidden px-6 py-2 bg-red-950/50 border-b border-red-800/50 text-red-400 text-xs">
+        <i class="fa-solid fa-circle-exclamation mr-1"></i><span id="wlAddErrorMsg"></span>
+      </div>
+
+      <!-- 進度列 -->
+      <div id="wlProgress" class="px-6 py-3 border-b border-slate-700 shrink-0 hidden">
+        <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+          <span id="wlProgressText">載入中...</span>
+          <span id="wlProgressCount">0 / 0</span>
+        </div>
+        <div class="w-full bg-slate-800 rounded-full h-2">
+          <div id="wlProgressBar" class="bg-violet-500 h-2 rounded-full transition-all" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- 統計摘要列 -->
+      <div id="wlSummaryRow" class="hidden px-6 py-3 border-b border-slate-700 bg-slate-800/40 shrink-0">
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-center text-xs">
+          <div><div class="text-slate-500 mb-0.5">已載入</div><div class="font-black text-white" id="wls-loaded">0</div></div>
+          <div><div class="text-slate-500 mb-0.5">上漲</div><div class="font-black up" id="wls-up">0</div></div>
+          <div><div class="text-slate-500 mb-0.5">下跌</div><div class="font-black down" id="wls-down">0</div></div>
+          <div><div class="text-slate-500 mb-0.5">持平</div><div class="font-black flat" id="wls-flat">0</div></div>
+          <div><div class="text-slate-500 mb-0.5">多頭排列</div><div class="font-black text-emerald-400" id="wls-bull">0</div></div>
+          <div><div class="text-slate-500 mb-0.5">空頭排列</div><div class="font-black text-red-400" id="wls-bear">0</div></div>
+          <div><div class="text-slate-500 mb-0.5">最高漲幅</div><div class="font-black up" id="wls-topgain">--</div></div>
+        </div>
+      </div>
+
+      <!-- 空狀態（無自選股時） -->
+      <div id="wlEmptyState" class="flex-1 flex flex-col items-center justify-center py-16 text-slate-500">
+        <i class="fa-solid fa-star text-5xl mb-4 text-slate-700"></i>
+        <div class="text-base font-bold mb-2">尚無自選股</div>
+        <div class="text-sm text-slate-600 mb-4">在上方輸入股票代碼或中文名稱加入，<br>或點擊「加入當前個股」</div>
+      </div>
+
+      <!-- 表格區域 -->
+      <div id="wlTableWrap" class="overflow-auto flex-1 px-2 hidden">
+        <table class="w-full text-xs" style="min-width:900px;">
+          <thead id="wlTableHead" class="sticky top-0 bg-slate-900 z-10"></thead>
+          <tbody id="wlTableBody" class="divide-y divide-slate-800/60"></tbody>
+        </table>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-3 border-t border-slate-700 shrink-0 flex items-center justify-between text-xs text-slate-500">
+        <span><i class="fa-solid fa-circle-info mr-1"></i>自選股儲存於本機瀏覽器，重新整理後仍保留。點擊代號可查詢完整分析。</span>
+        <div class="flex gap-2">
+          <button onclick="reloadWatchlist()"
+                  class="flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white font-bold px-4 py-2 rounded-lg transition text-xs">
+            <i class="fa-solid fa-rotate-right"></i>重新載入
+          </button>
+          <button onclick="clearAllWatchlist()"
+                  class="flex items-center gap-1.5 bg-slate-700 hover:bg-red-800 text-slate-300 hover:text-white font-bold px-4 py-2 rounded-lg transition text-xs">
+            <i class="fa-solid fa-trash"></i>清空自選股
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// 自選股模組（後端持久化 + localStorage 離線備援）
+// 後端 API: GET/POST /api/watchlist, /api/watchlist/add, /api/watchlist/remove
+// 拖曳排序：HTML5 drag & drop
+// ════════════════════════════════════════════════════════════════
+
+// ── 後端 API 封裝 ────────────────────────────────────────────────
+async function wlApiFetch(url, method='GET', body=null) {
+  const opts = {
+    method,
+    headers: {'Content-Type':'application/json'},
+    signal: AbortSignal.timeout(8000)   // 8 秒 timeout，避免後端無回應卡住
+  };
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch(url, opts);
+    return await r.json();
+  } catch(e) {
+    console.error('[自選股 API]', e);
+    return { status: 'error', message: String(e) };
+  }
+}
+
+// ── localStorage 備援（後端不可用時保底）────────────────────────
+const WL_LS_KEY = 'watchlist_v2_backup';
+function _lsLoad() {
+  try { return JSON.parse(localStorage.getItem(WL_LS_KEY) || '[]'); } catch(e) { return []; }
+}
+function _lsSave(codes) {
+  try { localStorage.setItem(WL_LS_KEY, JSON.stringify(codes)); } catch(e) {}
+}
+
+// ── 讀取自選股清單（後端優先，失敗用 localStorage）────────────
+let _wlCodes = [];   // 唯一的 source of truth，依加入順序
+
+async function wlLoad() {
+  const d = await wlApiFetch('/api/watchlist');
+  if (d.status === 'success') {
+    _wlCodes = d.codes || [];
+    _lsSave(_wlCodes);   // 同步備援
+  } else {
+    console.warn('[自選股] 後端不可用，使用 localStorage 備援');
+    _wlCodes = _lsLoad();
+  }
+  return _wlCodes;
+}
+
+// ── 儲存完整清單到後端 ──────────────────────────────────────────
+async function wlSave(codes) {
+  // 去重保持順序
+  const unique = [...new Set(codes)];
+  _wlCodes = unique;
+  _lsSave(unique);  // 先更新本地備援
+  const d = await wlApiFetch('/api/watchlist', 'POST', { codes: unique });
+  if (d.status !== 'success') {
+    console.warn('[自選股] 後端儲存失敗，資料僅在本機保留');
+  }
+  return unique;
+}
+
+// ── 自選股面板狀態 ──────────────────────────────────────────────
+let _wlData      = {};
+let _wlViewMode  = 'trade';
+let _wlSortKey   = null;
+let _wlSortAsc   = true;
+let _wlAbort     = false;
+let _wlDragSrc   = null;   // 拖曳來源 index
+
+// ── 開啟自選股面板 ──────────────────────────────────────────────
+async function openWatchlistPanel() {
+  document.getElementById('watchlistModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  _wlViewMode = 'trade';
+  _wlSortKey  = null;
+  setWlViewMode('trade');
+  renderWlTableHeader();
+  _updateAddCurrentBtn();
+
+  // 從後端載入最新清單（8秒 timeout 後自動 fallback 到 localStorage）
+  _showWlLoading(true);
+  await wlLoad();
+  _updateWlCountBadge(_wlCodes.length);
+
+  if (_wlCodes.length === 0) {
+    _showWlEmpty(true);
+    _showWlLoading(false);
+    return;
+  }
+  _showWlEmpty(false);
+  _showWlLoading(false);
+
+  // 已快取的先顯示，補抓缺少的
+  const missing = _wlCodes.filter(c => _wlData[c] === undefined);
+  if (missing.length === 0) {
+    renderWlTable();
+    updateWlSummary();
+    return;
+  }
+  await _loadWlStocks(missing);
+}
+
+function closeWatchlistPanel() {
+  document.getElementById('watchlistModal').classList.add('hidden');
+  document.body.style.overflow = '';
+  _wlAbort = true;
+}
+
+// ── 新增自選股 ──────────────────────────────────────────────────
+async function addWatchlistStock() {
+  let val = document.getElementById('wlAddInput').value.trim();
+  if (!val) return;
+  _hideWlError();
+
+  // 中文名稱轉代碼
+  if (!/^[0-9A-Za-z]+$/.test(val)) {
+    let found = null;
+    for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
+      if (name === val) { found = code; break; }
+    }
+    if (!found) {
+      for (const [code, name] of Object.entries(STOCK_NAMES_ZH)) {
+        if (name === val) { found = code; break; }
+      }
+    }
+    if (!found) {
+      for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
+        if (name.includes(val)) { found = code; break; }
+      }
+    }
+    if (found) { val = found; }
+    else { _showWlError(`找不到「${val}」，請改用股票代碼`); return; }
+  }
+
+  const code = val.toUpperCase();
+  if (_wlCodes.includes(code)) {
+    _showWlError(`${code} 已在自選股清單中`);
+    return;
+  }
+
+  const d = await wlApiFetch('/api/watchlist/add', 'POST', { code });
+  if (d.status === 'already_exists') {
+    _showWlError(`${code} 已在自選股清單中`); return;
+  }
+  if (d.status !== 'success') {
+    // 後端失敗，直接本地操作
+    _wlCodes.push(code);
+    _lsSave(_wlCodes);
+  } else {
+    _wlCodes = d.codes || [..._wlCodes, code];
+    _lsSave(_wlCodes);
+  }
+
+  document.getElementById('wlAddInput').value = '';
+  _updateWlCountBadge(_wlCodes.length);
+  _updateAddCurrentBtn();
+  _showWlEmpty(false);
+  _updateBtnBadge();
+  await _loadWlStocks([code]);
+}
+
+// 加入目前查詢的個股
+async function addCurrentToWatchlist() {
+  if (!currentData || !currentData.ticker) return;
+  const code = currentData.ticker;
+  if (_wlCodes.includes(code)) {
+    _showWlError(`${code} 已在自選股清單中`);
+    setTimeout(_hideWlError, 2000);
+    return;
+  }
+  const d = await wlApiFetch('/api/watchlist/add', 'POST', { code });
+  if (d.status === 'success' || d.status === 'already_exists') {
+    _wlCodes = d.codes || [..._wlCodes, code];
+  } else {
+    _wlCodes.push(code);
+  }
+  _lsSave(_wlCodes);
+  _updateWlCountBadge(_wlCodes.length);
+  _updateAddCurrentBtn();
+  _updateBtnBadge();
+  if (currentData && _wlData[code] === undefined) {
+    _wlData[code] = currentData;
+  }
+  _showWlEmpty(false);
+  renderWlTable();
+  updateWlSummary();
+}
+
+// 從自選股移除
+async function removeWatchlistStock(code) {
+  const d = await wlApiFetch('/api/watchlist/remove', 'POST', { code });
+  if (d.status === 'success') {
+    _wlCodes = d.codes;
+  } else {
+    _wlCodes = _wlCodes.filter(c => c !== code);
+  }
+  _lsSave(_wlCodes);
+  delete _wlData[code];
+  _updateWlCountBadge(_wlCodes.length);
+  _updateAddCurrentBtn();
+  _updateBtnBadge();
+  if (_wlCodes.length === 0) { _showWlEmpty(true); return; }
+  renderWlTable();
+  updateWlSummary();
+}
+
+// 清空全部
+async function clearAllWatchlist() {
+  if (!confirm('確定清空所有自選股？')) return;
+  await wlSave([]);
+  _wlData = {};
+  _updateWlCountBadge(0);
+  _updateBtnBadge();
+  _showWlEmpty(true);
+}
+
+// 重新載入
+async function reloadWatchlist() {
+  if (_wlCodes.length === 0) { _showWlEmpty(true); return; }
+  _wlCodes.forEach(c => { delete _wlData[c]; });
+  _showWlEmpty(false);
+  await _loadWlStocks(_wlCodes);
+}
+
+// ── 批次載入股票資料 ────────────────────────────────────────────
+async function _loadWlStocks(codes) {
+  _wlAbort = false;
+  const total = _wlCodes.length;
+  document.getElementById('wlProgress').classList.remove('hidden');
+  document.getElementById('wlSummaryRow').classList.add('hidden');
+  _updateWlProgress(_wlCodes.filter(c => _wlData[c] !== undefined).length, total, '載入中...');
+  renderWlTable();
+
+  const BATCH = 5;
+  for (let i = 0; i < codes.length; i += BATCH) {
+    if (_wlAbort) break;
+    const batch = codes.slice(i, i + BATCH);
+    await Promise.all(batch.map(async code => {
+      if (_wlData[code] !== undefined) return;
+      try {
+        const r = await fetch('/api/stock_analysis/' + code, { signal: AbortSignal.timeout(20000) });
+        const d = await r.json();
+        _wlData[code] = (d.status === 'success') ? d.data : null;
+      } catch(e) { _wlData[code] = null; }
+      const loaded2 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
+      _updateWlProgress(loaded2, total, '已載入 ' + loaded2 + ' / ' + total + ' 支...');
+      renderWlTable();
+    }));
+  }
+  const finalLoaded = _wlCodes.filter(c => _wlData[c] !== undefined).length;
+  _updateWlProgress(finalLoaded, total, '載入完成，共 ' + total + ' 支');
+  document.getElementById('wlProgress').classList.add('hidden');
+  document.getElementById('wlSummaryRow').classList.remove('hidden');
+  updateWlSummary();
+}
+
+// ── 渲染表格標頭 ────────────────────────────────────────────────
+function renderWlTableHeader() {
+  const thead = document.getElementById('wlTableHead');
+  if (!thead) return;
+  const dragHint = `<th class="py-3 px-2 text-slate-600 text-center w-6" title="拖曳排序"><i class="fa-solid fa-grip-vertical"></i></th>`;
+  let base = dragHint + `
+    <th class="py-3 px-3 text-left cursor-pointer hover:text-white" onclick="sortWlTable('code')">代號 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+    <th class="py-3 px-3 text-left" style="min-width:80px">股票名稱</th>
+    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('close')">成交價 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('chgpct')">漲跌幅% <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('volume')">成交量(張) <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
+  let extra = '';
+  if (_wlViewMode === 'trade') {
+    extra = `<th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('chg')">漲跌 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
+      <th class="py-3 px-3 text-right">最高</th><th class="py-3 px-3 text-right">最低</th>
+      <th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortWlTable('matrend')">均線排列 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
+  } else if (_wlViewMode === 'risedrop') {
+    extra = `<th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('updays')">上漲日(近60日)</th>
+      <th class="py-3 px-3 text-right">下跌日</th>
+      <th class="py-3 px-3 text-right">上漲量%</th>
+      <th class="py-3 px-3 text-right">下跌量%</th>`;
+  } else if (_wlViewMode === 'ma') {
+    extra = `<th class="py-3 px-3 text-right">MA5</th>
+      <th class="py-3 px-3 text-right">MA20</th>
+      <th class="py-3 px-3 text-right">MA60</th>
+      <th class="py-3 px-3 text-center">均線排列</th>`;
+  } else if (_wlViewMode === 'invest') {
+    extra = `<th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortWlTable('rating_score')">評級</th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('target_price')">目標價</th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('pe_ratio')">本益比</th>
+      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('div_yield')">殖利率%</th>
+      <th class="py-3 px-3 text-center">趨勢</th>
+      <th class="py-3 px-3 text-left" style="min-width:220px">主要訊號</th>`;
+  }
+  thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">${base}${extra}<th class="py-3 px-3 text-center">操作</th></tr>`;
+}
+
+function setWlViewMode(mode) {
+  _wlViewMode = mode;
+  ['trade','risedrop','ma','invest'].forEach(m => {
+    const btn = document.getElementById('wlViewBtn-' + m);
+    if (btn) btn.classList.toggle('active', m === mode);
+  });
+  renderWlTableHeader();
+  renderWlTable();
+}
+
+function sortWlTable(key) {
+  if (_wlSortKey === key) _wlSortAsc = !_wlSortAsc;
+  else { _wlSortKey = key; _wlSortAsc = false; }
+  renderWlTable();
+}
+
+// ── HTML5 拖曳排序 ──────────────────────────────────────────────
+function _wlOnDragStart(e, idx) {
+  _wlDragSrc = idx;
+  e.currentTarget.style.opacity = '0.4';
+  e.dataTransfer.effectAllowed = 'move';
+}
+function _wlOnDragEnd(e) {
+  e.currentTarget.style.opacity = '1';
+  // 清除 over 樣式
+  document.querySelectorAll('.wl-drag-over').forEach(el => el.classList.remove('wl-drag-over'));
+}
+function _wlOnDragOver(e, idx) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.wl-drag-over').forEach(el => el.classList.remove('wl-drag-over'));
+  e.currentTarget.classList.add('wl-drag-over');
+}
+async function _wlOnDrop(e, toIdx) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('wl-drag-over');
+  if (_wlDragSrc === null || _wlDragSrc === toIdx) return;
+  // 若目前有排序，拖曳前先清除排序（回到加入順序）
+  _wlSortKey = null;
+  // 依當前顯示順序操作（若有排序，先依排序後的順序重排 _wlCodes）
+  const newCodes = [..._wlCodes];
+  const [moved] = newCodes.splice(_wlDragSrc, 1);
+  newCodes.splice(toIdx, 0, moved);
+  await wlSave(newCodes);
+  _updateWlCountBadge(_wlCodes.length);
+  renderWlTable();
+}
+
+// ── 渲染表格 ────────────────────────────────────────────────────
+function renderWlTable() {
+  const tbody = document.getElementById('wlTableBody');
+  const wrap  = document.getElementById('wlTableWrap');
+  if (!tbody || !wrap) return;
+  if (_wlCodes.length === 0) { _showWlEmpty(true); return; }
+  _showWlEmpty(false);
+  wrap.classList.remove('hidden');
+
+  let rows = _wlCodes.map((code, idx) => {
+    const d = _wlData[code];
+    if (d === undefined) return { code, name: getStockNameZh(code)||code, loading: true, _idx: idx };
+    const row = calcHotRow(code, d);
+    if (!row) return { code, name: getStockNameZh(code)||code, error: true, _idx: idx };
+    row._idx = idx;
+    return row;
+  });
+
+  // 欄位排序（排序後拖曳仍依原始 _idx 操作）
+  if (_wlSortKey) {
+    rows.sort((a, b) => {
+      if (a.loading || a.error) return 1;
+      if (b.loading || b.error) return -1;
+      const av = a[_wlSortKey], bv = b[_wlSortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1; if (bv == null) return -1;
+      if (typeof av === 'number' && typeof bv === 'number')
+        return _wlSortAsc ? av - bv : bv - av;
+      return _wlSortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+    });
+  }
+
+  tbody.innerHTML = rows.map((row, displayIdx) => {
+    const actualIdx = row._idx ?? displayIdx;  // 拖曳用實際 index
+    const name = STOCK_DICT_CSV[row.code] || STOCK_NAMES_ZH[row.code] || row.name || row.code;
+    const trClass = 'border-b border-slate-800/50 hover:bg-slate-800/30';
+    const dragHandleCol = `<td class="py-2 px-2 text-slate-600 cursor-grab active:cursor-grabbing text-center wl-drag-handle"
+      draggable="true"
+      ondragstart="_wlOnDragStart(event,${actualIdx})"
+      ondragend="_wlOnDragEnd(event)"
+      ondragover="_wlOnDragOver(event,${actualIdx})"
+      ondrop="_wlOnDrop(event,${actualIdx})"
+      title="拖曳排序"><i class="fa-solid fa-grip-vertical"></i></td>`;
+    const opBtn = `<td class="py-2 px-3 text-center">
+      <div class="flex gap-1 justify-center">
+        <button onclick="event.stopPropagation();loadStock('${row.code}');closeWatchlistPanel()"
+          class="text-blue-400 hover:text-blue-300 text-xs border border-blue-800/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>
+        <button onclick="event.stopPropagation();removeWatchlistStock('${row.code}')"
+          class="text-red-400 hover:text-red-300 text-xs border border-red-800/50 rounded px-2 py-0.5 hover:bg-red-900/30 transition"><i class="fa-solid fa-xmark"></i></button>
+      </div></td>`;
+
+    if (row.loading) {
+      return `<tr class="${trClass} text-slate-500" ondragover="_wlOnDragOver(event,${actualIdx})" ondrop="_wlOnDrop(event,${actualIdx})">
+        ${dragHandleCol}
+        <td class="py-2 px-3 font-black text-blue-400">${row.code}</td>
+        <td class="py-2 px-3">${name}</td>
+        <td colspan="4" class="py-2 px-3 text-center"><i class="fa-solid fa-circle-notch fa-spin text-amber-400 mr-2"></i>載入中...</td>
+        ${opBtn}</tr>`;
+    }
+    if (row.error) {
+      return `<tr class="${trClass} text-slate-500" ondragover="_wlOnDragOver(event,${actualIdx})" ondrop="_wlOnDrop(event,${actualIdx})">
+        ${dragHandleCol}
+        <td class="py-2 px-3 font-black text-red-400">${row.code}</td>
+        <td class="py-2 px-3">${name}</td>
+        <td colspan="4" class="py-2 px-3 text-center text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>
+        ${opBtn}</tr>`;
+    }
+
+    const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
+    const chgSign = row.chgpct > 0 ? '+' : '';
+    const baseCols = `
+      <td class="py-2 px-3"><span class="font-black text-blue-400 cursor-pointer hover:underline" onclick="loadStock('${row.code}');closeWatchlistPanel()">${row.code}</span></td>
+      <td class="py-2 px-3"><span class="font-bold text-white">${name}</span></td>
+      <td class="py-2 px-3 text-right mono"><span class="font-bold ${chgCls}">${row.close.toFixed(2)}</span></td>
+      <td class="py-2 px-3 text-right mono"><span class="font-bold ${chgCls}">${chgSign}${row.chgpct.toFixed(2)}%</span></td>
+      <td class="py-2 px-3 text-right mono">${row.volume != null ? row.volume.toLocaleString() : '--'}</td>`;
+
+    let extraCols = '';
+    if (_wlViewMode === 'trade') {
+      const chg = row.chg != null ? (row.chg >= 0 ? '+' : '') + row.chg.toFixed(2) : '--';
+      extraCols = `<td class="py-2 px-3 text-right mono ${chgCls}">${chg}</td>
+        <td class="py-2 px-3 text-right mono">${row.high!=null?row.high.toFixed(2):'--'}</td>
+        <td class="py-2 px-3 text-right mono">${row.low!=null?row.low.toFixed(2):'--'}</td>
+        <td class="py-2 px-3 text-center">${row.matrend?`<span class="signal-tag" style="background:${row.matrend_color||'#1e293b'};color:#fff;">${row.matrend}</span>`:'--'}</td>`;
+    } else if (_wlViewMode === 'risedrop') {
+      extraCols = `<td class="py-2 px-3 text-right">${row.updays??'--'}</td>
+        <td class="py-2 px-3 text-right">${row.downdays??'--'}</td>
+        <td class="py-2 px-3 text-right">${row.upvolpct!=null?row.upvolpct.toFixed(1)+'%':'--'}</td>
+        <td class="py-2 px-3 text-right">${row.downvolpct!=null?row.downvolpct.toFixed(1)+'%':'--'}</td>`;
+    } else if (_wlViewMode === 'ma') {
+      const mf = v => v != null ? v.toFixed(2) : '--';
+      const mc = (c,v) => c!=null&&v!=null?(c>v?'text-emerald-400':c<v?'text-red-400':''):'';
+      extraCols = `<td class="py-2 px-3 text-right mono ${mc(row.close,row.ma5)}">${mf(row.ma5)}</td>
+        <td class="py-2 px-3 text-right mono ${mc(row.close,row.ma20)}">${mf(row.ma20)}</td>
+        <td class="py-2 px-3 text-right mono ${mc(row.close,row.ma60)}">${mf(row.ma60)}</td>
+        <td class="py-2 px-3 text-center">${row.matrend?`<span class="signal-tag" style="background:${row.matrend_color||'#1e293b'};color:#fff;">${row.matrend}</span>`:'--'}</td>`;
+    } else if (_wlViewMode === 'invest') {
+      const ratingBadge = row.rating
+        ? `<span class="signal-tag font-black" style="background:${row.rating_bg||'#1e293b'};color:${row.rating_color||'#fff'};">${row.rating_icon||''} ${row.rating}</span>` : '--';
+      const signals = (row.reasons_buy||[]).concat(row.reasons_sell||[]).slice(0,3)
+        .map(s=>`<span class="signal-tag bg-slate-700/80 text-slate-300">${s}</span>`).join('');
+      extraCols = `<td class="py-2 px-3 text-center">${ratingBadge}</td>
+        <td class="py-2 px-3 text-right mono">${row.target_price!=null?row.target_price.toFixed(1):'--'}</td>
+        <td class="py-2 px-3 text-right">${row.pe_ratio!=null?row.pe_ratio.toFixed(1)+'x':'--'}</td>
+        <td class="py-2 px-3 text-right">${row.div_yield!=null?row.div_yield.toFixed(2)+'%':'--'}</td>
+        <td class="py-2 px-3 text-center">${row.trend_label?`<span class="signal-tag" style="background:#1e293b;color:${row.trend_color||'#94a3b8'};">${row.trend_label}</span>`:'--'}</td>
+        <td class="py-2 px-3">${signals}</td>`;
+    }
+
+    return `<tr class="${trClass}" ondragover="_wlOnDragOver(event,${actualIdx})" ondrop="_wlOnDrop(event,${actualIdx})">
+      ${dragHandleCol}${baseCols}${extraCols}${opBtn}</tr>`;
+  }).join('');
+}
+
+// ── 統計摘要 ────────────────────────────────────────────────────
+function updateWlSummary() {
+  const rows = _wlCodes.map(c => calcHotRow(c, _wlData[c])).filter(Boolean);
+  const up   = rows.filter(r => r.chgpct > 0).length;
+  const down = rows.filter(r => r.chgpct < 0).length;
+  const flat = rows.filter(r => r.chgpct === 0).length;
+  const bull = rows.filter(r => r.matrend && r.matrend.includes('多頭')).length;
+  const bear = rows.filter(r => r.matrend && r.matrend.includes('空頭')).length;
+  const sorted = [...rows].sort((a,b)=>b.chgpct-a.chgpct);
+  const topGain = sorted[0] ? (sorted[0].chgpct >= 0 ? '+' : '') + sorted[0].chgpct.toFixed(2) + '%' : '--';
+  const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  set('wls-loaded', rows.length); set('wls-up', up); set('wls-down', down);
+  set('wls-flat', flat); set('wls-bull', bull); set('wls-bear', bear); set('wls-topgain', topGain);
+}
+
+// ── 工具函式 ────────────────────────────────────────────────────
+function _showWlEmpty(show) {
+  document.getElementById('wlEmptyState').classList.toggle('hidden', !show);
+  document.getElementById('wlTableWrap').classList.toggle('hidden', show);
+  if (show) {
+    document.getElementById('wlProgress').classList.add('hidden');
+    document.getElementById('wlSummaryRow').classList.add('hidden');
+  }
+}
+function _showWlLoading(show) {
+  const el = document.getElementById('wlProgress');
+  if (!el) return;
+  if (show) {
+    el.classList.remove('hidden');
+    document.getElementById('wlProgressText').textContent = '同步自選股清單...';
+    document.getElementById('wlProgressCount').textContent = '';
+    document.getElementById('wlProgressBar').style.width = '30%';
+  }
+}
+function _updateWlCountBadge(n) {
+  const el = document.getElementById('wl-count-badge');
+  if (el) el.textContent = '共 ' + n + ' 支';
+}
+function _updateWlProgress(loaded, total, text) {
+  const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
+  const bar = document.getElementById('wlProgressBar');
+  const txt = document.getElementById('wlProgressText');
+  const cnt = document.getElementById('wlProgressCount');
+  if (bar) bar.style.width = pct + '%';
+  if (txt) txt.textContent = text;
+  if (cnt) cnt.textContent = loaded + ' / ' + total;
+}
+function _showWlError(msg) {
+  document.getElementById('wlAddError').classList.remove('hidden');
+  document.getElementById('wlAddErrorMsg').textContent = msg;
+}
+function _hideWlError() {
+  document.getElementById('wlAddError').classList.add('hidden');
+}
+function _updateAddCurrentBtn() {
+  const btn = document.getElementById('wlAddCurrentBtn');
+  if (!btn) return;
+  if (!currentData || !currentData.ticker) {
+    btn.classList.add('opacity-40'); btn.disabled = true; return;
+  }
+  const already = _wlCodes.includes(currentData.ticker);
+  btn.classList.toggle('opacity-40', already);
+  btn.disabled = already;
+  btn.title = already ? `${currentData.ticker} 已在自選股` : `加入 ${currentData.ticker}`;
+}
+function _updateBtnBadge() {
+  const btnEl = document.getElementById('btnWatchlist');
+  if (!btnEl) return;
+  if (_wlCodes.length > 0) {
+    btnEl.innerHTML = `<i class="fa-solid fa-star"></i>自選股 <span class="bg-white/20 text-white text-xs font-black px-1.5 py-0.5 rounded-full">${_wlCodes.length}</span>`;
+  } else {
+    btnEl.innerHTML = `<i class="fa-solid fa-star"></i>自選股`;
+  }
+}
+
+// ── 拖曳 CSS（動態注入）────────────────────────────────────────
+(function injectDragStyle() {
+  const s = document.createElement('style');
+  s.textContent = `.wl-drag-over { outline: 2px dashed #7c3aed !important; background: rgba(124,58,237,0.1) !important; }
+  .wl-drag-handle:hover { color: #7c3aed; }`;
+  document.head.appendChild(s);
+})();
+
+// ── 頁面初始化：從後端預載自選股數量 ──────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // 非同步預載（不阻塞頁面）
+  const d = await wlApiFetch('/api/watchlist');
+  if (d.status === 'success') {
+    _wlCodes = d.codes || [];
+    _lsSave(_wlCodes);
+  } else {
+    _wlCodes = _lsLoad();  // 後端失敗用備援
+  }
+  _updateBtnBadge();
+  // 監聽個股載入，更新「加入當前個股」按鈕
+  const stockArea = document.getElementById('stockArea');
+  if (stockArea) {
+    new MutationObserver(() => {
+      _updateAddCurrentBtn();
+      _updateBtnBadge();
+    }).observe(stockArea, { attributes: true, attributeFilter: ['class'] });
+  }
+});
+</script>
 </body>
 </html>
