@@ -5008,8 +5008,9 @@ function renderSIM(d) {
 let hotStockList     = [];
 let hotStockData     = {};
 
-// ── localStorage 快取工具（有效期 24h，每日 14:00 後強制更新）──
-const HOT_CACHE_KEY    = 'hotStockCache_v1';
+// ── localStorage 快取工具（有效期 24h，每日 13:30 後強制更新）──
+// 與後端 github_cache.py 的盤後更新時間對齊（13:30 台灣時間）
+const HOT_CACHE_KEY    = 'hotStockCache_v2';      // 版本號升一，清除舊快取
 const HOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24 小時
 
 function _hotCacheIsFresh(ts) {
@@ -5017,10 +5018,11 @@ function _hotCacheIsFresh(ts) {
   const now  = Date.now();
   const age  = now - ts;
   if (age > HOT_CACHE_TTL_MS) return false;
-  // 每日 14:00 後強制刷新：判斷快取時間是否在今日 14:00 之前
-  const today14 = new Date();
-  today14.setHours(14, 0, 0, 0);
-  if (now >= today14.getTime() && ts < today14.getTime()) return false;
+  // 每日 13:30 後強制刷新：判斷快取時間是否在今日 13:30 之前
+  // 對齊後端 github_cache.py 的盤後更新排程（每日 13:30 Asia/Taipei）
+  const today1330 = new Date();
+  today1330.setHours(13, 30, 0, 0);
+  if (now >= today1330.getTime() && ts < today1330.getTime()) return false;
   return true;
 }
 
