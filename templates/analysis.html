@@ -5397,19 +5397,23 @@ async function loadHotStocksSequential(onlyCodes) {
     ? hotStockList.filter(s => onlyCodes.includes(s.code))
     : hotStockList;
   const total = hotStockList.length;
-  let loaded = hotStockList.filter(s => !onlyCodes && hotStockData[s.code] !== undefined).length;
+
+  // ── 用物件包裝 loaded，避免 Promise.all 並行競爭時閉包捕捉舊值 ──
+  const progress = {
+    loaded: hotStockList.filter(s => !onlyCodes && hotStockData[s.code] !== undefined).length
+  };
   const BATCH = 20;
-  updateHotProgress(loaded, total, onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...') : '準備載入...');
+  updateHotProgress(progress.loaded, total, onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...') : '準備載入...');
 
   // 若補抓模式且有已載入資料，先顯示已有的
-  if (onlyCodes && loaded > 0) {
+  if (onlyCodes && progress.loaded > 0) {
     renderHotTable();
   }
 
-  // 每秒刷新進度條
+  // 每秒刷新進度條（直接讀 progress.loaded，不受閉包捕捉影響）
   let _progressInterval = setInterval(() => {
-    updateHotProgress(loaded, total, '已載入 ' + loaded + ' / ' + total + ' 支...');
-  }, 1000);
+    updateHotProgress(progress.loaded, total, '已載入 ' + progress.loaded + ' / ' + total + ' 支...');
+  }, 500);
 
   const fetchWithRetry = async (code, maxRetry = 3) => {
     for (let attempt = 1; attempt <= maxRetry; attempt++) {
@@ -5428,17 +5432,17 @@ async function loadHotStocksSequential(onlyCodes) {
   _cacheHits = 0;
   if (!onlyCodes) {
     for (const s of targetList) {
-      if (hotStockData[s.code] !== undefined) continue;
+      if (hotStockData[s.code] !== undefined) continue;  // 已有資料，跳過（不重複計數）
       const cached = hotCacheLoad(s.code);
       if (cached) {
         hotStockData[s.code] = cached;
-        loaded++;
+        progress.loaded++;
         _cacheHits++;
       }
     }
     if (_cacheHits > 0) {
       renderHotTable();
-      updateHotProgress(loaded, total, '快取命中 ' + _cacheHits + ' 支，載入剩餘資料...');
+      updateHotProgress(progress.loaded, total, '快取命中 ' + _cacheHits + ' 支，載入剩餘資料...');
     }
   }
 
@@ -5446,11 +5450,12 @@ async function loadHotStocksSequential(onlyCodes) {
     if (hotLoadAbort) break;
     const batch = targetList.slice(i, i + BATCH);
     await Promise.all(batch.map(async (s) => {
-      if (hotStockData[s.code] !== undefined) { loaded++; return; }
+      // ── 已有資料（含快取命中）直接跳過，不再 loaded++ ──
+      if (hotStockData[s.code] !== undefined) return;
       const result = await fetchWithRetry(s.code);
       hotStockData[s.code] = result;
       if (result) hotCacheSave(s.code, result);   // 成功才存快取
-      loaded++;
+      progress.loaded++;
       // ── 取得任一支就立即更新表格 ──
       renderHotTable();
     }));
@@ -5458,8 +5463,10 @@ async function loadHotStocksSequential(onlyCodes) {
   }
 
   clearInterval(_progressInterval);
+  // 最終以實際已載入數量為準，避免超過 total
+  const finalLoaded = hotStockList.filter(s => hotStockData[s.code] !== undefined).length;
   const cacheNote = _cacheHits > 0 ? '（快取命中 ' + _cacheHits + ' 支）' : '';
-  updateHotProgress(total, total, '載入完成，共 ' + total + ' 支 ' + cacheNote);
+  updateHotProgress(finalLoaded, total, '載入完成，共 ' + finalLoaded + ' 支 ' + cacheNote);
   document.getElementById('hotSummaryRow').classList.remove('hidden');
   updateHotSummary();
 }
@@ -6637,26 +6644,57 @@ ${summaryLines || '（資料不足）'}
 
 <script>
 // ════════════════════════════════════════════════════════════════
-// 自選股模組（後端持久化 + localStorage 離線備援）
-// 後端 API: GET/POST /api/watchlist, /api/watchlist/add, /api/watchlist/remove
+// 自選股模組（純 localStorage 模式，無需後端）
 // 拖曳排序：HTML5 drag & drop
 // ════════════════════════════════════════════════════════════════
 
-// ── 後端 API 封裝 ────────────────────────────────────────────────
+// ── 後端 API 封裝（優先後端，失敗立即 fallback localStorage，不阻塞）────
 async function wlApiFetch(url, method='GET', body=null) {
+  // 若在 file:// 或後端不可用，直接走 localStorage 模擬
+  if (window.location.protocol === 'file:' || window._wlOfflineMode) {
+    return _wlLocalSimulate(url, method, body);
+  }
   const opts = {
     method,
     headers: {'Content-Type':'application/json'},
-    signal: AbortSignal.timeout(8000)   // 8 秒 timeout，避免後端無回應卡住
+    signal: AbortSignal.timeout(3000)   // 縮短為 3 秒，避免卡住
   };
   if (body) opts.body = JSON.stringify(body);
   try {
     const r = await fetch(url, opts);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.json();
   } catch(e) {
-    console.error('[自選股 API]', e);
-    return { status: 'error', message: String(e) };
+    console.warn('[自選股] 後端不可用，切換離線模式:', e.message);
+    window._wlOfflineMode = true;  // 標記後續請求直接走本地
+    return _wlLocalSimulate(url, method, body);
   }
+}
+
+// ── 本地模擬後端 API（純 localStorage）──────────────────────────
+function _wlLocalSimulate(url, method, body) {
+  const codes = _lsLoad();
+  if (url.includes('/api/watchlist/add')) {
+    const code = (body && body.code) ? String(body.code).trim().toUpperCase() : '';
+    if (!code) return { status: 'error', message: '無效代碼' };
+    if (codes.includes(code)) return { status: 'already_exists', codes, count: codes.length };
+    codes.push(code);
+    _lsSave(codes);
+    return { status: 'success', codes, count: codes.length };
+  }
+  if (url.includes('/api/watchlist/remove')) {
+    const code = (body && body.code) ? String(body.code).trim().toUpperCase() : '';
+    const newCodes = codes.filter(c => c !== code);
+    _lsSave(newCodes);
+    return { status: 'success', codes: newCodes, count: newCodes.length };
+  }
+  if (method === 'POST' && url.includes('/api/watchlist')) {
+    const newCodes = (body && Array.isArray(body.codes)) ? body.codes : codes;
+    _lsSave(newCodes);
+    return { status: 'success', codes: newCodes, count: newCodes.length };
+  }
+  // GET /api/watchlist
+  return { status: 'success', codes, count: codes.length };
 }
 
 // ── localStorage 備援（後端不可用時保底）────────────────────────
@@ -7173,18 +7211,38 @@ function _updateBtnBadge() {
   document.head.appendChild(s);
 })();
 
-// ── 頁面初始化：從後端預載自選股數量 ──────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
-  // 非同步預載（不阻塞頁面）
-  const d = await wlApiFetch('/api/watchlist');
-  if (d.status === 'success') {
-    _wlCodes = d.codes || [];
-    _lsSave(_wlCodes);
-  } else {
-    _wlCodes = _lsLoad();  // 後端失敗用備援
-  }
+// ── 頁面初始化：立即從 localStorage 讀取，再非同步嘗試後端同步 ──
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. 立即從 localStorage 讀取（同步，不阻塞）
+  _wlCodes = _lsLoad();
   _updateBtnBadge();
-  // 監聽個股載入，更新「加入當前個股」按鈕
+
+  // 2. 若非 file:// 協定，背景嘗試後端同步（不阻塞頁面互動）
+  if (window.location.protocol !== 'file:') {
+    (async () => {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 3000);
+        const r = await fetch('/api/watchlist', { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (r.ok) {
+          const d = await r.json();
+          if (d.status === 'success') {
+            _wlCodes = d.codes || [];
+            _lsSave(_wlCodes);
+            _updateBtnBadge();
+          }
+        }
+      } catch(e) {
+        window._wlOfflineMode = true;
+        console.info('[自選股] 離線模式，使用 localStorage');
+      }
+    })();
+  } else {
+    window._wlOfflineMode = true;
+  }
+
+  // 3. 監聽個股載入，更新「加入當前個股」按鈕
   const stockArea = document.getElementById('stockArea');
   if (stockArea) {
     new MutationObserver(() => {
