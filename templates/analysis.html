@@ -5118,12 +5118,12 @@ function renderHotTableHeader() {
 
   thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">${base}${extra}<th class="py-3 px-3 text-center">操作</th></tr>`;
 
-  // 動態更新大盤列的 sticky top 值，確保它緊貼 thead 下方不隨股票列捲動
+  // 動態更新大盤列 <tr> 的 sticky top 值，確保它緊貼 thead 下方不隨股票列捲動
   requestAnimationFrame(() => {
-    const tbodyIndex = document.getElementById('hotIndexRow');
-    if (tbodyIndex && thead) {
+    const thead = document.getElementById('hotTableHead');
+    if (thead) {
       const theadH = Math.round(thead.getBoundingClientRect().height);
-      tbodyIndex.style.top = theadH + 'px';
+      _updateIndexRowTop(theadH);
     }
   });
 }
@@ -5579,7 +5579,8 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   const stickyBase = 'sticky z-10 ' + stickyBg;
 
   if (row.loading) {
-    return '<tr class="text-slate-500">' +
+    const trStyle = isIndexRow ? ' id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02"' : '';
+    return '<tr class="text-slate-500"' + trStyle + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
@@ -5587,7 +5588,8 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       '</tr>';
   }
   if (row.error) {
-    return '<tr class="text-slate-500">' +
+    const trStyle = isIndexRow ? ' id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02"' : '';
+    return '<tr class="text-slate-500"' + trStyle + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold text-red-400 ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
@@ -5599,7 +5601,7 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
   const chgSign = row.chgpct > 0 ? '+' : '';
   const trClass = isIndexRow
-    ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10'
+    ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10" id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02'
     : 'border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/30';
 
   const codeDisplay = isIndexRow
@@ -5714,6 +5716,12 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   return '<tr class="' + trClass + '" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
 }
 
+// ── 同步大盤列 <tr> 的 sticky top 至 thead 實際高度 ────────────
+function _updateIndexRowTop(topPx) {
+  const tr = document.getElementById('hotIndexTr');
+  if (tr) tr.style.top = (topPx != null ? topPx : 41) + 'px';
+}
+
 // ── 渲染表格 ─────────────────────────────────────────────────────────
 function renderHotTable() {
   const tbodyIndex = document.getElementById('hotIndexRow');
@@ -5727,6 +5735,11 @@ function renderHotTable() {
     if (d === undefined) iRow = { code:'0000', name:'大盤指數', loading:true };
     else iRow = calcHotRow('0000', d) || { code:'0000', name:'大盤指數', error:true };
     tbodyIndex.innerHTML = _buildHotRowHtml(iRow, 0, true);
+    // 同步 sticky top（thead 高度可能因 view mode 不同而異）
+    requestAnimationFrame(() => {
+      const thead = document.getElementById('hotTableHead');
+      if (thead) _updateIndexRowTop(Math.round(thead.getBoundingClientRect().height));
+    });
   }
 
   // 一般股票列（排除大盤）
@@ -5750,6 +5763,7 @@ function renderHotTable() {
 
   tbody.innerHTML = rows.map((row, idx) => _buildHotRowHtml(row, idx+1, false)).join('');
   updateHotSummary();
+}
 }
 
 function updateHotSummary() {
@@ -6688,7 +6702,7 @@ ${summaryLines || '（資料不足）'}
       <div class="overflow-auto flex-1 px-2" id="hotTableWrap" style="position:relative;">
         <table class="w-full text-xs" style="min-width:900px;">
           <thead id="hotTableHead" class="sticky top-0 bg-slate-900 z-20"></thead>
-          <tbody id="hotIndexRow" class="sticky bg-slate-900 z-10" style="top:41px;"></tbody>
+          <tbody id="hotIndexRow"></tbody>
           <tbody id="hotStockTableBody" class="divide-y divide-slate-800/60"></tbody>
         </table>
         <!-- 空狀態 -->
