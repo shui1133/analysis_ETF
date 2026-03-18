@@ -395,6 +395,42 @@ def get_stock_analysis(ticker):
         info       = raw.get('info', {})
         divs       = raw.get('dividend_data', [])
 
+        # ── ★ 同步寫入 GitHub 快取（三層持久化）────────────────
+        # data_fetcher 內部的舊版 _gh_cache 僅在 enabled 時寫入；
+        # 這裡再透過新版 CacheManager 確保本機 meta 時間戳記正確更新，
+        # 並補充 gh_save 以防 data_fetcher 那層因 token 未設定而略過。
+        if raw.get('source') != 'simulated' and not raw.get('is_simulated', False):
+            try:
+                from github_cache import local_save_price, gh_save_price, \
+                                        local_save_dividend, gh_save_dividend, \
+                                        local_save_fundamental, gh_save_fundamental
+                # 股價（統一為英文欄位存檔）
+                price_list = [
+                    {'date': str(r['date'])[:10],
+                     'open':   round(float(r.get('open',   r.get('close', 0))), 2),
+                     'high':   round(float(r.get('high',   r.get('close', 0))), 2),
+                     'low':    round(float(r.get('low',    r.get('close', 0))), 2),
+                     'close':  round(float(r['close']), 2),
+                     'volume': int(r.get('volume', 0))}
+                    for r in ohlcv if r.get('close')
+                ]
+                if price_list:
+                    local_save_price(DATA_DIR, ticker, price_list)
+                    gh_save_price(ticker, price_list)
+
+                # 配息
+                if divs:
+                    local_save_dividend(DATA_DIR, ticker, divs)
+                    gh_save_dividend(ticker, divs)
+
+                # 基本面
+                if info:
+                    local_save_fundamental(DATA_DIR, ticker, info)
+                    gh_save_fundamental(ticker, info)
+
+            except Exception as e_cache:
+                print(f'  [stock_analysis] 快取寫入失敗（非致命）: {e_cache}')
+
         # ── 若 yfinance 缺少基本面資料，從 TWSE/MOPS 補充 ──────
         needs_supplement = (
             info.get('pe_ratio')      is None or
@@ -2587,6 +2623,104 @@ def _fetch_mops_finreport(ticker: str, headers: dict) -> dict:
 
     return result if result['annual']['income'] else None
 
+
+# ═══════════════════════════════════════════════════════════════
+# GitHub 快取診斷 API
+# GET /api/cache_status
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/cache_status', methods=['GET'])
+def cache_status():
+    """
+    診斷 GitHub 快取設定狀態。
+    瀏覽器開啟此 URL 即可確認 token 是否正確設定。
+    回傳：
+      - token_set      : GH_CACHE_TOKEN 是否已設定
+      - token_valid    : token 是否通過 GitHub API 驗證
+      - repo           : 目標 Repo
+      - branch         : 目標分支
+      - write_enabled  : 寫入功能是否啟用
+      - local_data_dir : 本機快取目錄
+      - local_files    : 本機快取檔案數量
+      - github_data_readable : GitHub data/ 目錄是否可讀
+    """
+    import requests as _req
+    from github_cache import GITHUB_REPO, GITHUB_BRANCH, _gh_writer, _gh_raw_get
+
+    token = os.environ.get('GH_CACHE_TOKEN', '')
+    token_set = bool(token)
+    token_valid = False
+    repo_accessible = False
+    github_data_readable = False
+    http_status = None
+
+    if token_set:
+        try:
+            r = _req.get(
+                f'https://api.github.com/repos/{GITHUB_REPO}',
+                headers={
+                    'Authorization': f'token {token}',
+                    'Accept': 'application/vnd.github.v3+json'
+                },
+                timeout=8
+            )
+            http_status = r.status_code
+            token_valid = (r.status_code == 200)
+            repo_accessible = token_valid
+        except Exception as e:
+            http_status = f'例外: {e}'
+
+    # 測試 GitHub data/ 目錄是否可讀（不需 token，public repo）
+    test_content = _gh_raw_get('data/readme.txt')
+    github_data_readable = test_content is not None
+
+    # 本機快取檔案統計
+    local_files = []
+    try:
+        for f in os.listdir(DATA_DIR):
+            if f.endswith(('_price.csv', '_dividend.csv', '_fundamental.json', '_meta.json')):
+                local_files.append(f)
+    except Exception:
+        pass
+
+    result = {
+        'status': 'ok',
+        'github': {
+            'repo':                  GITHUB_REPO,
+            'branch':                GITHUB_BRANCH,
+            'token_set':             token_set,
+            'token_valid':           token_valid,
+            'write_enabled':         _gh_writer.enabled,
+            'github_api_http':       http_status,
+            'github_data_readable':  github_data_readable,
+        },
+        'local': {
+            'data_dir':   DATA_DIR,
+            'file_count': len(local_files),
+            'files':      sorted(local_files)[:30],  # 最多顯示30筆
+        },
+        'diagnosis': [],
+    }
+
+    # 自動診斷建議
+    diag = result['diagnosis']
+    if not token_set:
+        diag.append('❌ GH_CACHE_TOKEN 未設定 → GitHub 寫入完全停用')
+        diag.append('   修復：Render Dashboard → Environment → 新增 GH_CACHE_TOKEN=ghp_xxx')
+    elif not token_valid:
+        diag.append(f'❌ Token 驗證失敗（HTTP {http_status}）→ 請重新產生 GitHub PAT')
+        diag.append('   GitHub → Settings → Developer settings → Personal access tokens')
+        diag.append('   需要權限：Contents: Read and write（Fine-grained）或 repo（Classic）')
+    else:
+        diag.append('✅ GitHub Token 正常，寫入功能已啟用')
+
+    if not github_data_readable:
+        diag.append('⚠️  GitHub data/ 目錄不可讀（可能 data/readme.txt 不存在，屬正常首次狀態）')
+
+    if len(local_files) == 0:
+        diag.append('⚠️  本機快取目前為空（Render 重啟後正常，需等待首次 API 呼叫觸發寫入）')
+
+    return jsonify(result)
 
 
 # ═══════════════════════════════════════════════════════════════

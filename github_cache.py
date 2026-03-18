@@ -53,6 +53,54 @@ TTL_MAP         = {"price": TTL_PRICE, "dividend": TTL_DIVIDEND, "fundamental": 
 
 
 # ──────────────────────────────────────────────────────────────
+# ★ 啟動診斷（模組載入時執行一次）
+# ──────────────────────────────────────────────────────────────
+def _startup_diagnostics():
+    """
+    模組載入時自動執行，印出 GitHub 快取設定狀態。
+    協助開發者快速判斷「GitHub 未儲存」問題的根因。
+    """
+    token = os.environ.get("GH_CACHE_TOKEN", "")
+    sep = "=" * 55
+    print(f"\n{sep}")
+    print("  [github_cache] 啟動診斷")
+    print(sep)
+    if token:
+        # 遮蔽 token 中段（只顯示前4後4）
+        masked = token[:4] + "*" * max(0, len(token) - 8) + token[-4:] if len(token) > 8 else "****"
+        print(f"  GH_CACHE_TOKEN : ✅ 已設定（{masked}）")
+        # 驗證 token 有效性（呼叫 GitHub API）
+        try:
+            r = requests.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}",
+                headers={"Authorization": f"token {token}",
+                         "Accept": "application/vnd.github.v3+json"},
+                timeout=8
+            )
+            if r.status_code == 200:
+                print(f"  GitHub Repo    : ✅ 可存取 ({GITHUB_REPO})")
+            elif r.status_code == 401:
+                print(f"  GitHub Repo    : ❌ Token 無效（401 Unauthorized）→ 請重新產生 PAT")
+            elif r.status_code == 403:
+                print(f"  GitHub Repo    : ❌ Token 權限不足（403 Forbidden）→ 需要 repo write 權限")
+            elif r.status_code == 404:
+                print(f"  GitHub Repo    : ❌ Repo 不存在（404）→ 確認 {GITHUB_REPO} 是否正確")
+            else:
+                print(f"  GitHub Repo    : ⚠️  未預期狀態碼 {r.status_code}")
+        except Exception as e:
+            print(f"  GitHub Repo    : ⚠️  驗證失敗（網路問題？）: {e}")
+    else:
+        print(f"  GH_CACHE_TOKEN : ❌ 未設定")
+        print(f"  → GitHub 寫入完全停用，資料不會同步到 Repo")
+        print(f"  → 修復方式：")
+        print(f"     本機：在 .env 加入 GH_CACHE_TOKEN=ghp_xxxxxxxx")
+        print(f"     Render：Dashboard → Environment → 新增此環境變數")
+    print(sep + "\n")
+
+_startup_diagnostics()
+
+
+# ──────────────────────────────────────────────────────────────
 # 本機路徑輔助
 # ──────────────────────────────────────────────────────────────
 def _local_price_path(data_dir: str, ticker: str) -> str:
@@ -334,6 +382,11 @@ class _GitHubWriter:
                 "Accept": "application/vnd.github.v3+json",
                 "Content-Type": "application/json",
             }
+        else:
+            self._headers = {}
+            # ★ 明確警告（只在首次初始化時印出）
+            print("  [GitHub-W] ⚠️  GH_CACHE_TOKEN 未設定，所有 GitHub 寫入皆停用。")
+            print("             設定方式：本機 .env 或 Render Dashboard → Environment")
 
     def _get_sha(self, path: str) -> str | None:
         if path in self._sha:
@@ -344,8 +397,12 @@ class _GitHubWriter:
                 sha = r.json().get("sha")
                 self._sha[path] = sha
                 return sha
-        except Exception:
-            pass
+            elif r.status_code == 404:
+                return None  # 檔案不存在，這是正常的首次建立
+            else:
+                print(f"  [GitHub-W] GET SHA 失敗 {path}：HTTP {r.status_code}")
+        except Exception as e:
+            print(f"  [GitHub-W] GET SHA 例外 {path}：{e}")
         return None
 
     def put(self, path: str, content_str: str, commit_msg: str = "cache update") -> bool:
@@ -354,6 +411,7 @@ class _GitHubWriter:
         payload = {
             "message": commit_msg,
             "content": base64.b64encode(content_str.encode("utf-8")).decode("utf-8"),
+            "branch": GITHUB_BRANCH,
         }
         sha = self._get_sha(path)
         if sha:
@@ -361,12 +419,29 @@ class _GitHubWriter:
         try:
             r = requests.put(f"{API_BASE}/{path}", headers=self._headers,
                              json=payload, timeout=20)
-            r.raise_for_status()
-            new_sha = r.json()["content"]["sha"]
-            self._sha[path] = new_sha
-            return True
+            if r.status_code in (200, 201):
+                new_sha = r.json()["content"]["sha"]
+                self._sha[path] = new_sha
+                return True
+            else:
+                # ★ 詳細的錯誤輸出（幫助診斷 token 權限問題）
+                err_body = ""
+                try:
+                    err_body = r.json().get("message", "")
+                except Exception:
+                    pass
+                print(f"  [GitHub-W] ❌ PUT {path} 失敗：HTTP {r.status_code} {err_body}")
+                if r.status_code == 401:
+                    print("             → Token 無效，請重新產生 GitHub PAT（Settings → Developer settings → PAT）")
+                elif r.status_code == 403:
+                    print("             → Token 缺少 repo 寫入權限，請勾選 repo scope")
+                elif r.status_code == 422:
+                    print("             → SHA 衝突，清除 sha 快取並重試...")
+                    if path in self._sha:
+                        del self._sha[path]
+                return False
         except Exception as e:
-            print(f"  [GitHub-W] PUT {path} 失敗: {e}")
+            print(f"  [GitHub-W] PUT {path} 例外: {e}")
             return False
 
 
