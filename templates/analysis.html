@@ -6960,19 +6960,33 @@ ${summaryLines || '（資料不足）'}
 // ════════════════════════════════════════════════════════════════
 
 // ── 後端 API 封裝 ────────────────────────────────────────────────
-async function wlApiFetch(url, method='GET', body=null) {
-  const opts = {
-    method,
-    headers: {'Content-Type':'application/json'},
-    signal: AbortSignal.timeout(8000)   // 8 秒 timeout，避免後端無回應卡住
-  };
-  if (body) opts.body = JSON.stringify(body);
-  try {
-    const r = await fetch(url, opts);
-    return await r.json();
-  } catch(e) {
-    console.error('[自選股 API]', e);
-    return { status: 'error', message: String(e) };
+async function wlApiFetch(url, method='GET', body=null, retries=2) {
+  // 根據方法決定 timeout：GET 允許較長（冷啟動），POST 用較短
+  const timeoutMs = method === 'GET' ? 20000 : 12000;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), timeoutMs);
+    const opts = {
+      method,
+      headers: {'Content-Type':'application/json'},
+      signal: ctrl.signal
+    };
+    if (body) opts.body = JSON.stringify(body);
+    try {
+      const r = await fetch(url, opts);
+      clearTimeout(tid);
+      return await r.json();
+    } catch(e) {
+      clearTimeout(tid);
+      const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
+      if (isTimeout && attempt < retries) {
+        console.warn(`[自選股 API] 第 ${attempt + 1} 次 timeout，${1500}ms 後重試…`);
+        await new Promise(res => setTimeout(res, 1500));
+        continue;
+      }
+      console.error('[自選股 API]', e);
+      return { status: 'error', message: String(e) };
+    }
   }
 }
 
@@ -7045,11 +7059,16 @@ async function openWatchlistPanel() {
   }
 
   // ── ② 背景同步後端清單（不 await，不阻塞畫面互動）──────────
+  // 顯示「後端同步中」提示（不蓋掉快取內容）
+  _showWlSyncHint(true);
   wlApiFetch('/api/watchlist').then(async d => {
+    _showWlSyncHint(false);
     if (_wlAbort) return;   // 面板已關閉就不繼續
     if (d.status === 'success') {
       _wlCodes = d.codes || [];
       _lsSave(_wlCodes);
+    } else {
+      console.warn('[自選股] 後端不可用（timeout/error），繼續使用 localStorage 內容');
     }
     // 後端不可用時繼續用現有 _wlCodes（localStorage 已載入）
 
@@ -7072,6 +7091,7 @@ async function openWatchlistPanel() {
     await _loadWlStocks(missing);
     _showWlLoading(false);
   }).catch(() => {
+    _showWlSyncHint(false);
     // API 完全失敗：保留已顯示的 localStorage 內容即可
   });
 
@@ -7513,6 +7533,19 @@ function _showWlLoading(show) {
     document.getElementById('wlProgressCount').textContent = '';
     document.getElementById('wlProgressBar').style.width = '30%';
   }
+}
+// 同步提示：輕量文字提示（不蓋掉快取內容）
+function _showWlSyncHint(show) {
+  let hint = document.getElementById('wlSyncHint');
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.id = 'wlSyncHint';
+    hint.style.cssText = 'font-size:12px;color:#6b7280;text-align:center;padding:4px 0;';
+    const wrap = document.getElementById('wlTableWrap');
+    if (wrap) wrap.parentNode.insertBefore(hint, wrap);
+  }
+  hint.style.display = show ? 'block' : 'none';
+  if (show) hint.textContent = '⟳ 正在與伺服器同步（最多 20 秒）…';
 }
 function _updateWlCountBadge(n) {
   const el = document.getElementById('wl-count-badge');

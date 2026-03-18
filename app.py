@@ -2849,7 +2849,9 @@ WL_FILE = os.path.join(DATA_DIR, 'watchlist.json')
 
 def _wl_read() -> list:
     """讀取自選股代碼清單（含 GitHub Cache 備援）"""
-    # 1. 先從本地磁碟讀
+    import threading
+
+    # 1. 先從本地磁碟讀（快速路徑，不阻塞）
     if os.path.exists(WL_FILE):
         try:
             with open(WL_FILE, 'r', encoding='utf-8') as f:
@@ -2857,21 +2859,34 @@ def _wl_read() -> list:
                 return data.get('codes', [])
         except Exception:
             pass
-    # 2. 本地沒有，從 GitHub Cache 還原
-    try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if gh.enabled:
-            content, _ = gh._get('watchlist/watchlist.json')
-            if content:
-                data = json.loads(content)
-                codes = data.get('codes', [])
-                # 回寫本地
-                _wl_write(codes)
-                print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
-                return codes
-    except Exception as e:
-        print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
+
+    # 2. 本地沒有，從 GitHub Cache 還原（帶 5 秒 timeout，避免阻塞 HTTP request）
+    result_holder = []
+
+    def _gh_restore():
+        try:
+            from github_cache import GitHubCache
+            gh = GitHubCache()
+            if gh.enabled:
+                content, _ = gh._get('watchlist/watchlist.json')
+                if content:
+                    data = json.loads(content)
+                    codes = data.get('codes', [])
+                    result_holder.extend(codes)
+                    _wl_write(codes)   # 回寫本地，下次直接讀磁碟
+                    print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
+        except Exception as e:
+            print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
+
+    t = threading.Thread(target=_gh_restore, daemon=True)
+    t.start()
+    t.join(timeout=5)   # 最多等 5 秒，超時直接回傳空清單
+
+    if not t.is_alive() and result_holder:
+        return result_holder
+
+    if t.is_alive():
+        print("  [自選股] GitHub 備援逾時（5s），回傳空清單")
     return []
 
 def _wl_write(codes: list):
