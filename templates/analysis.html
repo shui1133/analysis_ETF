@@ -1489,7 +1489,7 @@ const STOCK_NAMES_ZH = {
   '00892':'富邦醫療','00893':'國泰智能電動車',
   '00894':'中信小台灣精選','00896':'中信綠能及電動車',
   '00904':'新光臺灣半導體30','00905':'FT臺灣Smart',
-  '00906':'FH香港科技','00912':'中信臺灣智慧50',
+  '00912':'中信臺灣智慧50',
   '00913':'中信臺灣ESG',
   '00916':'國泰全球品牌50','00917':'中信特選金融',
   '00918':'大華優利高填息30','00920':'富邦入息REITs+債',
@@ -1891,7 +1891,7 @@ const STOCK_DICT_CSV = {
   '00888':'永豐台灣ESG',  '00889':'台灣標竿',  '00890':'台灣標竿',  '00891':'中信關鍵半導體',  '00892':'台灣標竿',  '00893':'台灣標竿',
   '00894':'台灣標竿',  '00895':'台灣標竿',  '00896':'中信小資高價30',  '00897':'台灣標竿',  '00898':'台灣標竿',  '00899':'台灣標竿',
   '00900':'富邦特選高股息30',  '00901':'台灣標竿',  '00902':'台灣標竿',  '00903':'台灣標竿',  '00904':'新光臺灣半導體30',  '00905':'FT臺灣Smart',
-  '00906':'FH香港科技',  '00907':'永豐優息存股',  '00908':'台灣標竿',  '00909':'台灣標竿',  '00910':'台灣標竿',  '00911':'台灣標竿',
+  '00907':'永豐優息存股',  '00908':'台灣標竿',  '00909':'台灣標竿',  '00910':'台灣標竿',  '00911':'台灣標竿',
   '00912':'台灣標竿',  '00913':'台灣標竿',  '00915':'凱基優選高股息30',  '00916':'台灣標竿',  '00917':'台灣標竿',
   '00918':'台灣標竿',  '00919':'群益台灣精選高息',  '00920':'台灣標竿',  '00921':'台灣標竿',  '00922':'台灣標竿',  '00923':'台灣標竿',
   '00924':'台灣標竿',  '00925':'台灣標竿',  '00926':'台灣標竿',  '00927':'台灣標竿',  '00928':'台灣標竿',  '00929':'復華台灣科技優息',
@@ -5326,7 +5326,6 @@ const HOT_ETF_CODES = [
   { code:'00896',  name:'中信綠能及電動車'      },
   { code:'00904',  name:'新光臺灣半導體30'      },
   { code:'00905',  name:'FT臺灣Smart'            },
-  { code:'00906',  name:'FH香港科技'             },
   { code:'00912',  name:'中信臺灣智慧50'        },
   { code:'00913',  name:'中信臺灣ESG'           },
   { code:'00916',  name:'國泰全球品牌50'        },
@@ -5372,6 +5371,7 @@ function buildETFList(pageSize) {
     for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
       if (seen.has(code)) continue;
       if (!isETFCode(code)) continue;
+      if (name === '台灣標竿') continue;
       seen.add(code);
       list.push({ code, name });
       if (list.length >= pageSize) break;
@@ -7486,8 +7486,8 @@ function updateWlSummary() {
   const up   = rows.filter(r => r.chgpct > 0).length;
   const down = rows.filter(r => r.chgpct < 0).length;
   const flat = rows.filter(r => r.chgpct === 0).length;
-  const bull = rows.filter(r => r.matrend && r.matrend.includes('多頭')).length;
-  const bear = rows.filter(r => r.matrend && r.matrend.includes('空頭')).length;
+  const bull = rows.filter(r => r.matrend === 1 || r.matrend === 2).length;
+  const bear = rows.filter(r => r.matrend === -1 || r.matrend === -2).length;
   const sorted = [...rows].sort((a,b)=>b.chgpct-a.chgpct);
   const topGain = sorted[0] ? (sorted[0].chgpct >= 0 ? '+' : '') + sorted[0].chgpct.toFixed(2) + '%' : '--';
   const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };

@@ -5371,6 +5371,7 @@ function buildETFList(pageSize) {
     for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
       if (seen.has(code)) continue;
       if (!isETFCode(code)) continue;
+      if (name === '台灣標竿') continue;
       seen.add(code);
       list.push({ code, name });
       if (list.length >= pageSize) break;
@@ -7485,8 +7486,8 @@ function updateWlSummary() {
   const up   = rows.filter(r => r.chgpct > 0).length;
   const down = rows.filter(r => r.chgpct < 0).length;
   const flat = rows.filter(r => r.chgpct === 0).length;
-  const bull = rows.filter(r => r.matrend && r.matrend.includes('多頭')).length;
-  const bear = rows.filter(r => r.matrend && r.matrend.includes('空頭')).length;
+  const bull = rows.filter(r => r.matrend === 1 || r.matrend === 2).length;
+  const bear = rows.filter(r => r.matrend === -1 || r.matrend === -2).length;
   const sorted = [...rows].sort((a,b)=>b.chgpct-a.chgpct);
   const topGain = sorted[0] ? (sorted[0].chgpct >= 0 ? '+' : '') + sorted[0].chgpct.toFixed(2) + '%' : '--';
   const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
