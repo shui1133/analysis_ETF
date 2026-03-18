@@ -14,6 +14,7 @@ import platform
 import numpy as np
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
+from github_cache import CacheManager, start_scheduler
 import io
 import requests as _req
 
@@ -46,6 +47,9 @@ app.json = NumpyJSONProvider(app)
 DATA_DIR = get_data_dir()
 print(f"資料目錄: {DATA_DIR}")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+# 三層快取管理器（本機 → GitHub → yfinance）
+cache_mgr = CacheManager(data_dir=DATA_DIR)
 
 # 全域快取
 cached_results    = {}
@@ -345,6 +349,31 @@ def get_popular_stocks():
     return jsonify({'status': 'success', 'stocks': POPULAR_STOCKS})
 
 
+@app.route('/api/stock_cache/<ticker>', methods=['GET'])
+def get_stock_cache(ticker):
+    """
+    前端三層快取的 GitHub 讀取層。
+    前端 ghStockCacheLoad() 呼叫此 API 讀取 GitHub 快取的完整 stock_analysis 資料。
+    回傳格式：
+      有快取 → { status:'cached', data:{...} }
+      無快取 → { status:'not_found' }
+    """
+    ticker = ticker.upper().strip()
+    if not ticker:
+        return jsonify({'status': 'error', 'message': '請提供股票代碼'}), 400
+    try:
+        from github_cache import _gh_raw_get
+        import json as _json
+        content = _gh_raw_get(f"data/{ticker}/analysis.json")
+        if content:
+            cached_data = _json.loads(content)
+            return jsonify({'status': 'cached', 'data': cached_data})
+        return jsonify({'status': 'not_found'})
+    except Exception as e:
+        print(f"  [stock_cache] {ticker} 讀取失敗: {e}")
+        return jsonify({'status': 'not_found'})
+
+
 @app.route('/api/stock_analysis/<ticker>', methods=['GET'])
 def get_stock_analysis(ticker):
     """
@@ -557,6 +586,19 @@ def get_stock_analysis(ticker):
         }
 
         analysis_cache[ticker] = {'data': data_out, 'ts': time.time()}
+
+        # 同步寫入 GitHub analysis.json（供前端 ghStockCacheLoad 快取讀取）
+        try:
+            from github_cache import _gh_writer
+            import json as _json_gh
+            _gh_writer.put(
+                f"data/{ticker}/analysis.json",
+                _json_gh.dumps(data_out, ensure_ascii=False),
+                f"analysis: {ticker} {pd.Timestamp.now().date()}"
+            )
+        except Exception as _e_gh:
+            print(f"  [stock_analysis] GitHub analysis.json 同步失敗（非致命）: {{_e_gh}}")
+
         return jsonify({'status': 'success', 'data': data_out})
 
     except Exception as e:
@@ -2917,4 +2959,14 @@ if __name__ == '__main__':
     print(f"Port: {port}")
     print("=" * 60)
     host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
+
+    # 啟動每日 13:30（台灣時間）背景快取排程
+    start_scheduler(
+        cache=cache_mgr,
+        fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
+        watchlist_reader=_wl_read,
+        popular_stocks=list(POPULAR_STOCKS.keys()) if isinstance(POPULAR_STOCKS, dict)
+                       else list(POPULAR_STOCKS),
+    )
+
     app.run(debug=False, host=host, port=port)
