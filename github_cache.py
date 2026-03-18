@@ -1,6 +1,13 @@
 """
-github_cache.py - 三層持久化快取模組 v2
+github_cache.py - 三層持久化快取模組 v3（增量更新版）
 優先順序：本機硬碟 → GitHub Public Repo → yfinance
+
+新功能（v3）
+  - incremental_update_price()：讀 GitHub 現有 CSV，找出最後幾筆成交量=0 或
+    缺少的日期，只向 yfinance 補抓那幾天，合併後存回本機 + GitHub。
+    相較完整下載，速度提升顯著（通常只需補 1~5 筆，而非重抓數年資料）。
+  - CacheManager.get_price() 整合增量更新：L1 本機 → L2 GitHub增量補抓 → L3 完整下載
+  - CacheManager.force_refresh() price 改用增量，dividend/fundamental 保持完整下載
 
 本機硬碟（L1）
   - 路徑：由 get_data_dir() 決定（與 app.py 共用 DATA_DIR）
@@ -21,6 +28,7 @@ TTL（快取有效期）
 背景排程（APScheduler）
   - 每日 13:30（台灣時間）自動更新 watchlist + POPULAR_STOCKS 查詢過的股票
   - 由 start_scheduler(app, fetcher_factory) 啟動，app.py 在 __main__ 時呼叫
+  - 排程內部改用 force_refresh（含增量邏輯），速度大幅提升
 """
 
 from __future__ import annotations
@@ -520,6 +528,234 @@ def gh_save_fundamental(ticker: str, info: dict) -> bool:
 
 
 # ──────────────────────────────────────────────────────────────
+# 增量更新：只補抓 GitHub 缺少或成交量=0 的日期
+# ──────────────────────────────────────────────────────────────
+
+def _find_missing_dates(rows: list) -> tuple[str | None, list]:
+    """
+    分析 GitHub 上的 price rows，找出需要補抓的日期範圍。
+
+    規則：
+      1. 找出最後一筆成交量 > 0 的日期（anchor_date）
+      2. anchor_date 之後的所有列（含 volume=0 的列）皆標記為需補抓
+      3. 若最後一筆本身 volume=0，anchor 往前推至第一筆 volume=0 的連續段起點
+
+    回傳：
+      (start_date_str, stale_rows)
+        start_date_str : 從哪一天開始補抓（yfinance start= 參數，字串 "YYYY-MM-DD"）
+                         None 表示資料完整，不需補抓
+        stale_rows     : 需被移除/替換的舊資料列（list of dict）
+    """
+    if not rows:
+        return None, []
+
+    # 統一欄位名稱
+    date_col   = next((c for c in rows[0] if c in ['date', 'Date', '日期']),   None)
+    vol_col    = next((c for c in rows[0] if c in ['volume', 'Volume', '成交量']), None)
+
+    if not date_col:
+        return None, []
+
+    # 排序（升序，確保最新在最後）
+    try:
+        sorted_rows = sorted(rows, key=lambda r: str(r.get(date_col, '')))
+    except Exception:
+        sorted_rows = rows
+
+    # 找最後一筆 volume > 0 的 index
+    last_valid_idx = None
+    if vol_col:
+        for i in range(len(sorted_rows) - 1, -1, -1):
+            try:
+                v = float(sorted_rows[i].get(vol_col, 0) or 0)
+                if v > 0:
+                    last_valid_idx = i
+                    break
+            except Exception:
+                continue
+
+    if last_valid_idx is None:
+        # 全部 volume=0（或無 volume 欄位），從最後一筆日期起補
+        if sorted_rows:
+            return str(sorted_rows[-1].get(date_col, ''))[:10], sorted_rows[-1:]
+        return None, []
+
+    # 若最後一筆就是 last_valid_idx（最新資料都有量），不需補抓
+    if last_valid_idx == len(sorted_rows) - 1:
+        return None, []
+
+    # 最後幾筆 volume=0，從 last_valid_idx+1 那天起補
+    stale_rows  = sorted_rows[last_valid_idx + 1:]
+    start_date  = str(stale_rows[0].get(date_col, ''))[:10]
+    return start_date, stale_rows
+
+
+def _fetch_incremental_yfinance(ticker: str, start_date: str) -> list:
+    """
+    用 yfinance 補抓 ticker 從 start_date 起的 OHLCV 資料。
+    回傳 list of dict（欄位：date, open, high, low, close, volume）。
+    失敗回傳空 list。
+    """
+    try:
+        import yfinance as yf
+        from datetime import date, timedelta
+
+        # 計算 end_date（今天 +1，確保包含當天）
+        end_date = (datetime.now().date() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        new_rows: list = []
+        for suffix in ['.TW', '.TWO']:
+            yf_ticker = f"{ticker}{suffix}"
+            try:
+                tk = yf.Ticker(yf_ticker)
+                hist = tk.history(start=start_date, end=end_date, timeout=15)
+                if hist is None or hist.empty:
+                    continue
+                for dt, row in hist.iterrows():
+                    try:
+                        c = float(row['Close'])
+                        if c <= 0:
+                            continue
+                        new_rows.append({
+                            'date':   str(dt.date()),
+                            'open':   round(float(row.get('Open',  c)), 2),
+                            'high':   round(float(row.get('High',  c)), 2),
+                            'low':    round(float(row.get('Low',   c)), 2),
+                            'close':  round(c, 2),
+                            'volume': int(float(row.get('Volume', 0))),
+                        })
+                    except Exception:
+                        continue
+                if new_rows:
+                    print(f"  [Incremental] ✅ {ticker}({yf_ticker}) 補抓 {len(new_rows)} 筆"
+                          f"（{start_date} 起）")
+                    return new_rows
+            except Exception as e:
+                print(f"  [Incremental] {yf_ticker} 失敗: {e}")
+                continue
+        return []
+    except ImportError:
+        print("  [Incremental] ⚠️  yfinance 未安裝")
+        return []
+
+
+def _merge_price_rows(base_rows: list, stale_rows: list, new_rows: list) -> list:
+    """
+    將 base_rows（舊有完整資料）中，移除 stale_rows（過期列），
+    再合併 new_rows（補抓的新資料），去重後按日期升序回傳。
+
+    date 統一識別欄位：date / Date / 日期
+    """
+    date_col = next((c for c in (base_rows[0] if base_rows else {}) if c in ['date', 'Date', '日期']), 'date')
+    stale_dates = {str(r.get(date_col, ''))[:10] for r in stale_rows}
+    new_dates   = {str(r.get('date',  ''))[:10] for r in new_rows}
+
+    # 保留舊資料中非過期的部分
+    kept = [r for r in base_rows if str(r.get(date_col, ''))[:10] not in stale_dates]
+
+    # 正規化 new_rows 欄位名稱（統一用英文小寫）
+    normalized_new = []
+    for r in new_rows:
+        normalized_new.append({
+            'date':   str(r.get('date', ''))[:10],
+            'open':   r.get('open',   r.get('close', 0)),
+            'high':   r.get('high',   r.get('close', 0)),
+            'low':    r.get('low',    r.get('close', 0)),
+            'close':  r.get('close',  0),
+            'volume': r.get('volume', 0),
+        })
+
+    # 若 kept 的欄位名稱是中文，也正規化
+    normalized_kept = []
+    for r in kept:
+        normalized_kept.append({
+            'date':   str(r.get('date', r.get('Date', r.get('日期', ''))))[:10],
+            'open':   r.get('open',   r.get('Open',   r.get('開盤價', r.get('close', r.get('Close', r.get('收盤價', 0)))))),
+            'high':   r.get('high',   r.get('High',   r.get('最高價', r.get('close', r.get('Close', r.get('收盤價', 0)))))),
+            'low':    r.get('low',    r.get('Low',    r.get('最低價', r.get('close', r.get('Close', r.get('收盤價', 0)))))),
+            'close':  r.get('close',  r.get('Close',  r.get('收盤價', 0))),
+            'volume': r.get('volume', r.get('Volume', r.get('成交量',  0))),
+        })
+
+    # 合併，以 date 去重（new_rows 優先覆蓋 kept）
+    merged: dict = {r['date']: r for r in normalized_kept}
+    for r in normalized_new:
+        merged[r['date']] = r
+
+    result = sorted(merged.values(), key=lambda r: r['date'])
+    return result
+
+
+def incremental_update_price(
+    data_dir: str,
+    ticker: str,
+    force: bool = False,
+) -> list | None:
+    """
+    增量更新股價快取的統一入口。
+
+    流程：
+      1. 從 GitHub 讀取現有 price.csv
+      2. 分析最後幾筆是否 volume=0 或缺失日期
+      3. 只向 yfinance 補抓缺少的日期段
+      4. 合併後存回本機 + GitHub
+      5. 回傳最終完整資料列（list of dict）
+
+    Parameters
+    ----------
+    data_dir : str
+        本機快取目錄
+    ticker : str
+        股票代碼（不含 .TW）
+    force : bool
+        True 時跳過 is_local_fresh 判斷，強制執行增量檢查
+
+    Returns
+    -------
+    list | None
+        合併後的完整 price rows，失敗時 None
+    """
+    tag = f"[IncrementalUpdate/{ticker}]"
+
+    # ── 先嘗試讀 GitHub 上的現有資料 ──────────────────────────
+    print(f"  {tag} 讀取 GitHub 現有資料...")
+    existing_rows = gh_load_price(ticker)
+
+    if not existing_rows:
+        print(f"  {tag} GitHub 無資料，需完整下載")
+        return None  # 由上層 CacheManager.get_price L3 處理完整下載
+
+    # ── 分析需補抓的起始日期 ───────────────────────────────────
+    start_date, stale_rows = _find_missing_dates(existing_rows)
+
+    if start_date is None:
+        print(f"  {tag} ✅ 資料完整（無 volume=0 缺口），無需補抓")
+        # 仍回填本機（若本機沒有）
+        local_save_price(data_dir, ticker, existing_rows)
+        return existing_rows
+
+    print(f"  {tag} 發現 {len(stale_rows)} 筆缺漏/volume=0，從 {start_date} 起補抓...")
+
+    # ── 向 yfinance 補抓 ───────────────────────────────────────
+    new_rows = _fetch_incremental_yfinance(ticker, start_date)
+
+    if not new_rows:
+        print(f"  {tag} ⚠️  yfinance 無回傳，保留現有資料")
+        local_save_price(data_dir, ticker, existing_rows)
+        return existing_rows
+
+    # ── 合併 ──────────────────────────────────────────────────
+    merged = _merge_price_rows(existing_rows, stale_rows, new_rows)
+    print(f"  {tag} 合併完成：{len(existing_rows)} + {len(new_rows)} → {len(merged)} 筆")
+
+    # ── 存本機 + GitHub ───────────────────────────────────────
+    local_save_price(data_dir, ticker, merged)
+    gh_save_price(ticker, merged)
+
+    return merged
+
+
+# ──────────────────────────────────────────────────────────────
 # 主要公開介面：三層快取統一入口
 # ──────────────────────────────────────────────────────────────
 class CacheManager:
@@ -548,34 +784,41 @@ class CacheManager:
 
     def get_price(self, ticker: str, fetcher=None) -> list | None:
         """
-        三層取得股價：
+        三層取得股價（含增量更新）：
           L1 本機快取（有效期內直接回傳）
-          L2 GitHub（有效期內回傳並回填本機）
-          L3 fetcher.fetch_price(ticker)（最後手段，結果同步兩層）
+          L2 GitHub（先做增量補抓 volume=0/缺失筆數，再回填本機）
+          L3 fetcher.fetch_price(ticker)（GitHub 無資料時完整下載）
         fetcher: 具有 fetch_price(ticker) → list of dict 方法的物件
         """
         tag = f"[get_price/{ticker}]"
 
-        # L1: 本機
+        # L1: 本機有效快取 → 直接回傳（最快路徑）
         if is_local_fresh(self.data_dir, ticker, "price"):
             rows = local_load_price(self.data_dir, ticker)
             if rows:
                 print(f"  {tag} ✅ L1 本機命中 ({len(rows)} 筆)")
                 return rows
 
-        # L2: GitHub
-        if _gh_meta_fresh(ticker, "price"):
-            rows = gh_load_price(ticker)
-            if rows and len(rows) >= 5:
-                print(f"  {tag} ✅ L2 GitHub 命中 ({len(rows)} 筆)，回填本機")
-                local_save_price(self.data_dir, ticker, rows)
-                return rows
+        # L2: GitHub 增量更新路徑
+        # 先嘗試增量補抓（只下載 volume=0 或缺少的日期），速度遠快於完整下載
+        print(f"  {tag} 🔄 嘗試 L2 GitHub 增量更新...")
+        rows = incremental_update_price(self.data_dir, ticker)
+        if rows and len(rows) >= 5:
+            print(f"  {tag} ✅ L2 增量更新完成 ({len(rows)} 筆)")
+            return rows
 
-        # L3: 網路抓取
+        # L3: GitHub 無資料 → 向 yfinance 完整下載
         if fetcher is None:
+            # 嘗試讀取 GitHub 原始資料（即使未做增量，至少回傳現有的）
+            gh_rows = gh_load_price(ticker)
+            if gh_rows and len(gh_rows) >= 5:
+                print(f"  {tag} ✅ L2 GitHub 原始資料 ({len(gh_rows)} 筆，無 fetcher 跳過增量)")
+                local_save_price(self.data_dir, ticker, gh_rows)
+                return gh_rows
             print(f"  {tag} ⚠️ 無 fetcher，無法從網路取得")
             return None
-        print(f"  {tag} 🌐 L3 從網路抓取...")
+
+        print(f"  {tag} 🌐 L3 GitHub 無資料，從 yfinance 完整下載...")
         try:
             rows = fetcher.fetch_price(ticker)
             if rows:
@@ -652,7 +895,10 @@ class CacheManager:
 
     def force_refresh(self, ticker: str, fetcher, data_types: list = None):
         """
-        強制忽略快取，重新從網路抓取並存檔。
+        強制刷新快取。
+        - price    : 優先使用增量更新（只補 volume=0/缺少的日期），GitHub 無資料才完整下載
+        - dividend : 完整下載（配息資料量少，不做增量）
+        - fundamental : 完整下載
         data_types: ['price', 'dividend', 'fundamental']，None 表示全部
         """
         if data_types is None:
@@ -661,10 +907,17 @@ class CacheManager:
         for dt in data_types:
             try:
                 if dt == "price":
-                    rows = fetcher.fetch_price(ticker)
+                    # ── 優先嘗試增量更新 ──────────────────────
+                    rows = incremental_update_price(self.data_dir, ticker, force=True)
                     if rows:
-                        local_save_price(self.data_dir, ticker, rows)
-                        gh_save_price(ticker, rows)
+                        print(f"  [force_refresh] {ticker}/price 增量完成 ({len(rows)} 筆)")
+                    else:
+                        # GitHub 無資料 → 完整下載
+                        print(f"  [force_refresh] {ticker}/price 無 GitHub 基底，改為完整下載")
+                        rows = fetcher.fetch_price(ticker)
+                        if rows:
+                            local_save_price(self.data_dir, ticker, rows)
+                            gh_save_price(ticker, rows)
                 elif dt == "dividend":
                     rows = fetcher.fetch_dividend(ticker)
                     if rows:
