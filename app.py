@@ -616,20 +616,10 @@ def _get_twii_analysis():
         return jsonify({'status': 'success', 'data': cache_entry['data']})
 
     try:
-        hist = None
-        for _attempt in range(3):
-            try:
-                tk = yf.Ticker('^TWII')
-                hist = tk.history(period='5y', timeout=20)
-                if hist is not None and not hist.empty:
-                    break
-            except Exception as _e:
-                if _attempt < 2:
-                    import time as _t; _t.sleep(1)
-                else:
-                    raise
+        tk = yf.Ticker('^TWII')
+        hist = tk.history(period='5y', timeout=15)
         if hist is None or hist.empty:
-            return jsonify({'status': 'error', 'message': '無法取得台灣加權指數資料，請稍後再試'}), 404
+            return jsonify({'status': 'error', 'message': '無法取得台灣加權指數資料'}), 404
 
         hist = hist.sort_index()
         ohlcv = []
@@ -764,7 +754,7 @@ def _get_twii_analysis():
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({"status": "error", "message": f"大盤指數暫時無法取得，請稍後再試：{e}"}), 503
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 def _fetch_twse_fundamentals(ticker: str) -> dict:
