@@ -6791,9 +6791,7 @@ async function openWatchlistPanel() {
   renderWlTableHeader();
   _updateAddCurrentBtn();
 
-  // 從後端載入最新清單（8秒 timeout 後自動 fallback 到 localStorage）
-  _showWlLoading(true);
-  await wlLoad();
+  // 直接用已快取的 _wlCodes（初始化時已從 localStorage 載入），立即渲染不等待後端
   _updateWlCountBadge(_wlCodes.length);
 
   if (_wlCodes.length === 0) {
@@ -6804,12 +6802,16 @@ async function openWatchlistPanel() {
   _showWlEmpty(false);
   _showWlLoading(false);
 
-  // 已快取的先顯示，補抓缺少的
+  // 有部分快取資料先立即顯示，再背景補抓缺少的
   const missing = _wlCodes.filter(c => _wlData[c] === undefined);
   if (missing.length === 0) {
     renderWlTable();
     updateWlSummary();
     return;
+  }
+  if (missing.length < _wlCodes.length) {
+    renderWlTable();
+    updateWlSummary();
   }
   await _loadWlStocks(missing);
 }
