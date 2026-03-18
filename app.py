@@ -14,6 +14,7 @@ import platform
 import numpy as np
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
+from github_cache import CacheManager, start_scheduler
 import io
 import requests as _req
 
@@ -46,6 +47,7 @@ app.json = NumpyJSONProvider(app)
 DATA_DIR = get_data_dir()
 print(f"資料目錄: {DATA_DIR}")
 os.makedirs(DATA_DIR, exist_ok=True)
+cache_mgr = CacheManager(data_dir=DATA_DIR)
 
 # 全域快取
 cached_results    = {}
@@ -2724,6 +2726,26 @@ def watchlist_remove():
         return jsonify({'status': 'success', 'codes': codes, 'count': len(codes)})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# ── 排程器：無論 gunicorn 或直接執行都要啟動 ──────────────────
+def _init_scheduler():
+    """在非 reloader 子程序中啟動一次排程器"""
+    # Werkzeug reloader 會 fork 出子程序，WERKZEUG_RUN_MAIN=true 代表真正的子程序
+    # gunicorn 沒有此環境變數，直接啟動
+    is_reloader_main = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+    is_gunicorn      = 'gunicorn' in os.environ.get('SERVER_SOFTWARE', '') \
+                       or os.environ.get('RENDER') is not None
+    if is_gunicorn or is_reloader_main or not os.environ.get('WERKZEUG_RUN_MAIN'):
+        start_scheduler(
+            cache=cache_mgr,
+            fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
+            watchlist_reader=_wl_read,
+            popular_stocks=list(POPULAR_STOCKS.keys()) if isinstance(POPULAR_STOCKS, dict)
+                           else list(POPULAR_STOCKS),
+        )
+
+_init_scheduler()
 
 
 if __name__ == '__main__':
