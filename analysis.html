@@ -1407,11 +1407,19 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <h3 class="font-bold text-white flex items-center gap-2">
               <i class="fa-solid fa-robot text-violet-400"></i>AI 財務健診報告
               <span class="text-xs text-slate-500 font-normal ml-1">由 Claude 自動生成</span>
+              <!-- 配額狀態徽章 -->
+              <span id="fin-ai-quota-badge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full ml-1"></span>
             </h3>
-            <button id="fin-ai-btn" onclick="generateFinAI()"
-              class="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-900/60 text-violet-300 border border-violet-700/50 hover:bg-violet-800/60 transition flex items-center gap-1">
-              <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析
-            </button>
+            <div class="flex items-center gap-2">
+              <!-- 快取來源說明 -->
+              <span id="fin-ai-cache-note" class="hidden text-xs text-emerald-400 flex items-center gap-1">
+                <i class="fa-solid fa-circle-check"></i>已從 GitHub 快取載入
+              </span>
+              <button id="fin-ai-btn" onclick="generateFinAI()"
+                class="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-900/60 text-violet-300 border border-violet-700/50 hover:bg-violet-800/60 transition flex items-center gap-1">
+                <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析
+              </button>
+            </div>
           </div>
           <!-- AI 載入中 -->
           <div id="fin-ai-loading" class="hidden py-6 text-center">
@@ -1468,11 +1476,33 @@ const STOCK_NAMES_ZH = {
   '0050':'元大台灣50','0056':'元大高股息','006208':'富邦台50',
   '00878':'國泰永續高股息','00713':'元大台灣高息低波','00679B':'元大美債20年',
   '00919':'群益台灣精選高息','00929':'復華台灣科技優息',
-  '00915':'凱基優選高股息30','00757':'統一MSCI台灣',
+  '00915':'凱基優選高股息30','00757':'統一MSCI台灣ESG',
   '00850':'元大臺灣ESG永續','00692':'富邦公司治理',
   '00900':'富邦特選高股息30','00907':'永豐優息存股',
-  '00930':'永豐ESG低碳高息','00934':'中信成長高股息',
+  '00930':'永豐台灣ESG','00934':'中信成長高股息',
   '00939':'統一台灣高息動能','00940':'元大台灣價值高息',
+  '00701':'國泰股利精選30','00730':'富邦臺灣優質高息',
+  '00731':'FH富時高息低波','00733':'富邦臺灣中小',
+  '00770':'國泰北美科技','00858':'永豐美國500大',
+  '00864B':'中信優先順位債','00875':'國泰網路資安',
+  '00888':'永豐台灣ESG優質','00891':'中信關鍵半導體',
+  '00892':'富邦醫療','00893':'國泰智能電動車',
+  '00894':'中信小台灣精選','00896':'中信綠能及電動車',
+  '00904':'新光臺灣半導體30','00905':'FH香港科技',
+  '00906':'FTFT台灣Smart','00912':'中信臺灣智慧50',
+  '00913':'中信臺灣ESG','00914':'中信小資高價30',
+  '00916':'國泰全球品牌50','00917':'中信特選金融',
+  '00918':'大華優利高填息30','00920':'富邦入息REITs+債',
+  '00921':'兆豐台灣晶圓製造','00922':'國泰台灣領袖50',
+  '00923':'群益台ESG低碳50','00924':'永豐台灣ESG',
+  '00925':'富邦臺灣製造業','00926':'凱基金融股',
+  '00927':'群益半導體收益','00928':'中信高評級公司債',
+  '00931':'兆豐永續高息等權','00932':'兆豐台灣晶圓製造',
+  '00933':'國泰台灣產業龍頭','00935':'野村台灣價值成長',
+  '00936':'台新臺灣IC設計','00937B':'國泰10Y+金融債',
+  '00938':'永豐ESG低碳高息','00941':'台新臺灣高息低波',
+  '00943':'元大臺灣高股息低波','00944':'第一金工業大台灣',
+  '00945':'野村臺灣新科技50',
 };
 
 // ── 從 Stock_Dictory.csv 載入的完整股票字典（1261筆上市股票+ETF）──
@@ -1874,7 +1904,11 @@ function getStockNameZh(ticker) {
   if (!ticker) return null;
   const t = ticker.toUpperCase();
   if (t === '0000') return '台灣加權指數';   // 大盤指數特殊對應
-  return STOCK_DICT_CSV[t] || STOCK_NAMES_ZH[t] || null;
+  const fromNames = STOCK_NAMES_ZH[t];
+  const fromDict = STOCK_DICT_CSV[t];
+  if (fromNames) return fromNames;
+  if (fromDict && fromDict !== '台灣標竿') return fromDict;
+  return null;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -5008,9 +5042,8 @@ function renderSIM(d) {
 let hotStockList     = [];
 let hotStockData     = {};
 
-// ── localStorage 快取工具（有效期 24h，每日 13:30 後強制更新）──
-// 與後端 github_cache.py 的盤後更新時間對齊（13:30 台灣時間）
-const HOT_CACHE_KEY    = 'hotStockCache_v2';      // 版本號升一，清除舊快取
+// ── localStorage 快取工具（有效期 24h，每日 14:00 後強制更新）──
+const HOT_CACHE_KEY    = 'hotStockCache_v1';
 const HOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24 小時
 
 function _hotCacheIsFresh(ts) {
@@ -5018,11 +5051,10 @@ function _hotCacheIsFresh(ts) {
   const now  = Date.now();
   const age  = now - ts;
   if (age > HOT_CACHE_TTL_MS) return false;
-  // 每日 13:30 後強制刷新：判斷快取時間是否在今日 13:30 之前
-  // 對齊後端 github_cache.py 的盤後更新排程（每日 13:30 Asia/Taipei）
-  const today1330 = new Date();
-  today1330.setHours(13, 30, 0, 0);
-  if (now >= today1330.getTime() && ts < today1330.getTime()) return false;
+  // 每日 14:00 後強制刷新：判斷快取時間是否在今日 14:00 之前
+  const today14 = new Date();
+  today14.setHours(14, 0, 0, 0);
+  if (now >= today14.getTime() && ts < today14.getTime()) return false;
   return true;
 }
 
@@ -5111,6 +5143,26 @@ function renderHotTableHeader() {
   }
 
   thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">${base}${extra}<th class="py-3 px-3 text-center">操作</th></tr>`;
+
+  // 動態更新大盤列 <tr> 的 sticky top 值，確保它緊貼 thead 下方不隨股票列捲動
+  requestAnimationFrame(() => {
+    const thead = document.getElementById('hotTableHead');
+    if (thead) {
+      const theadH = Math.round(thead.getBoundingClientRect().height);
+      _updateIndexRowTop(theadH);
+    }
+  });
+}
+
+// ── 佔位符名稱清單（這些名稱在 STOCK_DICT_CSV 中是尚未登錄的預留位置，不應顯示）──
+const PLACEHOLDER_NAMES = new Set([
+  '台灣標竿', '台灣精銳', '台灣工業', '台灣紡織', '台灣電化', '台灣', '台灣高鐵'
+]);
+function isPlaceholderStock(code, name) {
+  if (!name) return true;
+  // 名稱完全匹配佔位符
+  if (PLACEHOLDER_NAMES.has(name.trim())) return true;
+  return false;
 }
 
 // ── 建立熱門股票清單（第1列固定為大盤指數，後面依優先順序補足至 pageSize 筆）────────────
@@ -5156,16 +5208,18 @@ function buildHotList(pageSize) {
   for (const code of priorityCodes) {
     if (seen.has(code)) continue;
     if (isETFCode(code)) continue;   // 熱門股票不顯示 ETF
+    const name = STOCK_NAMES_ZH[code] || (STOCK_DICT_CSV[code] !== '台灣標竿' && STOCK_DICT_CSV[code]) || code;
+    if (isPlaceholderStock(code, name)) continue;  // 過濾佔位符
     seen.add(code);
-    const name = STOCK_DICT_CSV[code] || STOCK_NAMES_ZH[code] || code;
     list.push({ code, name });
     if (list.length >= pageSize) break;
   }
-  // 補足：從 CSV 字典依序補（同樣排除 ETF）
+  // 補足：從 CSV 字典依序補（同樣排除 ETF 及佔位符）
   if (list.length < pageSize) {
     for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
       if (seen.has(code)) continue;
       if (isETFCode(code)) continue;  // 排除 ETF
+      if (isPlaceholderStock(code, name)) continue;  // 排除佔位符
       seen.add(code);
       list.push({ code, name });
       if (list.length >= pageSize) break;
@@ -5250,7 +5304,7 @@ function buildETFList(pageSize) {
   for (const e of HOT_ETF_CODES) {
     if (seen.has(e.code)) continue;
     seen.add(e.code);
-    const name = STOCK_DICT_CSV[e.code] || STOCK_NAMES_ZH[e.code] || e.name;
+    const name = STOCK_NAMES_ZH[e.code] || (STOCK_DICT_CSV[e.code] !== '台灣標竿' && STOCK_DICT_CSV[e.code]) || e.name;
     list.push({ code: e.code, name });
     if (list.length >= pageSize) break;
   }
@@ -5384,7 +5438,7 @@ async function reloadSingleHotStock(code) {
   updateHotSummary();
 }
 
-// ── 逐批載入（每批 10 支並行，每秒更新進度） ────────────────────────
+// ── 逐批載入（每批 20 支並行，即時更新進度） ────────────────────────
 // onlyCodes: 若傳入，只載入這些代碼（補抓模式）；否則載入全部 hotStockList
 async function loadHotStocksSequential(onlyCodes) {
   const tbody = document.getElementById('hotStockTableBody');
@@ -5392,24 +5446,41 @@ async function loadHotStocksSequential(onlyCodes) {
   document.getElementById('hotSummaryRow').classList.add('hidden');
   document.getElementById('hotProgress').classList.remove('hidden');
 
-  // 補抓模式：只處理缺少的，total 從已有筆數開始計
+  // 補抓模式：只處理缺少的
   const targetList = onlyCodes
     ? hotStockList.filter(s => onlyCodes.includes(s.code))
     : hotStockList;
   const total = hotStockList.length;
-  let loaded = hotStockList.filter(s => !onlyCodes && hotStockData[s.code] !== undefined).length;
   const BATCH = 20;
-  updateHotProgress(loaded, total, onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...') : '準備載入...');
+
+  // ── 先從 localStorage 快取填充，減少 API 請求 ──
+  _cacheHits = 0;
+  if (!onlyCodes) {
+    for (const s of targetList) {
+      if (hotStockData[s.code] !== undefined) continue;
+      const cached = hotCacheLoad(s.code);
+      if (cached) {
+        hotStockData[s.code] = cached;
+        _cacheHits++;
+      }
+    }
+    if (_cacheHits > 0) {
+      renderHotTable();
+    }
+  }
+
+  // ── 以已載入數量為基準（快取命中後才計算，避免重複計算）──
+  const countLoaded = () => hotStockList.filter(s => hotStockData[s.code] !== undefined).length;
+  let loaded = countLoaded();
+
+  updateHotProgress(loaded, total,
+    onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...')
+              : (_cacheHits > 0 ? '快取命中 ' + _cacheHits + ' 支，載入剩餘資料...' : '準備載入...'));
 
   // 若補抓模式且有已載入資料，先顯示已有的
   if (onlyCodes && loaded > 0) {
     renderHotTable();
   }
-
-  // 每秒刷新進度條
-  let _progressInterval = setInterval(() => {
-    updateHotProgress(loaded, total, '已載入 ' + loaded + ' / ' + total + ' 支...');
-  }, 1000);
 
   const fetchWithRetry = async (code, maxRetry = 3) => {
     for (let attempt = 1; attempt <= maxRetry; attempt++) {
@@ -5424,42 +5495,24 @@ async function loadHotStocksSequential(onlyCodes) {
     return null;
   };
 
-  // ── 先從 localStorage 快取填充，減少 API 請求 ──
-  _cacheHits = 0;
-  if (!onlyCodes) {
-    for (const s of targetList) {
-      if (hotStockData[s.code] !== undefined) continue;
-      const cached = hotCacheLoad(s.code);
-      if (cached) {
-        hotStockData[s.code] = cached;
-        loaded++;
-        _cacheHits++;
-      }
-    }
-    if (_cacheHits > 0) {
-      renderHotTable();
-      updateHotProgress(loaded, total, '快取命中 ' + _cacheHits + ' 支，載入剩餘資料...');
-    }
-  }
-
   for (let i = 0; i < targetList.length; i += BATCH) {
     if (hotLoadAbort) break;
     const batch = targetList.slice(i, i + BATCH);
     await Promise.all(batch.map(async (s) => {
-      if (hotStockData[s.code] !== undefined) { loaded++; return; }
+      if (hotStockData[s.code] !== undefined) return;  // 已有資料（快取），跳過不重複計算
       const result = await fetchWithRetry(s.code);
       hotStockData[s.code] = result;
       if (result) hotCacheSave(s.code, result);   // 成功才存快取
-      loaded++;
-      // ── 取得任一支就立即更新表格 ──
+      // ── 取得任一支就立即更新進度條與表格 ──
+      const nowLoaded = countLoaded();
+      updateHotProgress(nowLoaded, total, '已載入 ' + nowLoaded + ' / ' + total + ' 支...');
       renderHotTable();
     }));
-    // 批次間不等待，最大化並行速度
   }
 
-  clearInterval(_progressInterval);
+  loaded = countLoaded();
   const cacheNote = _cacheHits > 0 ? '（快取命中 ' + _cacheHits + ' 支）' : '';
-  updateHotProgress(total, total, '載入完成，共 ' + total + ' 支 ' + cacheNote);
+  updateHotProgress(loaded, total, '載入完成，共 ' + loaded + ' 支 ' + cacheNote);
   document.getElementById('hotSummaryRow').classList.remove('hidden');
   updateHotSummary();
 }
@@ -5544,14 +5597,15 @@ function sortHotTable(key) {
 
 // ── 產生單列 HTML（大盤列與一般列共用）─────────────────────────────
 function _buildHotRowHtml(row, idx, isIndexRow) {
-  const name = STOCK_DICT_CSV[row.code] || STOCK_NAMES_ZH[row.code] || row.name || row.code;
+  const name = STOCK_NAMES_ZH[row.code] || (STOCK_DICT_CSV[row.code] !== '台灣標竿' && STOCK_DICT_CSV[row.code]) || row.name || row.code;
   const rowNum = isIndexRow ? '' : idx;
   // sticky 左側欄背景
   const stickyBg   = isIndexRow ? 'bg-amber-950' : 'bg-slate-900';
   const stickyBase = 'sticky z-10 ' + stickyBg;
 
   if (row.loading) {
-    return '<tr class="text-slate-500">' +
+    const trStyle = isIndexRow ? ' id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02"' : '';
+    return '<tr class="text-slate-500"' + trStyle + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
@@ -5559,7 +5613,8 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       '</tr>';
   }
   if (row.error) {
-    return '<tr class="text-slate-500">' +
+    const trStyle = isIndexRow ? ' id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02"' : '';
+    return '<tr class="text-slate-500"' + trStyle + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold text-red-400 ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
@@ -5571,7 +5626,7 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
   const chgSign = row.chgpct > 0 ? '+' : '';
   const trClass = isIndexRow
-    ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10'
+    ? 'border-b border-amber-700/40 bg-amber-950/20 cursor-pointer hover:bg-amber-900/10" id="hotIndexTr" style="position:sticky;top:41px;z-index:15;background:#1c0f02'
     : 'border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/30';
 
   const codeDisplay = isIndexRow
@@ -5686,6 +5741,12 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   return '<tr class="' + trClass + '" onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
 }
 
+// ── 同步大盤列 <tr> 的 sticky top 至 thead 實際高度 ────────────
+function _updateIndexRowTop(topPx) {
+  const tr = document.getElementById('hotIndexTr');
+  if (tr) tr.style.top = (topPx != null ? topPx : 41) + 'px';
+}
+
 // ── 渲染表格 ─────────────────────────────────────────────────────────
 function renderHotTable() {
   const tbodyIndex = document.getElementById('hotIndexRow');
@@ -5699,6 +5760,11 @@ function renderHotTable() {
     if (d === undefined) iRow = { code:'0000', name:'大盤指數', loading:true };
     else iRow = calcHotRow('0000', d) || { code:'0000', name:'大盤指數', error:true };
     tbodyIndex.innerHTML = _buildHotRowHtml(iRow, 0, true);
+    // 同步 sticky top（thead 高度可能因 view mode 不同而異）
+    requestAnimationFrame(() => {
+      const thead = document.getElementById('hotTableHead');
+      if (thead) _updateIndexRowTop(Math.round(thead.getBoundingClientRect().height));
+    });
   }
 
   // 一般股票列（排除大盤）
@@ -6041,6 +6107,24 @@ function renderFinReport(data) {
   document.getElementById('fin-ai-placeholder').classList.remove('hidden');
   document.getElementById('fin-ai-result').classList.add('hidden');
   document.getElementById('fin-ai-loading').classList.add('hidden');
+
+  // 重置配額徽章與按鈕
+  const btn = document.getElementById('fin-ai-btn');
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析';
+    btn.title = '';
+  }
+  const badge = document.getElementById('fin-ai-quota-badge');
+  if (badge) badge.classList.add('hidden');
+  const cacheNote = document.getElementById('fin-ai-cache-note');
+  if (cacheNote) cacheNote.classList.add('hidden');
+
+  // 自動查詢 GitHub 快取（非同步，不阻塞渲染）
+  if (currentData?.ticker) {
+    _autoLoadFinAICache(currentData.ticker);
+  }
 }
 
 // ── KPI 卡片 ─────────────────────────────────────────────────────
@@ -6314,26 +6398,163 @@ function renderFinDetailTable(data) {
   }).join('');
 }
 
+// ── 自動從 GitHub 快取載入（切換 tab 時靜默執行）────────────────
+async function _autoLoadFinAICache(ticker) {
+  if (!ticker) return;
+  try {
+    const r = await fetch(`/api/ai_report/${ticker}`);
+    if (!r.ok) return;
+    const result = await r.json();
+    if (result.status === 'cached' && result.data?.report_text) {
+      _showFinAIReport(
+        result.data.report_text,
+        _finData?.source || 'yfinance',
+        true
+      );
+      _updateQuotaBadge(true, true);
+      const btn = document.getElementById('fin-ai-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已從快取載入';
+      }
+    } else {
+      _updateQuotaBadge(false, false);
+    }
+  } catch (e) {
+    // 查詢失敗靜默處理
+  }
+}
+
 // ── AI 財務分析報告 ──────────────────────────────────────────────
+// 每日配額規則：台灣時間 13:30 起算為一個「報告期間」
+// 每個期間（ticker + period_key）只能呼叫 Claude API 一次
+// 結果永久儲存於 GitHub；下次查詢時自動從 GitHub 載入，不再扣費
+
+function _getFinAIPeriodKey() {
+  // 台灣時間 (UTC+8)，13:30 為分界
+  const now = new Date();
+  const tw = new Date(now.getTime() + 8 * 3600 * 1000); // UTC → UTC+8
+  const h = tw.getUTCHours(), m = tw.getUTCMinutes();
+  // 若尚未到今日 13:30，period 仍屬昨日
+  let d = new Date(tw);
+  if (h < 13 || (h === 13 && m < 30)) {
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  const yyyy = d.getUTCFullYear();
+  const mm   = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}`;
+}
+
+function _updateQuotaBadge(used, fromCache) {
+  const badge = document.getElementById('fin-ai-quota-badge');
+  const btn   = document.getElementById('fin-ai-btn');
+  const cacheNote = document.getElementById('fin-ai-cache-note');
+  if (!badge) return;
+  if (used) {
+    badge.textContent = '今日已用';
+    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full ml-1 bg-amber-900/60 text-amber-300 border border-amber-700/50';
+    badge.classList.remove('hidden');
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      btn.title = '今日 13:30 ~ 明日 13:30 已使用一次 AI 分析';
+    }
+  } else {
+    badge.textContent = '今日可用';
+    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full ml-1 bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
+    badge.classList.remove('hidden');
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      btn.title = '';
+    }
+  }
+  if (cacheNote) {
+    if (fromCache) cacheNote.classList.remove('hidden');
+    else           cacheNote.classList.add('hidden');
+  }
+}
+
+async function _checkFinAIQuota(ticker) {
+  // 向後端查詢是否已有快取
+  try {
+    const r = await fetch(`/api/ai_report/${ticker}`);
+    if (!r.ok) return { used: false, cached: null, period_key: _getFinAIPeriodKey() };
+    return await r.json();
+  } catch (e) {
+    return { used: false, cached: null, period_key: _getFinAIPeriodKey() };
+  }
+}
+
+function _showFinAIReport(text, source, fromCache) {
+  const srcNote = document.querySelector('#fin-ai-result p');
+  document.getElementById('fin-ai-text').textContent = text;
+  if (srcNote) {
+    srcNote.textContent = `以上為 AI 自動生成分析，僅供參考，不構成投資建議。財報數據來源：${source}`;
+  }
+  document.getElementById('fin-ai-loading').classList.add('hidden');
+  document.getElementById('fin-ai-result').classList.remove('hidden');
+  document.getElementById('fin-ai-placeholder').classList.add('hidden');
+}
+
 async function generateFinAI() {
   if (_finAILoading || !_finData || !currentData) return;
-  _finAILoading = true;
 
+  const ticker    = currentData.ticker;
+  const periodKey = _getFinAIPeriodKey();
+
+  // ── STEP 1：先向後端查詢 GitHub 快取 ─────────────────────────
   const btn = document.getElementById('fin-ai-btn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>分析中...'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>檢查快取...'; }
+
+  let checkResult;
+  try {
+    checkResult = await _checkFinAIQuota(ticker);
+  } catch (e) {
+    checkResult = { status: 'not_found', used: false, period_key: periodKey };
+  }
+
+  // ── STEP 2：若 GitHub 已有快取，直接顯示 ─────────────────────
+  if (checkResult.status === 'cached' && checkResult.data?.report_text) {
+    _showFinAIReport(
+      checkResult.data.report_text,
+      _finData?.source || 'yfinance',
+      true
+    );
+    _updateQuotaBadge(true, true);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已從快取載入'; }
+    return;
+  }
+
+  // ── STEP 3：無快取，檢查配額（防止重複點擊）─────────────────
+  if (checkResult.used) {
+    // 配額已用但快取讀不到（可能 GitHub 暫時無法存取），顯示說明
+    document.getElementById('fin-ai-placeholder').innerHTML =
+      `<i class="fa-solid fa-clock text-amber-400 text-2xl mb-2 block"></i>
+       <span class="text-amber-300 text-sm">今日（13:30 起）已使用一次 AI 分析，<br>
+       下次可用時間：明日 13:30 後</span>`;
+    document.getElementById('fin-ai-placeholder').classList.remove('hidden');
+    _updateQuotaBadge(true, false);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析'; }
+    return;
+  }
+
+  // ── STEP 4：呼叫 Claude API（透過後端 /api/ai_report POST）──
+  _finAILoading = true;
   document.getElementById('fin-ai-placeholder').classList.add('hidden');
   document.getElementById('fin-ai-result').classList.add('hidden');
   document.getElementById('fin-ai-loading').classList.remove('hidden');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>分析中...'; }
 
   try {
-    const ratios = _finData.ratios?.annual || [];
-    const ticker = currentData.ticker;
+    const ratios    = _finData.ratios?.annual || [];
     const stockName = getStockNameZh(ticker) || ticker;
-    const source = _finData.source || 'yfinance';
+    const source    = _finData.source || 'yfinance';
 
     // 整理財報摘要給 Claude
     const summaryLines = ratios.map(r => {
-      const yr = (r.period||'').slice(0,4);
+      const yr = (r.period || '').slice(0, 4);
       return [
         `${yr}年：`,
         r.revenue_b     != null ? `營收 ${r.revenue_b.toFixed(0)} 億` : '',
@@ -6375,37 +6596,50 @@ ${summaryLines || '（資料不足）'}
 
 注意：若某年度資料不完整（顯示 N/A 或空白），請跳過該年份，不要推測。最後加上「以上分析僅供參考，不構成投資建議」。`;
 
-    // 呼叫 Claude API（透過後端代理）
-    const response = await fetch(CLAUDE_API_URL, {
+    // 呼叫後端 /api/ai_report（POST）— 後端負責呼叫 Claude + 存 GitHub
+    const response = await fetch(`/api/ai_report/${ticker}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: CLAUDE_MODEL,
+        model:      CLAUDE_MODEL,
         max_tokens: 1500,
-        messages: [{ role: 'user', content: prompt }]
+        messages:   [{ role: 'user', content: prompt }]
       })
     });
 
-    if (!response.ok) throw new Error(`API 回應 ${response.status}`);
-    const aiData = await response.json();
-    const aiText = aiData.content?.find(b => b.type === 'text')?.text || '（無法取得分析結果）';
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.message || `API 回應 ${response.status}`);
+    }
 
-    document.getElementById('fin-ai-text').textContent = aiText;
-    // 更新來源說明
-    const srcNote = document.querySelector('#fin-ai-result p');
-    if (srcNote) srcNote.textContent = `以上為 AI 自動生成分析，僅供參考，不構成投資建議。財報數據來源：${source}`;
-    document.getElementById('fin-ai-loading').classList.add('hidden');
-    document.getElementById('fin-ai-result').classList.remove('hidden');
+    const result = await response.json();
 
-  } catch(e) {
+    let aiText = '';
+    if (result.status === 'cached' || result.status === 'generated') {
+      aiText = result.data?.report_text || '';
+    }
+    if (!aiText) throw new Error('取得的 AI 分析內容為空');
+
+    _showFinAIReport(aiText, source, result.status === 'cached');
+    _updateQuotaBadge(true, result.status === 'cached');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已產生（今日配額已用）';
+    }
+
+  } catch (e) {
     document.getElementById('fin-ai-loading').classList.add('hidden');
     document.getElementById('fin-ai-placeholder').innerHTML =
       `<i class="fa-solid fa-circle-exclamation text-red-400 text-2xl mb-2 block"></i>
        <span class="text-red-400">AI 分析失敗：${e.message}</span>`;
     document.getElementById('fin-ai-placeholder').classList.remove('hidden');
+    _updateQuotaBadge(false, false);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>重新嘗試';
+    }
   } finally {
     _finAILoading = false;
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>重新產生'; }
   }
 }
 
@@ -6490,10 +6724,10 @@ ${summaryLines || '（資料不足）'}
       </div>
 
       <!-- 表格區域 -->
-      <div class="overflow-auto flex-1 px-2" id="hotTableWrap">
+      <div class="overflow-auto flex-1 px-2" id="hotTableWrap" style="position:relative;">
         <table class="w-full text-xs" style="min-width:900px;">
           <thead id="hotTableHead" class="sticky top-0 bg-slate-900 z-20"></thead>
-          <tbody id="hotIndexRow" class="sticky bg-slate-900 z-10" style="top:41px;"></tbody>
+          <tbody id="hotIndexRow"></tbody>
           <tbody id="hotStockTableBody" class="divide-y divide-slate-800/60"></tbody>
         </table>
         <!-- 空狀態 -->
@@ -7011,7 +7245,7 @@ function renderWlTable() {
 
   tbody.innerHTML = rows.map((row, displayIdx) => {
     const actualIdx = row._idx ?? displayIdx;  // 拖曳用實際 index
-    const name = STOCK_DICT_CSV[row.code] || STOCK_NAMES_ZH[row.code] || row.name || row.code;
+    const name = STOCK_NAMES_ZH[row.code] || (STOCK_DICT_CSV[row.code] !== '台灣標竿' && STOCK_DICT_CSV[row.code]) || row.name || row.code;
     const trClass = 'border-b border-slate-800/50 hover:bg-slate-800/30';
     const dragHandleCol = `<td class="py-2 px-2 text-slate-600 cursor-grab active:cursor-grabbing text-center wl-drag-handle"
       draggable="true"
