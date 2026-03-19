@@ -7281,6 +7281,12 @@ async function openWatchlistPanel() {
   const modal = document.getElementById('watchlistModal');
   // 若面板已開啟，避免重複觸發
   if (!modal.classList.contains('hidden')) return;
+  // ── 防禦：確認 Script#1 依賴函數存在 ──
+  if (typeof calcHotRow !== 'function') {
+    console.error('[自選股] Script#1 未載入，請重新整理頁面（Ctrl+Shift+R）');
+    alert('頁面資源載入不完整，請按 Ctrl+Shift+R 強制重新整理後再試。');
+    return;
+  }
   _wlAbort = false;   // ★ 重置中止旗標（修正：關閉後再開啟不會卡住）
   modal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
