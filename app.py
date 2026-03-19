@@ -15,6 +15,60 @@ import numpy as np
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
 from github_cache import CacheManager, start_scheduler
+
+# 熱門 ETF 清單（排程每日 16:00 更新前50筆至 GitHub）
+POPULAR_ETF = [
+    {'code': '0050',   'name': '元大台灣50'},
+    {'code': '0056',   'name': '元大高股息'},
+    {'code': '006208', 'name': '富邦台50'},
+    {'code': '00878',  'name': '國泰永續高股息'},
+    {'code': '00713',  'name': '元大台灣高息低波'},
+    {'code': '00919',  'name': '群益台灣精選高息'},
+    {'code': '00929',  'name': '復華台灣科技優息'},
+    {'code': '00915',  'name': '凱基優選高股息30'},
+    {'code': '00679B', 'name': '元大美債20年'},
+    {'code': '00757',  'name': '統一MSCI台灣ESG'},
+    {'code': '00850',  'name': '元大臺灣ESG永續'},
+    {'code': '00900',  'name': '富邦特選高股息30'},
+    {'code': '00907',  'name': '永豐優息存股'},
+    {'code': '00930',  'name': '永豐台灣ESG'},
+    {'code': '00934',  'name': '中信成長高股息'},
+    {'code': '00939',  'name': '統一台灣高息動能'},
+    {'code': '00940',  'name': '元大台灣價值高息'},
+    {'code': '00692',  'name': '富邦公司治理'},
+    {'code': '00701',  'name': '國泰股利精選30'},
+    {'code': '00730',  'name': '富邦臺灣優質高息'},
+    {'code': '00731',  'name': 'FH富時高息低波'},
+    {'code': '00733',  'name': '富邦臺灣中小'},
+    {'code': '00770',  'name': '國泰北美科技'},
+    {'code': '00858',  'name': '永豐美國500大'},
+    {'code': '00875',  'name': '國泰網路資安'},
+    {'code': '00888',  'name': '永豐台灣ESG優質'},
+    {'code': '00891',  'name': '中信關鍵半導體'},
+    {'code': '00892',  'name': '富邦醫療'},
+    {'code': '00893',  'name': '國泰智能電動車'},
+    {'code': '00894',  'name': '中信小台灣精選'},
+    {'code': '00896',  'name': '中信綠能及電動車'},
+    {'code': '00904',  'name': '新光臺灣半導體30'},
+    {'code': '00905',  'name': 'FT臺灣Smart'},
+    {'code': '00912',  'name': '中信臺灣智慧50'},
+    {'code': '00913',  'name': '中信臺灣ESG'},
+    {'code': '00916',  'name': '國泰全球品牌50'},
+    {'code': '00917',  'name': '中信特選金融'},
+    {'code': '00918',  'name': '大華優利高填息30'},
+    {'code': '00920',  'name': '富邦入息REITs+債'},
+    {'code': '00921',  'name': '兆豐台灣晶圓製造'},
+    {'code': '00922',  'name': '國泰台灣領袖50'},
+    {'code': '00923',  'name': '群益台ESG低碳50'},
+    {'code': '00925',  'name': '富邦臺灣製造業'},
+    {'code': '00926',  'name': '凱基金融股'},
+    {'code': '00927',  'name': '群益半導體收益'},
+    {'code': '00932',  'name': '兆豐永續高息等權'},
+    {'code': '00933',  'name': '國泰台灣產業龍頭'},
+    {'code': '00935',  'name': '野村台灣價值成長'},
+    {'code': '00936',  'name': '台新臺灣IC設計'},
+    {'code': '00938',  'name': '永豐ESG低碳高息'},
+]
 import io
 import requests as _req
 
@@ -347,6 +401,386 @@ def download_csv(portfolio_type):
 def get_popular_stocks():
     """回傳熱門股票清單"""
     return jsonify({'status': 'success', 'stocks': POPULAR_STOCKS})
+
+
+@app.route('/api/cache_version', methods=['GET'])
+def get_cache_version():
+    """
+    回傳後端快取版本戳記。
+    前端每 5 分鐘輪詢，若版本有變化（表示排程已完成更新），
+    則清空 localStorage 快取，強制下次查詢重新載入最新資料。
+    """
+    try:
+        version_file = os.path.join(DATA_DIR, "cache_version.json")
+        if os.path.exists(version_file):
+            with open(version_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify({'status': 'ok', 'version': data.get('version', ''),
+                            'updated_at': data.get('updated_at', '')})
+        return jsonify({'status': 'ok', 'version': '', 'updated_at': ''})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/hot_summary', methods=['POST'])
+def hot_summary():
+    """
+    批次回傳熱門股票/ETF 輕量摘要（供熱門面板表格使用）。
+
+    Request body: { "tickers": ["2330", "00878", ...] }  最多 55 支
+    Response:     { "status": "success", "data": { "2330": {...}, "00878": {...} } }
+
+    每支只回傳表格需要的 ~25 個欄位（< 1 KB），
+    比完整 /api/stock_analysis 小 95%（~80 KB）。
+
+    快取優先順序：
+      L1 記憶體 analysis_cache（5分鐘）→
+      L2 本機/GitHub CacheManager price CSV →
+      L3 完整 stock_analysis（最慢，降級備援）
+    多支股票以 ThreadPoolExecutor 平行處理，大幅縮短等待時間。
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    try:
+        body    = request.get_json(force=True) or {}
+        tickers = [str(t).strip().upper() for t in body.get('tickers', [])[:55]]
+        if not tickers:
+            return jsonify({'status': 'error', 'message': 'tickers 不可為空'}), 400
+
+        result = {}
+        need_fetch = []   # 需要去 L2/L3 抓的
+
+        # ── L1：記憶體快取（免 I/O，最快）──────────────────────
+        for ticker in tickers:
+            ce = analysis_cache.get(ticker)
+            if ce and (time.time() - ce.get('ts', 0)) < 300:
+                result[ticker] = _extract_hot_summary(ce['data'])
+            else:
+                need_fetch.append(ticker)
+
+        # ── L2/L3：平行抓取（ThreadPoolExecutor）─────────────────
+        def _fetch_one(ticker):
+            """單支股票：先查 CacheManager price rows，再降級完整抓取"""
+            import time as _time
+            try:
+                # L2a：本機 price CSV（最快 I/O）
+                rows = cache_mgr.get_price(ticker, fetcher=None)
+                if rows and len(rows) >= 20:
+                    summary = _build_summary_from_rows(ticker, rows)
+                    if summary:
+                        return ticker, summary, None   # (ticker, summary, full_data)
+
+                # L2b：GitHub 快取（公開 raw 讀取）
+                try:
+                    from github_cache import _gh_raw_get
+                    content = _gh_raw_get(f"data/{ticker}/analysis.json")
+                    if content:
+                        full = json.loads(content)
+                        analysis_cache[ticker] = {'data': full, 'ts': _time.time()}
+                        return ticker, _extract_hot_summary(full), full
+                except Exception:
+                    pass
+
+                # L3：完整 yfinance 抓取（最慢，備援）
+                fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+                raw = fetcher.fetch_stock_analysis(ticker)
+                if not raw or not raw.get('ohlcv'):
+                    return ticker, None, None
+
+                ohlcv      = raw['ohlcv']
+                indicators = raw.get('indicators', {})
+                info       = raw.get('info', {})
+                divs       = raw.get('dividend_data', [])
+
+                last = ohlcv[-1]
+                prev = ohlcv[-2] if len(ohlcv) >= 2 else last
+                change     = round(last['close'] - prev['close'], 2)
+                change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
+
+                annual_div = 0
+                if divs:
+                    one_yr_ago = (pd.Timestamp.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
+                    annual_div = sum(d['dividend'] for d in divs if d['date'] >= one_yr_ago)
+                div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
+
+                def last_val(lst):
+                    if not lst: return None
+                    return next((v for v in reversed(lst) if v is not None), None)
+
+                latest_ind = {k: last_val(indicators.get(k)) for k in
+                              ('ma5','ma10','ma20','ma60','ma120','ma200',
+                               'macd','macd_signal','rsi','k','d')}
+
+                recent60 = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
+                support  = round(min(r['low']  for r in recent60), 2)
+                resist   = round(max(r['high'] for r in recent60), 2)
+
+                trend          = _calc_trend(last['close'], latest_ind)
+                chip           = _estimate_chip(ohlcv, trend)
+                recommendation = _generate_recommendation(
+                    ticker, last['close'], latest_ind, trend, chip,
+                    info, div_yield, support, resist)
+
+                def to_lots(v): return max(1, round(v / 1000)) if v else 0
+                CHART_DAYS  = 1260
+                chart_ohlcv = ohlcv[-CHART_DAYS:] if len(ohlcv) > CHART_DAYS else ohlcv
+                chart_len   = len(chart_ohlcv)
+                offset      = len(ohlcv) - chart_len
+
+                def slice_ind(key):
+                    lst = indicators.get(key, [])
+                    return lst[offset:offset + chart_len] if len(lst) >= offset + chart_len else lst[-chart_len:]
+
+                full_data = {
+                    'ticker': ticker, 'name': raw.get('name', ticker),
+                    'source': raw.get('source', 'yfinance'),
+                    'is_simulated': raw.get('is_simulated', False),
+                    'latest': {
+                        'date': last['date'], 'open': last['open'],
+                        'high': last['high'], 'low': last['low'],
+                        'close': last['close'], 'volume': to_lots(last['volume']),
+                        'change': change, 'change_pct': change_pct,
+                    },
+                    'fundamentals': {
+                        'pe_ratio': info.get('pe_ratio'), 'pb_ratio': info.get('pb_ratio'),
+                        'div_yield': div_yield, 'annual_div': round(annual_div, 4),
+                        'eps': info.get('eps'), 'roe': info.get('roe'),
+                        'profit_margin': info.get('profit_margin'),
+                        'market_cap': info.get('market_cap'),
+                        'sector': info.get('sector', ''), 'industry': info.get('industry', ''),
+                        '52w_high': info.get('52w_high'), '52w_low': info.get('52w_low'),
+                        'description': info.get('description', ''),
+                    },
+                    'technical': {'latest': latest_ind, 'support': support,
+                                  'resist': resist, 'trend': trend},
+                    'chip': chip, 'recommendation': recommendation,
+                    'dividends': divs[-20:] if divs else [],
+                    'chart': {
+                        'dates':       [r['date']         for r in chart_ohlcv],
+                        'opens':       [r['open']         for r in chart_ohlcv],
+                        'highs':       [r['high']         for r in chart_ohlcv],
+                        'lows':        [r['low']          for r in chart_ohlcv],
+                        'closes':      [r['close']        for r in chart_ohlcv],
+                        'volumes':     [to_lots(r['volume']) for r in chart_ohlcv],
+                        'ma5':         slice_ind('ma5'),   'ma10': slice_ind('ma10'),
+                        'ma20':        slice_ind('ma20'),  'ma60': slice_ind('ma60'),
+                        'ma120':       slice_ind('ma120'), 'ma200': slice_ind('ma200'),
+                        'macd':        slice_ind('macd'),
+                        'macd_signal': slice_ind('macd_signal'),
+                        'macd_hist':   slice_ind('macd_hist'),
+                        'rsi':         slice_ind('rsi'),
+                        'k':           slice_ind('k'), 'd': slice_ind('d'),
+                    }
+                }
+                analysis_cache[ticker] = {'data': full_data, 'ts': _time.time()}
+                return ticker, _extract_hot_summary(full_data), full_data
+
+            except Exception as e:
+                print(f"  [hot_summary] {ticker} 失敗: {e}")
+                return ticker, None, None
+
+        # 最多 10 個 thread 並行（避免 yfinance 限流）
+        max_workers = min(10, len(need_fetch)) if need_fetch else 1
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_fetch_one, t): t for t in need_fetch}
+            for fut in as_completed(futures):
+                ticker_done, summary, _ = fut.result()
+                result[ticker_done] = summary
+
+        # 確保回傳順序與請求一致（未抓到的補 None）
+        ordered = {t: result.get(t) for t in tickers}
+        return jsonify({'status': 'success', 'data': ordered})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _extract_hot_summary(data_out: dict) -> dict:
+    """
+    從完整 stock_analysis data_out 萃取熱門面板表格所需的輕量摘要。
+    對應前端 calcHotRow() 所需的全部欄位。
+    """
+    lat   = data_out.get('latest',   {})
+    tech  = data_out.get('technical', {}).get('latest', {})
+    rec   = data_out.get('recommendation', {})
+    fund  = data_out.get('fundamentals',   {})
+    trend = (data_out.get('technical') or {}).get('trend') or {}
+    chart = data_out.get('chart', {})
+
+    closes = chart.get('closes',  [])
+    opens  = chart.get('opens',   [])
+    vols   = chart.get('volumes', [])
+    n60    = min(60, len(closes))
+    up_days = down_days = flat_days = up_vol = down_vol = total_vol = 0
+    for i in range(len(closes) - n60, len(closes)):
+        diff = closes[i] - (opens[i] or closes[i])
+        v    = vols[i] or 0
+        total_vol += v
+        if   diff > 0: up_days   += 1; up_vol   += v
+        elif diff < 0: down_days += 1; down_vol += v
+        else:          flat_days += 1
+    up_vol_pct   = round(up_vol   / total_vol * 100) if total_vol else 0
+    down_vol_pct = round(down_vol / total_vol * 100) if total_vol else 0
+
+    ma5, ma20, ma60 = tech.get('ma5'), tech.get('ma20'), tech.get('ma60')
+    if ma5 and ma20 and ma60:
+        if   ma5 > ma20 > ma60: matrend =  1
+        elif ma5 < ma20 < ma60: matrend = -1
+        elif ma5 > ma20:        matrend =  2
+        else:                   matrend = -2
+    else:
+        matrend = 0
+
+    return {
+        'name':         data_out.get('name', ''),
+        'close':        lat.get('close'),
+        'change':       lat.get('change'),
+        'change_pct':   lat.get('change_pct'),
+        'volume':       lat.get('volume'),
+        'high':         lat.get('high'),
+        'low':          lat.get('low'),
+        'ma5':          ma5,
+        'ma10':         tech.get('ma10'),
+        'ma20':         ma20,
+        'ma60':         ma60,
+        'ma120':        tech.get('ma120'),
+        'ma200':        tech.get('ma200'),
+        'matrend':      matrend,
+        'updays':       up_days,
+        'downdays':     down_days,
+        'flatdays':     flat_days,
+        'upvolpct':     up_vol_pct,
+        'downvolpct':   down_vol_pct,
+        'rating':       rec.get('rating'),
+        'rating_score': rec.get('total_score', 0),
+        'rating_color': rec.get('rating_color', '#64748b'),
+        'rating_bg':    rec.get('rating_bg',    '#1e293b'),
+        'rating_icon':  rec.get('rating_icon',  ''),
+        'target_price': rec.get('target_price'),
+        'target_type':  rec.get('target_type',  'none'),
+        'trend_label':  trend.get('label', '--'),
+        'trend_color':  trend.get('color', '#94a3b8'),
+        'pe_ratio':     fund.get('pe_ratio'),
+        'div_yield':    fund.get('div_yield'),
+        'reasons_buy':  rec.get('reasons_buy',  []),
+        'reasons_sell': rec.get('reasons_sell', []),
+    }
+
+
+def _build_summary_from_rows(ticker: str, rows: list) -> dict | None:
+    """
+    從 CacheManager 回傳的 price rows 快速建立輕量摘要。
+    只需 price CSV 就能計算行情 + 均線 + 趨勢 + 初步評級，
+    不需完整 fundamentals/dividends 資料（那些欄位留 None）。
+    """
+    try:
+        ohlcv = []
+        for r in rows:
+            c = float(r.get('close', r.get('收盤價', 0)) or 0)
+            if c <= 0:
+                continue
+            ohlcv.append({
+                'date':   str(r.get('date',   r.get('日期',   ''))),
+                'open':   float(r.get('open',   r.get('開盤價', c))),
+                'high':   float(r.get('high',   r.get('最高價', c))),
+                'low':    float(r.get('low',    r.get('最低價', c))),
+                'close':  c,
+                'volume': int(float(r.get('volume', r.get('成交量', 0)) or 0)),
+            })
+        if len(ohlcv) < 20:
+            return None
+
+        indicators = calc_technical_indicators(ohlcv)
+
+        def last_val(lst):
+            if not lst: return None
+            return next((v for v in reversed(lst) if v is not None), None)
+
+        latest_ind = {k: last_val(indicators.get(k)) for k in
+                      ('ma5','ma10','ma20','ma60','ma120','ma200',
+                       'macd','macd_signal','rsi','k','d')}
+
+        last = ohlcv[-1]
+        prev = ohlcv[-2] if len(ohlcv) >= 2 else last
+        change     = round(last['close'] - prev['close'], 2)
+        change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
+
+        def to_lots(v): return max(1, round(v / 1000)) if v else 0
+
+        recent60  = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
+        support   = round(min(r['low']  for r in recent60), 2)
+        resist    = round(max(r['high'] for r in recent60), 2)
+        trend     = _calc_trend(last['close'], latest_ind)
+        chip      = _estimate_chip(ohlcv, trend)
+        rec       = _generate_recommendation(
+            ticker, last['close'], latest_ind, trend, chip,
+            {}, None, support, resist)   # info={}, div_yield=None（快速模式）
+
+        # 計算 matrend
+        ma5, ma20, ma60 = latest_ind.get('ma5'), latest_ind.get('ma20'), latest_ind.get('ma60')
+        if ma5 and ma20 and ma60:
+            if   ma5 > ma20 > ma60: matrend =  1
+            elif ma5 < ma20 < ma60: matrend = -1
+            elif ma5 > ma20:        matrend =  2
+            else:                   matrend = -2
+        else:
+            matrend = 0
+
+        # 計算 60 日漲跌統計
+        closes_60 = [r['close'] for r in recent60]
+        opens_60  = [r['open']  for r in recent60]
+        vols_60   = [r['volume'] for r in recent60]
+        n60 = len(closes_60)
+        up_days = down_days = flat_days = up_vol = down_vol = total_vol = 0
+        for i in range(n60):
+            diff = closes_60[i] - opens_60[i]
+            v    = vols_60[i]
+            total_vol += v
+            if   diff > 0: up_days   += 1; up_vol   += v
+            elif diff < 0: down_days += 1; down_vol += v
+            else:          flat_days += 1
+        up_vol_pct   = round(up_vol   / total_vol * 100) if total_vol else 0
+        down_vol_pct = round(down_vol / total_vol * 100) if total_vol else 0
+
+        return {
+            'name':         ticker,   # price CSV 無名稱，前端 STOCK_NAMES_ZH 補
+            'close':        last['close'],
+            'change':       change,
+            'change_pct':   change_pct,
+            'volume':       to_lots(last['volume']),
+            'high':         last['high'],
+            'low':          last['low'],
+            'ma5':          ma5,
+            'ma10':         latest_ind.get('ma10'),
+            'ma20':         ma20,
+            'ma60':         ma60,
+            'ma120':        latest_ind.get('ma120'),
+            'ma200':        latest_ind.get('ma200'),
+            'matrend':      matrend,
+            'updays':       up_days,
+            'downdays':     down_days,
+            'flatdays':     flat_days,
+            'upvolpct':     up_vol_pct,
+            'downvolpct':   down_vol_pct,
+            'rating':       rec.get('rating'),
+            'rating_score': rec.get('total_score', 0),
+            'rating_color': rec.get('rating_color', '#64748b'),
+            'rating_bg':    rec.get('rating_bg',    '#1e293b'),
+            'rating_icon':  rec.get('rating_icon',  ''),
+            'target_price': rec.get('target_price'),
+            'target_type':  rec.get('target_type',  'none'),
+            'trend_label':  trend.get('label', '--'),
+            'trend_color':  trend.get('color', '#94a3b8'),
+            'pe_ratio':     None,   # 需完整抓取才有
+            'div_yield':    None,
+            'reasons_buy':  rec.get('reasons_buy',  []),
+            'reasons_sell': rec.get('reasons_sell', []),
+        }
+    except Exception as e:
+        print(f"  [_build_summary_from_rows] {ticker} 失敗: {e}")
+        return None
 
 
 @app.route('/api/stock_cache/<ticker>', methods=['GET'])
@@ -2975,13 +3409,15 @@ if __name__ == '__main__':
     print("=" * 60)
     host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
 
-    # 啟動每日 13:30（台灣時間）背景快取排程
+    # 啟動每交易日 16:00（台灣時間）背景快取排程
     start_scheduler(
         cache=cache_mgr,
         fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
         watchlist_reader=_wl_read,
         popular_stocks=list(POPULAR_STOCKS.keys()) if isinstance(POPULAR_STOCKS, dict)
                        else list(POPULAR_STOCKS),
+        popular_etfs=[e['code'] for e in POPULAR_ETF],
+        data_dir=DATA_DIR,
     )
 
     app.run(debug=False, host=host, port=port)

@@ -113,6 +113,9 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 @media(max-width:768px){
   .grid-cols-analysis{grid-template-columns:1fr!important;}
 }
+
+/* 骨架屏脈動動畫 */
+@keyframes _skPulse{0%,100%{opacity:.35}50%{opacity:.75}}
 </style>
 </head>
 <body>
@@ -2054,10 +2057,10 @@ function searchStock() {
 // ════════════════════════════════════════════════════════════════
 // 載入股票分析資料
 // ════════════════════════════════════════════════════════════════
-// ── 四層快取：記憶體(5分鐘) → localStorage(24h) → GitHub → 後端 yfinance API ─
+// ── 四層快取：記憶體(5分鐘) → IndexedDB/localStorage(24h) → GitHub → 後端 yfinance API ─
 // 個股、熱門股票、熱門 ETF、自選股 全部共用同一套快取策略
-// localStorage 使用 hotStockCache_v1（與熱門面板相同 key，互相受益）
-// localStorage 每日 13:30 後強制失效（配合台股收盤後更新）
+// IndexedDB 為主要大容量快取，localStorage 只存時間戳索引（省空間）
+// 快取每日 16:00 後強制失效（配合台股收盤後排程更新）
 // GitHub 快取：透過後端 GET /api/stock_cache/<ticker> 讀取，寫入由後端自動處理
 const _stockDataCache = {};   // 記憶體層 { ticker: { data, ts } }
 const _STOCK_CACHE_TTL = 5 * 60 * 1000;  // 記憶體層 5分鐘
@@ -2072,8 +2075,10 @@ async function loadStock(ticker) {
   if (tag) tag.classList.add('active');
 
   // ── ① 記憶體快取命中（5分鐘內）：直接渲染 ──────────────
+  // 注意：若快取資料是熱門面板的輕量摘要（_isSummary），必須跳過，
+  //        繼續向下取得完整資料（含 chart 陣列、配息、籌碼等）。
   const mem = _stockDataCache[ticker];
-  if (mem && (Date.now() - mem.ts < _STOCK_CACHE_TTL)) {
+  if (mem && (Date.now() - mem.ts < _STOCK_CACHE_TTL) && !mem.data._isSummary) {
     currentData = mem.data;
     hide('welcomeSection'); hide('errorSection'); hide('loadingSection');
     show('analysisSection');
@@ -2082,10 +2087,11 @@ async function loadStock(ticker) {
     return;
   }
 
-  // ── ② localStorage 快取命中（24h，每日13:30後失效）────────
-  // hotCacheLoad / hotCacheSave 定義於熱門股票區塊（共用 hotStockCache_v1）
-  const lsCached = hotCacheLoad(ticker);
-  if (lsCached) {
+  // ── ② IndexedDB 快取命中（24h，每日 16:00 後失效）────────
+  // hotCacheLoad / hotCacheSave 定義於熱門股票區塊（共用 IDB + localStorage 索引）
+  // 若 IDB 存的是熱門面板輕量摘要（_isSummary），個股分析頁需完整資料，繼續往下取。
+  const lsCached = await hotCacheLoad(ticker);
+  if (lsCached && !lsCached._isSummary) {
     _stockDataCache[ticker] = { data: lsCached, ts: Date.now() };
     currentData = lsCached;
     hide('welcomeSection'); hide('errorSection'); hide('loadingSection');
@@ -2102,7 +2108,7 @@ async function loadStock(ticker) {
   const ghCached = await ghStockCacheLoad(ticker);
   if (ghCached) {
     _stockDataCache[ticker] = { data: ghCached, ts: Date.now() };
-    hotCacheSave(ticker, ghCached);   // 回填 localStorage，下次不再查 GitHub
+    await hotCacheSave(ticker, ghCached);   // 回填 IDB，下次不再查 GitHub
     currentData = ghCached;
     hide('loadingSection'); show('analysisSection');
     renderAll(ghCached);
@@ -2122,9 +2128,9 @@ async function loadStock(ticker) {
       return;
     }
 
-    // 同時寫入記憶體快取與 localStorage（讓熱門/自選股面板也能受益）
+    // 同時寫入記憶體快取與 IDB（讓熱門/自選股面板也能受益）
     _stockDataCache[ticker] = { data: d.data, ts: Date.now() };
-    hotCacheSave(ticker, d.data);
+    await hotCacheSave(ticker, d.data);
 
     currentData = d.data;
     renderAll(d.data);
@@ -5086,41 +5092,139 @@ let hotStockList     = [];
 let hotStockData     = {};
 
 // ── localStorage 快取工具（有效期 24h，每日 13:30 後強制更新）──
-const HOT_CACHE_KEY    = 'hotStockCache_v1';
-const HOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;   // 24 小時
+const HOT_CACHE_KEY    = 'hotStockCache_v2';   // v2：升級為 IndexedDB 輔助版
+const HOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;  // 24 小時
+const IDB_DB_NAME      = 'StockAnalysisCache';
+const IDB_STORE_NAME   = 'stockData';
+const IDB_VERSION      = 1;
 
+// ── IndexedDB 初始化（開啟或建立資料庫）──────────────────────────
+let _idbPromise = null;
+function _getIDB() {
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
+    if (!window.indexedDB) { resolve(null); return; }
+    const req = indexedDB.open(IDB_DB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+        db.createObjectStore(IDB_STORE_NAME, { keyPath: 'code' });
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = () => { console.warn('[IDB] 開啟失敗，降級至 localStorage'); resolve(null); };
+  });
+  return _idbPromise;
+}
+
+// ── IndexedDB 讀寫封裝 ──────────────────────────────────────────
+async function _idbGet(code) {
+  try {
+    const db = await _getIDB();
+    if (!db) return null;
+    return new Promise(resolve => {
+      const tx  = db.transaction(IDB_STORE_NAME, 'readonly');
+      const req = tx.objectStore(IDB_STORE_NAME).get(code);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror   = () => resolve(null);
+    });
+  } catch(e) { return null; }
+}
+
+async function _idbSet(code, data, ts) {
+  try {
+    const db = await _getIDB();
+    if (!db) return;
+    const tx  = db.transaction(IDB_STORE_NAME, 'readwrite');
+    tx.objectStore(IDB_STORE_NAME).put({ code, data, ts });
+  } catch(e) { /* 忽略 */ }
+}
+
+async function _idbClear() {
+  try {
+    const db = await _getIDB();
+    if (!db) return;
+    const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+    tx.objectStore(IDB_STORE_NAME).clear();
+  } catch(e) { /* 忽略 */ }
+}
+
+// ── 快取新鮮度判斷（每日 16:00 台灣時間後強制刷新）──────────────
 function _hotCacheIsFresh(ts) {
   if (!ts) return false;
   const now  = Date.now();
   const age  = now - ts;
   if (age > HOT_CACHE_TTL_MS) return false;
-  // 每日 13:30 後強制刷新：判斷快取時間是否在今日 13:30 之前
-  const today1330 = new Date();
-  today1330.setHours(13, 30, 0, 0);
-  if (now >= today1330.getTime() && ts < today1330.getTime()) return false;
+  // 每日 16:00 後強制刷新：快取時間在今日 16:00 之前視為過期
+  const today1600 = new Date();
+  today1600.setHours(16, 0, 0, 0);
+  if (now >= today1600.getTime() && ts < today1600.getTime()) return false;
   return true;
 }
 
-function hotCacheSave(code, data) {
+// ── localStorage 精簡索引（只存 code + ts，不存完整資料）──────────
+function _lsIndexSave(code, ts) {
   try {
     const raw = JSON.parse(localStorage.getItem(HOT_CACHE_KEY) || '{}');
-    raw[code] = { data, ts: Date.now() };
+    raw[code] = ts;
     localStorage.setItem(HOT_CACHE_KEY, JSON.stringify(raw));
-  } catch(e) { /* 儲存空間不足時靜默忽略 */ }
+  } catch(e) { /* localStorage 滿時忽略 */ }
 }
 
-function hotCacheLoad(code) {
+function _lsIndexGet(code) {
   try {
     const raw = JSON.parse(localStorage.getItem(HOT_CACHE_KEY) || '{}');
-    const entry = raw[code];
-    if (entry && _hotCacheIsFresh(entry.ts)) return entry.data;
-  } catch(e) {}
+    return raw[code] || null;
+  } catch(e) { return null; }
+}
+
+// ── 公開 API：hotCacheSave（同時寫 IndexedDB + localStorage 索引）
+async function hotCacheSave(code, data) {
+  const ts = Date.now();
+  // 優先寫 IndexedDB（容量大）
+  await _idbSet(code, data, ts);
+  // 同步寫 localStorage 索引（僅記錄 ts，用於快速判斷是否需查 IDB）
+  _lsIndexSave(code, ts);
+}
+
+// ── 公開 API：hotCacheLoad（先查 localStorage 索引確認新鮮度，再從 IDB 讀資料）
+async function hotCacheLoad(code) {
+  const ts = _lsIndexGet(code);
+  if (!_hotCacheIsFresh(ts)) return null;
+  // ts 新鮮 → 從 IDB 讀完整資料
+  const entry = await _idbGet(code);
+  if (entry && _hotCacheIsFresh(entry.ts)) return entry.data;
   return null;
 }
 
-function hotCacheClear() {
+// ── 公開 API：hotCacheClear（清除 IDB + localStorage 索引）────────
+async function hotCacheClear() {
   try { localStorage.removeItem(HOT_CACHE_KEY); } catch(e) {}
+  await _idbClear();
+  console.log('[Cache] hotCache 已清除（IDB + localStorage）');
 }
+
+// ── 後端版本輪詢：排程更新完成後自動清空 localStorage + IDB ────────
+let _lastCacheVersion = '';
+async function _pollCacheVersion() {
+  try {
+    const r = await fetch('/api/cache_version', { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return;
+    const d = await r.json();
+    const v = d.version || '';
+    if (!v) return;
+    if (_lastCacheVersion && _lastCacheVersion !== v) {
+      console.log(`[Cache] 偵測到後端更新（${_lastCacheVersion} → ${v}），清空本地快取`);
+      await hotCacheClear();
+    }
+    _lastCacheVersion = v;
+  } catch(e) { /* 網路問題靜默忽略 */ }
+}
+// 頁面載入後 10 秒開始第一次輪詢，之後每 5 分鐘一次
+setTimeout(async () => {
+  await _pollCacheVersion();
+  setInterval(_pollCacheVersion, 5 * 60 * 1000);
+}, 10000);
 
 // ── GitHub 行情快取（後端讀取）─────────────────────────────────────
 // 優先順序：記憶體 → localStorage → GitHub → yfinance API
@@ -5473,8 +5577,8 @@ function changeHotPageSize() {
   loadHotStocksSequential();
 }
 
-function reloadHotStocks() {
-  hotCacheClear();          // 清除 localStorage 快取，強制重新抓取
+async function reloadHotStocks() {
+  await hotCacheClear();    // 清除 IDB + localStorage 索引，強制重新抓取
   hotStockData = {};
   hotLoadAbort = false;
   hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
@@ -5490,13 +5594,13 @@ async function reloadSingleHotStock(code) {
     const d = await r.json();
     const result = (d.status === 'success') ? d.data : null;
     hotStockData[code] = result;
-    if (result) hotCacheSave(code, result);   // 更新快取
+    if (result) await hotCacheSave(code, result);   // 更新 IDB 快取
   } catch(e) { hotStockData[code] = null; }
   renderHotTable();
   updateHotSummary();
 }
 
-// ── 逐批載入（每批 20 支並行，即時更新進度） ────────────────────────
+// ── 逐批載入（優先批次摘要 API，降級逐支）────────────────────────────
 // onlyCodes: 若傳入，只載入這些代碼（補抓模式）；否則載入全部 hotStockList
 async function loadHotStocksSequential(onlyCodes) {
   const tbody = document.getElementById('hotStockTableBody');
@@ -5509,13 +5613,220 @@ async function loadHotStocksSequential(onlyCodes) {
     ? hotStockList.filter(s => onlyCodes.includes(s.code))
     : hotStockList;
   const total = hotStockList.length;
-  const BATCH = 20;
 
-  // ── 先從 localStorage 快取填充，減少 API 請求（補抓模式亦適用）──
+  // ── ① IDB 快取填充（立即顯示已有資料）──────────────────────
   _cacheHits = 0;
   for (const s of targetList) {
     if (hotStockData[s.code] !== undefined) continue;
-    const cached = hotCacheLoad(s.code);
+    const cached = await hotCacheLoad(s.code);
+    if (cached) { hotStockData[s.code] = cached; _cacheHits++; }
+  }
+  if (_cacheHits > 0) renderHotTable();
+
+  const countLoaded = () => hotStockList.filter(s => hotStockData[s.code] !== undefined).length;
+  let loaded = countLoaded();
+
+  updateHotProgress(loaded, total,
+    onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...')
+              : (_cacheHits > 0 ? '快取命中 ' + _cacheHits + ' 支，補齊剩餘...' : '準備載入...'));
+
+  if (onlyCodes && loaded > 0) renderHotTable();
+
+  // ── ② 批次摘要 API（對 IDB 未命中的一次請求）──────────────────
+  const missing = targetList.filter(s => hotStockData[s.code] === undefined);
+  if (missing.length > 0 && !hotLoadAbort) {
+    // 先顯示骨架屏（有畫面比空白好）
+    _renderHotSkeleton(missing);
+
+    try {
+      updateHotProgress(countLoaded(), total, '批次請求 ' + missing.length + ' 支摘要...');
+      const r = await fetch('/api/hot_summary', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ tickers: missing.map(s => s.code) }),
+        signal:  AbortSignal.timeout(45000),
+      });
+
+      if (r.ok) {
+        const d = await r.json();
+        if (d.status === 'success') {
+          let batchHits = 0;
+          for (const [code, summary] of Object.entries(d.data || {})) {
+            if (hotLoadAbort) break;
+            if (!summary) { hotStockData[code] = null; continue; }
+            // 轉換為前端 calcHotRow 相容格式
+            // summary 已含所有 calcHotRow 需要的欄位，包裝成 data 結構
+            hotStockData[code] = _summaryToDataFormat(code, summary);
+            await hotCacheSave(code, hotStockData[code]);
+            batchHits++;
+          }
+          loaded = countLoaded();
+          updateHotProgress(loaded, total,
+            '載入完成，共 ' + loaded + ' 支'
+            + (_cacheHits > 0 ? '（IDB 快取 ' + _cacheHits + ' 支）' : '')
+            + (batchHits > 0  ? '（批次 '    + batchHits  + ' 支）'  : ''));
+          renderHotTable();
+          document.getElementById('hotSummaryRow').classList.remove('hidden');
+          updateHotSummary();
+          return;   // 批次成功，直接結束
+        }
+      }
+      // 非 ok 或 status != success → 降級
+      console.warn('[hot_summary] 批次 API 回傳異常，降級逐支請求');
+    } catch(e) {
+      console.warn('[hot_summary] 批次請求失敗，降級逐支請求:', e.message);
+    }
+
+    // ── ③ 降級：逐支 GitHub 快取 + yfinance（原有邏輯）──────────
+    const stillMissing = targetList.filter(s => hotStockData[s.code] === undefined);
+    if (stillMissing.length > 0 && !hotLoadAbort) {
+      // GitHub 批次查詢
+      const ghResults = await Promise.all(stillMissing.map(async s => {
+        if (hotLoadAbort) return null;
+        const ghData = await ghStockCacheLoad(s.code);
+        return ghData ? { code: s.code, data: ghData } : null;
+      }));
+      let ghHits = 0;
+      for (const r of ghResults) {
+        if (r && r.data) {
+          hotStockData[r.code] = r.data;
+          await hotCacheSave(r.code, r.data);
+          ghHits++;
+        }
+      }
+      if (ghHits > 0) {
+        loaded = countLoaded();
+        updateHotProgress(loaded, total, 'GitHub 快取命中 ' + ghHits + ' 支，載入剩餘...');
+        renderHotTable();
+      }
+
+      // yfinance 逐支
+      const yfMissing = stillMissing.filter(s => hotStockData[s.code] === undefined);
+      const BATCH = 20;
+      const fetchWithRetry = async (code, maxRetry=3) => {
+        for (let attempt=1; attempt<=maxRetry; attempt++) {
+          try {
+            const r = await fetch('/api/stock_analysis/' + code);
+            const d = await r.json();
+            if (d.status === 'success') return d.data;
+            if (r.status !== 500 && r.status !== 503) return null;
+          } catch(e) {}
+          if (attempt < maxRetry) await new Promise(r => setTimeout(r, 400*attempt));
+        }
+        return null;
+      };
+      for (let i=0; i<yfMissing.length; i+=BATCH) {
+        if (hotLoadAbort) break;
+        await Promise.all(yfMissing.slice(i, i+BATCH).map(async s => {
+          if (hotStockData[s.code] !== undefined) return;
+          const result = await fetchWithRetry(s.code);
+          hotStockData[s.code] = result;
+          if (result) await hotCacheSave(s.code, result);
+          const nowLoaded = countLoaded();
+          updateHotProgress(nowLoaded, total, '已載入 ' + nowLoaded + ' / ' + total + ' 支...');
+          renderHotTable();
+        }));
+      }
+    }
+  }
+
+  loaded = countLoaded();
+  const cacheNote = _cacheHits > 0 ? '（快取命中 ' + _cacheHits + ' 支）' : '';
+  updateHotProgress(loaded, total, '載入完成，共 ' + loaded + ' 支 ' + cacheNote);
+  document.getElementById('hotSummaryRow').classList.remove('hidden');
+  updateHotSummary();
+}
+
+// ── 骨架屏：對尚未載入的列顯示動態佔位行 ─────────────────────────────
+function _renderHotSkeleton(missingList) {
+  const tbody = document.getElementById('hotStockTableBody');
+  if (!tbody) return;
+  // 只替換真正空白的列（有資料的保留）
+  const rows = Array.from(tbody.rows);
+  const existingCodes = new Set(
+    hotStockList.filter(s => hotStockData[s.code] !== undefined).map(s => s.code)
+  );
+  for (const s of missingList) {
+    if (existingCodes.has(s.code)) continue;
+    const idx = hotStockList.findIndex(x => x.code === s.code);
+    if (idx < 0) continue;
+    const name = STOCK_NAMES_ZH[s.code] || s.name || s.code;
+    const skeletonHtml = `<tr id="skel-${s.code}" style="opacity:0.55">
+      <td class="py-2 px-3 text-slate-600 text-center text-xs">${idx}</td>
+      <td class="py-2 px-3 font-mono text-xs text-slate-400">${s.code}</td>
+      <td class="py-2 px-3 text-xs text-slate-400">${name}</td>
+      <td colspan="7" class="py-2 px-3">
+        <div style="height:10px;border-radius:4px;background:var(--color-border-tertiary);animation:_skPulse 1.2s ease-in-out infinite;max-width:280px"></div>
+      </td>
+    </tr>`;
+    tbody.insertAdjacentHTML('beforeend', skeletonHtml);
+  }
+}
+
+// ── 摘要格式轉換：後端輕量摘要 → 前端 calcHotRow 相容的 data 結構 ──────
+// calcHotRow 本身也做了防禦性讀取（|| {}），所以只需提供 hotRow 直接需要的欄位
+// 同時加一個 _isSummary 旗標，讓個股點擊時知道需要完整資料
+function _summaryToDataFormat(code, s) {
+  return {
+    _isSummary: true,   // 標記為輕量摘要，點入個股時觸發完整載入
+    ticker:  code,
+    name:    s.name || code,
+    latest: {
+      close:      s.close,
+      change:     s.change,
+      change_pct: s.change_pct,
+      volume:     s.volume,
+      high:       s.high,
+      low:        s.low,
+    },
+    technical: {
+      latest: {
+        ma5: s.ma5, ma10: s.ma10, ma20: s.ma20,
+        ma60: s.ma60, ma120: s.ma120, ma200: s.ma200,
+      },
+      trend: {
+        label:   s.trend_label,
+        color:   s.trend_color,
+        signals: [],
+      },
+    },
+    fundamentals: {
+      pe_ratio:  s.pe_ratio,
+      div_yield: s.div_yield,
+    },
+    recommendation: {
+      rating:       s.rating,
+      total_score:  s.rating_score,
+      rating_color: s.rating_color,
+      rating_bg:    s.rating_bg,
+      rating_icon:  s.rating_icon,
+      target_price: s.target_price,
+      target_type:  s.target_type,
+      reasons_buy:  s.reasons_buy  || [],
+      reasons_sell: s.reasons_sell || [],
+    },
+    // calcHotRow 需要 chart.closes/opens/volumes 來計算 60 日統計
+    // 輕量摘要已預先計算好，注入為虛擬陣列供 calcHotRow 使用
+    chart: {
+      closes:  [], opens: [], volumes: [],
+      _precomputed: {   // 預計算結果，calcHotRow 優先讀取
+        updays:      s.updays,
+        downdays:    s.downdays,
+        flatdays:    s.flatdays,
+        upvolpct:    s.upvolpct,
+        downvolpct:  s.downvolpct,
+        matrend:     s.matrend,
+      }
+    },
+  };
+}
+
+
+  // ── 先從 IndexedDB 快取填充，減少 API 請求（補抓模式亦適用）──
+  _cacheHits = 0;
+  for (const s of targetList) {
+    if (hotStockData[s.code] !== undefined) continue;
+    const cached = await hotCacheLoad(s.code);
     if (cached) {
       hotStockData[s.code] = cached;
       _cacheHits++;
@@ -5538,7 +5849,7 @@ async function loadHotStocksSequential(onlyCodes) {
     renderHotTable();
   }
 
-  // ── GitHub 快取層（localStorage 未命中的批次查詢）──────────────
+  // ── GitHub 快取層（IDB 未命中的批次查詢）──────────────────────
   const afterLS = targetList.filter(s => hotStockData[s.code] === undefined);
   if (afterLS.length > 0) {
     const ghResults = await Promise.all(afterLS.map(async s => {
@@ -5550,7 +5861,7 @@ async function loadHotStocksSequential(onlyCodes) {
     for (const r of ghResults) {
       if (r && r.data) {
         hotStockData[r.code] = r.data;
-        hotCacheSave(r.code, r.data);   // 回填 localStorage
+        await hotCacheSave(r.code, r.data);   // 回填 IDB
         ghHits++;
       }
     }
@@ -5581,7 +5892,7 @@ async function loadHotStocksSequential(onlyCodes) {
       if (hotStockData[s.code] !== undefined) return;  // 已有資料（快取），跳過不重複計算
       const result = await fetchWithRetry(s.code);
       hotStockData[s.code] = result;
-      if (result) hotCacheSave(s.code, result);   // 成功才存快取
+      if (result) await hotCacheSave(s.code, result);   // 成功才存快取（寫 IDB）
       // ── 取得任一支就立即更新進度條與表格 ──
       const nowLoaded = countLoaded();
       updateHotProgress(nowLoaded, total, '已載入 ' + nowLoaded + ' / ' + total + ' 支...');
@@ -5622,29 +5933,43 @@ function calcHotRow(code, data) {
   const ma120  = tech.ma120  || null;
   const ma200  = tech.ma200  || null;
 
-  const closes = chart.closes  || [];
-  const opens  = chart.opens   || [];
-  const vols   = chart.volumes || [];
-  const n60 = Math.min(60, closes.length);
-  let upDays=0, downDays=0, flatDays=0, upVol=0, downVol=0, totalVol=0;
-  for (let i = closes.length - n60; i < closes.length; i++) {
-    const diff = closes[i] - (opens[i] || closes[i]);
-    const v    = vols[i] || 0;
-    totalVol += v;
-    if (diff > 0)      { upDays++;   upVol   += v; }
-    else if (diff < 0) { downDays++; downVol += v; }
-    else               { flatDays++; }
-  }
-  const upVolPct   = totalVol > 0 ? Math.round(upVol   / totalVol * 100) : 0;
-  const downVolPct = totalVol > 0 ? Math.round(downVol / totalVol * 100) : 0;
+  // ── 優先讀取預計算結果（輕量摘要模式），無則從 chart 陣列計算 ──
+  let upDays, downDays, flatDays, upVolPct, downVolPct, matrend;
+  const pre = chart._precomputed;
+  if (pre) {
+    upDays    = pre.updays    ?? 0;
+    downDays  = pre.downdays  ?? 0;
+    flatDays  = pre.flatdays  ?? 0;
+    upVolPct  = pre.upvolpct  ?? 0;
+    downVolPct= pre.downvolpct?? 0;
+    matrend   = pre.matrend   ?? 0;
+  } else {
+    const closes = chart.closes  || [];
+    const opens  = chart.opens   || [];
+    const vols   = chart.volumes || [];
+    const n60 = Math.min(60, closes.length);
+    upDays=0; downDays=0; flatDays=0;
+    let upVol=0, downVol=0, totalVol=0;
+    for (let i = closes.length - n60; i < closes.length; i++) {
+      const diff = closes[i] - (opens[i] || closes[i]);
+      const v    = vols[i] || 0;
+      totalVol += v;
+      if (diff > 0)      { upDays++;   upVol   += v; }
+      else if (diff < 0) { downDays++; downVol += v; }
+      else               { flatDays++; }
+    }
+    upVolPct   = totalVol > 0 ? Math.round(upVol   / totalVol * 100) : 0;
+    downVolPct = totalVol > 0 ? Math.round(downVol / totalVol * 100) : 0;
 
-  let matrend = 0;
-  if (ma5 && ma20 && ma60) {
-    if      (ma5 > ma20 && ma20 > ma60) matrend =  1;
-    else if (ma5 < ma20 && ma20 < ma60) matrend = -1;
-    else if (ma5 > ma20)                matrend =  2;
-    else                                matrend = -2;
+    matrend = 0;
+    if (ma5 && ma20 && ma60) {
+      if      (ma5 > ma20 && ma20 > ma60) matrend =  1;
+      else if (ma5 < ma20 && ma20 < ma60) matrend = -1;
+      else if (ma5 > ma20)                matrend =  2;
+      else                                matrend = -2;
+    }
   }
+
   return { code, close, change, chgpct, vol, high, low,
            ma5, ma10, ma20, ma60, ma120, ma200, matrend,
            updays: upDays, downdays: downDays, flatdays: flatDays,
@@ -7058,55 +7383,44 @@ async function openWatchlistPanel() {
     renderWlTable();   // 用快取先畫
   }
 
-  // ── ② 背景同步後端清單（不 await，不阻塞畫面互動）──────────
-  // 顯示「後端同步中」提示（不蓋掉快取內容）
+  // ── ② 背景同步後端清單（只更新代碼，不重複觸發載入）──────────
   _showWlSyncHint(true);
-  wlApiFetch('/api/watchlist').then(async d => {
+  let backendCodes = null;
+  try {
+    const d = await Promise.race([
+      wlApiFetch('/api/watchlist'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+    ]);
     _showWlSyncHint(false);
-    if (_wlAbort) return;   // 面板已關閉就不繼續
-    if (d.status === 'success') {
-      _wlCodes = d.codes || [];
+    if (!_wlAbort && d && d.status === 'success') {
+      backendCodes = d.codes || [];
+      _wlCodes = backendCodes;
       _lsSave(_wlCodes);
-    } else {
-      console.warn('[自選股] 後端不可用（timeout/error），繼續使用 localStorage 內容');
     }
-    // 後端不可用時繼續用現有 _wlCodes（localStorage 已載入）
-
-    _updateWlCountBadge(_wlCodes.length);
-    if (_wlCodes.length === 0) {
-      _showWlEmpty(true);
-      return;
-    }
-    _showWlEmpty(false);
-
-    // 補抓缺少行情資料的股票
-    const missing = _wlCodes.filter(c => _wlData[c] === undefined);
-    if (missing.length === 0) {
-      renderWlTable();
-      updateWlSummary();
-      _wlAbort = false;
-      return;
-    }
-    _showWlLoading(true);
-    await _loadWlStocks(missing);
-    _showWlLoading(false);
-  }).catch(() => {
+  } catch(e) {
     _showWlSyncHint(false);
-    // API 完全失敗：保留已顯示的 localStorage 內容即可
-  });
-
-  // ── ③ 有快取資料就立即補抓行情（不等後端清單同步）──────────
-  if (_wlCodes.length > 0) {
-    const missing = _wlCodes.filter(c => _wlData[c] === undefined);
-    if (missing.length > 0) {
-      _showWlLoading(true);
-      await _loadWlStocks(missing);
-      _showWlLoading(false);
-    } else {
-      renderWlTable();
-      updateWlSummary();
-    }
+    console.warn('[自選股] 後端不可用，繼續使用 localStorage 內容');
   }
+
+  if (_wlAbort) return;
+
+  _updateWlCountBadge(_wlCodes.length);
+  if (_wlCodes.length === 0) {
+    _showWlEmpty(true);
+    return;
+  }
+  _showWlEmpty(false);
+
+  // ── ③ 統一在此補抓缺少行情資料的股票（②完成後執行一次）──────
+  const missing = _wlCodes.filter(c => _wlData[c] === undefined);
+  if (missing.length === 0) {
+    renderWlTable();
+    updateWlSummary();
+    return;
+  }
+  _showWlLoading(true);
+  await _loadWlStocks(missing);
+  _showWlLoading(false);
 }
 
 function closeWatchlistPanel() {
@@ -7238,11 +7552,11 @@ async function _loadWlStocks(codes) {
   document.getElementById('wlProgress').classList.remove('hidden');
   document.getElementById('wlSummaryRow').classList.add('hidden');
 
-  // ── ① 先從 localStorage 快取填充（24h，每日13:30後失效）────
+  // ── ① 先從 IndexedDB 快取填充（24h，每日 16:00 後失效）──────
   let lsHits = 0;
   for (const code of codes) {
     if (_wlData[code] !== undefined) continue;
-    const lsCached = hotCacheLoad(code);   // 共用 hotStockCache_v1
+    const lsCached = await hotCacheLoad(code);   // 共用 IDB + localStorage 索引
     if (lsCached) {
       _wlData[code] = lsCached;
       lsHits++;
@@ -7250,7 +7564,7 @@ async function _loadWlStocks(codes) {
   }
   if (lsHits > 0) renderWlTable();
 
-  // ── ② GitHub 快取層（localStorage 未命中的補查）────────────
+  // ── ② GitHub 快取層（IDB 未命中的補查）──────────────────────
   const afterLS = codes.filter(c => _wlData[c] === undefined);
   if (afterLS.length > 0 && !_wlAbort) {
     const ghResults = await Promise.all(afterLS.map(async code => {
@@ -7262,7 +7576,7 @@ async function _loadWlStocks(codes) {
     for (const r of ghResults) {
       if (r && r.data) {
         _wlData[r.code] = r.data;
-        hotCacheSave(r.code, r.data);   // 回填 localStorage
+        await hotCacheSave(r.code, r.data);   // 回填 IDB
         ghHits++;
       }
     }
@@ -7287,7 +7601,7 @@ async function _loadWlStocks(codes) {
         const r = await fetch('/api/stock_analysis/' + code, { signal: AbortSignal.timeout(20000) });
         const d = await r.json();
         _wlData[code] = (d.status === 'success') ? d.data : null;
-        if (_wlData[code]) hotCacheSave(code, _wlData[code]);   // 寫入 localStorage
+        if (_wlData[code]) await hotCacheSave(code, _wlData[code]);   // 寫入 IDB
       } catch(e) { _wlData[code] = null; }
       const loaded2 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
       _updateWlProgress(loaded2, total, '已載入 ' + loaded2 + ' / ' + total + ' 支...');
