@@ -24,11 +24,13 @@ TTL（快取有效期）
   - 股價     : 20 小時
   - 配息     : 7 天
   - 基本面   : 3 天
+  - 另外：若當天已過 16:00（台灣時間），且時間戳記在 16:00 之前，強制視為過期。
 
 背景排程（APScheduler）
-  - 每日 13:30（台灣時間）自動更新 watchlist + POPULAR_STOCKS 查詢過的股票
+  - 每交易日 16:00（台灣時間）自動更新 watchlist + POPULAR_STOCKS + POPULAR_ETF 各50筆
   - 由 start_scheduler(app, fetcher_factory) 啟動，app.py 在 __main__ 時呼叫
   - 排程內部改用 force_refresh（含增量邏輯），速度大幅提升
+  - 更新完成後清空前端 localStorage 快取（透過寫入版本戳記通知前端）
 """
 
 from __future__ import annotations
@@ -163,7 +165,7 @@ def is_local_fresh(data_dir: str, ticker: str, data_type: str) -> bool:
     同時滿足兩個條件才算有效：
       1. 時間戳記在 TTL 內
       2. 檔案實際存在且非空
-    另外：若當天已過 13:30（台灣時間），且時間戳記在 13:30 之前，強制視為過期。
+    另外：若當天已過 16:00（台灣時間），且時間戳記在 16:00 之前，強制視為過期。
     """
     # --- 先確認檔案存在 ---
     file_map = {
@@ -194,8 +196,8 @@ def is_local_fresh(data_dir: str, ticker: str, data_type: str) -> bool:
     if elapsed >= ttl:
         return False
 
-    # 若今天已過 13:30 且上次更新在今天 13:30 之前 → 過期（強制當日盤後更新）
-    market_close_today = now.replace(hour=13, minute=30, second=0, microsecond=0)
+    # 若今天已過 16:00 且上次更新在今天 16:00 之前 → 過期（強制當日盤後資料更新）
+    market_close_today = now.replace(hour=16, minute=0, second=0, microsecond=0)
     if now >= market_close_today and updated_dt < market_close_today:
         return False
 
@@ -308,7 +310,7 @@ def _gh_meta_fresh(ticker: str, data_type: str) -> bool:
     判斷 GitHub 端的 meta 時間戳記是否仍在 TTL 內。
     與 is_local_fresh() 行為一致：
       - TTL 超過 → 過期
-      - 今日已過 13:30 且上次更新在 13:30 之前 → 強制過期（確保盤後資料當日更新）
+      - 今日已過 16:00 且上次更新在 16:00 之前 → 強制過期（確保盤後資料當日更新）
     """
     content = _gh_raw_get(f"data/{ticker}/meta.json")
     if not content:
@@ -327,8 +329,8 @@ def _gh_meta_fresh(ticker: str, data_type: str) -> bool:
             print(f"  [GitHub-R] {ticker}/{data_type} 快取已過期（TTL {elapsed/3600:.1f}h）")
             return False
 
-        # 今日已過 13:30 且上次更新在今天 13:30 之前 → 強制視為過期
-        market_close_today = now.replace(hour=13, minute=30, second=0, microsecond=0)
+        # 今日已過 16:00 且上次更新在今天 16:00 之前 → 強制視為過期
+        market_close_today = now.replace(hour=16, minute=0, second=0, microsecond=0)
         if now >= market_close_today and updated_dt < market_close_today:
             print(f"  [GitHub-R] {ticker}/{data_type} 盤後強制過期（更新於 {ts_str[:16]}）")
             return False
@@ -933,11 +935,11 @@ class CacheManager:
 
 
 # ──────────────────────────────────────────────────────────────
-# 背景排程：每日 13:30（台灣時間）自動更新
+# 背景排程：每交易日 16:00（台灣時間）自動更新
 # ──────────────────────────────────────────────────────────────
 
 def start_scheduler(cache: CacheManager, fetcher_factory, watchlist_reader=None,
-                    popular_stocks: list = None):
+                    popular_stocks: list = None, popular_etfs: list = None):
     """
     啟動背景排程執行緒（daemon thread）。
 
@@ -952,13 +954,16 @@ def start_scheduler(cache: CacheManager, fetcher_factory, watchlist_reader=None,
         呼叫後回傳自選股代碼 list，例如：_wl_read
         None 時不更新自選股
     popular_stocks : list | None
-        常駐更新的股票代碼清單，例如 POPULAR_STOCKS
+        熱門股票代碼清單（最多50筆），例如 POPULAR_STOCKS
+    popular_etfs : list | None
+        熱門ETF代碼清單（最多50筆），例如 POPULAR_ETF_CODES
 
     說明
     ----
     排程邏輯：
-      - 每 60 秒醒來一次，檢查現在是否為「今日 13:30–13:35」且今日尚未執行
-      - 執行時合併 watchlist + popular_stocks，去重後逐一 force_refresh
+      - 每 60 秒醒來一次，檢查現在是否為「今日 16:00–16:05」且今日尚未執行
+      - 執行時合併 watchlist + popular_stocks + popular_etfs，去重後逐一 force_refresh
+      - 更新後寫入版本戳記（data/cache_version.json），供前端偵測並清空 localStorage
     """
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -969,40 +974,83 @@ def start_scheduler(cache: CacheManager, fetcher_factory, watchlist_reader=None,
         print("  [Scheduler] APScheduler 未安裝，改用內建 threading 排程")
 
     if _use_apscheduler:
-        _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks)
+        _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks, popular_etfs)
     else:
-        _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_stocks)
+        _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_stocks, popular_etfs)
 
 
-def _collect_tickers(watchlist_reader, popular_stocks) -> list:
-    tickers = list(popular_stocks or [])
+def _collect_tickers(watchlist_reader, popular_stocks, popular_etfs=None) -> list:
+    """合併自選股 + 熱門股票(50筆) + 熱門ETF(50筆)，去重後回傳"""
+    seen = set()
+    tickers = []
+
+    def _add(code):
+        c = str(code).strip()
+        if c and c not in seen:
+            seen.add(c)
+            tickers.append(c)
+
+    # 熱門股票（前50筆）
+    stocks = list(popular_stocks or [])[:50]
+    for s in stocks:
+        _add(s['code'] if isinstance(s, dict) else s)
+
+    # 熱門ETF（前50筆）
+    etfs = list(popular_etfs or [])[:50]
+    for e in etfs:
+        _add(e['code'] if isinstance(e, dict) else e)
+
+    # 自選股
     if watchlist_reader:
         try:
             wl = watchlist_reader() or []
             for t in wl:
-                if t not in tickers:
-                    tickers.append(t)
+                _add(t)
         except Exception as e:
             print(f"  [Scheduler] watchlist_reader 失敗: {e}")
+
     return tickers
 
 
-def _run_daily_refresh(cache: CacheManager, fetcher_factory, watchlist_reader, popular_stocks):
-    """實際執行每日更新的函式（被排程器呼叫）"""
-    tickers = _collect_tickers(watchlist_reader, popular_stocks)
+def _bump_cache_version(data_dir: str):
+    """更新快取版本戳記（前端輪詢此值，有變化時清空 localStorage）"""
+    try:
+        version_file = os.path.join(data_dir, "cache_version.json")
+        version_str = datetime.now().strftime("%Y%m%d%H%M%S")
+        with open(version_file, "w", encoding="utf-8") as f:
+            json.dump({"version": version_str, "updated_at": datetime.now().isoformat()}, f)
+        print(f"  [Scheduler] 快取版本戳記已更新: {version_str}")
+    except Exception as e:
+        print(f"  [Scheduler] 版本戳記寫入失敗（非致命）: {e}")
+
+
+def _run_daily_refresh(cache: CacheManager, fetcher_factory, watchlist_reader,
+                       popular_stocks, popular_etfs=None, data_dir: str = None):
+    """實際執行每日 16:00 更新的函式（被排程器呼叫）"""
+    tickers = _collect_tickers(watchlist_reader, popular_stocks, popular_etfs)
+    stocks_count = len(list(popular_stocks or [])[:50])
+    etfs_count   = len(list(popular_etfs   or [])[:50])
     print(f"\n{'='*55}")
-    print(f"  [Scheduler] 每日 13:30 自動更新，共 {len(tickers)} 支股票")
+    print(f"  [Scheduler] 每交易日 16:00 自動更新")
+    print(f"  熱門股票: {stocks_count} 支 / 熱門ETF: {etfs_count} 支 / 合計: {len(tickers)} 支")
     print(f"{'='*55}")
     fetcher = fetcher_factory()
+    ok, fail = 0, 0
     for tk in tickers:
         try:
             cache.force_refresh(tk, fetcher, data_types=["price", "dividend", "fundamental"])
+            ok += 1
         except Exception as e:
+            fail += 1
             print(f"  [Scheduler] {tk} 更新失敗（跳過）: {e}")
-    print(f"  [Scheduler] ✅ 每日更新完成\n")
+    print(f"  [Scheduler] ✅ 每日更新完成 — 成功 {ok} / 失敗 {fail}\n")
+    # 寫入版本戳記，通知前端清空 localStorage
+    if data_dir:
+        _bump_cache_version(data_dir)
 
 
-def _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks):
+def _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks,
+                       popular_etfs=None, data_dir: str = None):
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         import pytz
@@ -1011,23 +1059,26 @@ def _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks)
         scheduler.add_job(
             func=_run_daily_refresh,
             trigger="cron",
-            hour=13, minute=30,
+            hour=16, minute=0,
             kwargs={
-                "cache": cache,
-                "fetcher_factory": fetcher_factory,
+                "cache":            cache,
+                "fetcher_factory":  fetcher_factory,
                 "watchlist_reader": watchlist_reader,
-                "popular_stocks": popular_stocks,
+                "popular_stocks":   popular_stocks,
+                "popular_etfs":     popular_etfs,
+                "data_dir":         data_dir,
             },
             id="daily_cache_refresh",
             replace_existing=True,
         )
         scheduler.start()
-        print("  [Scheduler] ✅ APScheduler 已啟動，每日 13:30 (Asia/Taipei) 自動更新")
+        print("  [Scheduler] ✅ APScheduler 已啟動，每交易日 16:00 (Asia/Taipei) 自動更新")
     except Exception as e:
         print(f"  [Scheduler] APScheduler 啟動失敗: {e}")
 
 
-def _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_stocks):
+def _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_stocks,
+                             popular_etfs=None, data_dir: str = None):
     """fallback：用 threading 做輪詢排程（每 60 秒檢查一次）"""
     _last_run_date = [None]   # mutable container 供 closure 修改
 
@@ -1036,18 +1087,19 @@ def _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_st
             try:
                 now = datetime.now()
                 today = now.date()
-                # 13:30 ~ 13:35 視窗內且今日尚未執行
-                if (now.hour == 13 and 30 <= now.minute < 35
+                # 16:00 ~ 16:05 視窗內且今日尚未執行
+                if (now.hour == 16 and 0 <= now.minute < 5
                         and _last_run_date[0] != today):
                     _last_run_date[0] = today
-                    _run_daily_refresh(cache, fetcher_factory, watchlist_reader, popular_stocks)
+                    _run_daily_refresh(cache, fetcher_factory, watchlist_reader,
+                                       popular_stocks, popular_etfs, data_dir)
             except Exception as e:
                 print(f"  [Scheduler] loop 例外: {e}")
             time.sleep(60)
 
     t = threading.Thread(target=_loop, daemon=True, name="cache-scheduler")
     t.start()
-    print("  [Scheduler] ✅ threading 排程已啟動（每日 13:30–13:35 自動更新）")
+    print("  [Scheduler] ✅ threading 排程已啟動（每交易日 16:00–16:05 自動更新）")
 
 
 # ──────────────────────────────────────────────────────────────
