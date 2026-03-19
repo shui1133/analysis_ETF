@@ -47,6 +47,39 @@ from io import StringIO
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# ── 台灣時區（修正 Render 伺服器為 UTC 導致盤後強制過期失效的問題）──
+try:
+    import pytz as _pytz
+    _TW = _pytz.timezone("Asia/Taipei")
+except ImportError:
+    _TW = None
+
+def _now_tw() -> datetime:
+    """回傳台灣本地時間（有 tzinfo）；pytz 未安裝時退回系統時間（本機開發用）"""
+    if _TW:
+        return datetime.now(_TW)
+    return datetime.now()
+
+def _ts_now_tw() -> str:
+    """回傳台灣時間的 ISO 字串，用於寫入 meta.json 時間戳記"""
+    return _now_tw().isoformat()
+
+def _parse_ts(ts_str: str) -> datetime:
+    """
+    解析 meta.json 的時間戳記字串，回傳有時區的 datetime（台灣時間）。
+    支援帶時區（+08:00 / Z）與不帶時區（舊版寫入）兩種格式。
+    """
+    dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        # 舊版無時區時間戳：假設是台灣時間
+        if _TW:
+            dt = _TW.localize(dt)
+    else:
+        # 有時區 → 轉換成台灣時間，方便與 _now_tw() 比較
+        if _TW:
+            dt = dt.astimezone(_TW)
+    return dt
+
 
 # ──────────────────────────────────────────────────────────────
 # 常數
@@ -148,9 +181,9 @@ def _write_local_meta(data_dir: str, ticker: str, meta: dict):
         print(f"  [LocalCache] meta 寫入失敗 {ticker}: {e}")
 
 def _stamp_local_meta(data_dir: str, ticker: str, data_type: str, extra: dict = None):
-    """更新本機 meta 的時間戳記"""
+    """更新本機 meta 的時間戳記（台灣時間）"""
     meta = _read_local_meta(data_dir, ticker)
-    meta[f"{data_type}_at"] = datetime.now().isoformat()
+    meta[f"{data_type}_at"] = _ts_now_tw()   # ★ 改用台灣時間
     if extra:
         meta.update(extra)
     _write_local_meta(data_dir, ticker, meta)
@@ -184,11 +217,11 @@ def is_local_fresh(data_dir: str, ticker: str, data_type: str) -> bool:
         return False
 
     try:
-        updated_dt = datetime.fromisoformat(ts_str)
+        updated_dt = _parse_ts(ts_str)   # ★ 改用帶時區解析
     except Exception:
         return False
 
-    now = datetime.now()
+    now = _now_tw()                       # ★ 改用台灣時間
     elapsed = (now - updated_dt).total_seconds()
     ttl = TTL_MAP.get(data_type, 86400)
 
@@ -196,7 +229,7 @@ def is_local_fresh(data_dir: str, ticker: str, data_type: str) -> bool:
     if elapsed >= ttl:
         return False
 
-    # 若今天已過 16:00 且上次更新在今天 16:00 之前 → 過期（強制當日盤後資料更新）
+    # 若台灣時間今天已過 16:00 且上次更新在今天 16:00 之前 → 過期（強制當日盤後資料更新）
     market_close_today = now.replace(hour=16, minute=0, second=0, microsecond=0)
     if now >= market_close_today and updated_dt < market_close_today:
         return False
@@ -320,8 +353,8 @@ def _gh_meta_fresh(ticker: str, data_type: str) -> bool:
         ts_str = meta.get(f"{data_type}_at")
         if not ts_str:
             return False
-        updated_dt = datetime.fromisoformat(ts_str)
-        now = datetime.now()
+        updated_dt = _parse_ts(ts_str)   # ★ 改用帶時區解析
+        now = _now_tw()                   # ★ 改用台灣時間
         elapsed = (now - updated_dt).total_seconds()
 
         # TTL 超過 → 過期
@@ -329,7 +362,7 @@ def _gh_meta_fresh(ticker: str, data_type: str) -> bool:
             print(f"  [GitHub-R] {ticker}/{data_type} 快取已過期（TTL {elapsed/3600:.1f}h）")
             return False
 
-        # 今日已過 16:00 且上次更新在今天 16:00 之前 → 強制視為過期
+        # 台灣時間今日已過 16:00 且上次更新在今天 16:00 之前 → 強制視為過期
         market_close_today = now.replace(hour=16, minute=0, second=0, microsecond=0)
         if now >= market_close_today and updated_dt < market_close_today:
             print(f"  [GitHub-R] {ticker}/{data_type} 盤後強制過期（更新於 {ts_str[:16]}）")
@@ -468,7 +501,7 @@ def _gh_update_meta(ticker: str, data_type: str, extra: dict = None):
         meta = json.loads(content) if content else {}
     except Exception:
         meta = {}
-    meta[f"{data_type}_at"] = datetime.now().isoformat()
+    meta[f"{data_type}_at"] = _ts_now_tw()   # ★ 改用台灣時間
     if extra:
         meta.update(extra)
     _gh_writer.put(meta_path, json.dumps(meta, ensure_ascii=False, indent=2),
@@ -483,7 +516,7 @@ def gh_save_price(ticker: str, ohlcv: list) -> bool:
         ok = _gh_writer.put(
             f"data/{ticker}/price.csv",
             df.to_csv(index=False),
-            f"price: {ticker} {datetime.now().date()}"
+            f"price: {ticker} {_now_tw().date()}"   # ★ 台灣時間日期
         )
         if ok:
             _gh_update_meta(ticker, "price", {"price_rows": len(ohlcv)})
@@ -501,7 +534,7 @@ def gh_save_dividend(ticker: str, dividend_data: list) -> bool:
         ok = _gh_writer.put(
             f"data/{ticker}/dividend.csv",
             df.to_csv(index=False),
-            f"dividend: {ticker} {datetime.now().date()}"
+            f"dividend: {ticker} {_now_tw().date()}"   # ★ 台灣時間日期
         )
         if ok:
             _gh_update_meta(ticker, "dividend")
@@ -518,7 +551,7 @@ def gh_save_fundamental(ticker: str, info: dict) -> bool:
         ok = _gh_writer.put(
             f"data/{ticker}/fundamental.json",
             json.dumps(info, ensure_ascii=False, indent=2),
-            f"fundamental: {ticker} {datetime.now().date()}"
+            f"fundamental: {ticker} {_now_tw().date()}"   # ★ 台灣時間日期
         )
         if ok:
             _gh_update_meta(ticker, "fundamental")
@@ -602,8 +635,8 @@ def _fetch_incremental_yfinance(ticker: str, start_date: str) -> list:
         import yfinance as yf
         from datetime import date, timedelta
 
-        # 計算 end_date（今天 +1，確保包含當天）
-        end_date = (datetime.now().date() + timedelta(days=1)).strftime("%Y-%m-%d")
+        # 計算 end_date（台灣今天 +1，確保包含當天）
+        end_date = (_now_tw().date() + timedelta(days=1)).strftime("%Y-%m-%d")
 
         new_rows: list = []
         for suffix in ['.TW', '.TWO']:
@@ -1016,9 +1049,10 @@ def _bump_cache_version(data_dir: str):
     """更新快取版本戳記（前端輪詢此值，有變化時清空 localStorage）"""
     try:
         version_file = os.path.join(data_dir, "cache_version.json")
-        version_str = datetime.now().strftime("%Y%m%d%H%M%S")
+        now_tw = _now_tw()
+        version_str = now_tw.strftime("%Y%m%d%H%M%S")
         with open(version_file, "w", encoding="utf-8") as f:
-            json.dump({"version": version_str, "updated_at": datetime.now().isoformat()}, f)
+            json.dump({"version": version_str, "updated_at": now_tw.isoformat()}, f)
         print(f"  [Scheduler] 快取版本戳記已更新: {version_str}")
     except Exception as e:
         print(f"  [Scheduler] 版本戳記寫入失敗（非致命）: {e}")
@@ -1085,9 +1119,9 @@ def _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_st
     def _loop():
         while True:
             try:
-                now = datetime.now()
+                now = _now_tw()          # ★ 改用台灣時間
                 today = now.date()
-                # 16:00 ~ 16:05 視窗內且今日尚未執行
+                # 台灣時間 16:00 ~ 16:05 視窗內且今日尚未執行
                 if (now.hour == 16 and 0 <= now.minute < 5
                         and _last_run_date[0] != today):
                     _last_run_date[0] = today

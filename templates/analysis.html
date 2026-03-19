@@ -161,8 +161,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
       </button>
-      <button onclick="openWatchlistPanel()"
-              id="btnWatchlist"
+      <button id="btnWatchlist"
               class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-star"></i>自選股
       </button>
@@ -3266,7 +3265,7 @@ function drawCandleChartPeriod(data, period) {
           borderColor:     wickColors,
           borderWidth: 0,
           barPercentage:   wickPct,
-          categoryPercentage: 0.9,
+          categoryPercentage: 1.0,   // ★ 佔滿整格，使影線對齊格子中央（與實體重疊中央）
           order: 2,
         },
         // ③ MA 均線
@@ -7837,6 +7836,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // ① 立即從 localStorage 載入 → 按鈕馬上可用，不等 API
   _wlCodes = _lsLoad();
   _updateBtnBadge();
+
+  // ★ 綁定自選股按鈕（避免 onclick 在 Script#2 載入前被呼叫導致無反應）
+  const _wlBtn = document.getElementById('btnWatchlist');
+  if (_wlBtn) _wlBtn.addEventListener('click', openWatchlistPanel);
 
   // ② 監聽個股載入，更新「加入當前個股」按鈕
   const stockArea = document.getElementById('stockArea');
