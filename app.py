@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import numpy as np
+from datetime import datetime, timedelta
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
 from github_cache import CacheManager, start_scheduler
@@ -2842,25 +2843,29 @@ def ai_report_get(ticker):
       { status:'cached', data:{...}, period_key:'YYYYMMDD', used:true/false }
       { status:'not_found', period_key:'YYYYMMDD' }
     """
-    ticker = ticker.strip().upper()
-    period_key = _ai_report_period_key()
+    try:
+        ticker = ticker.strip().upper()
+        period_key = _ai_report_period_key()
 
-    # 1. 先查 GitHub
-    cached = _ai_report_read_gh(ticker, period_key)
-    if cached:
+        # 1. 先查 GitHub
+        cached = _ai_report_read_gh(ticker, period_key)
+        if cached:
+            return jsonify({
+                'status': 'cached',
+                'period_key': period_key,
+                'used': True,
+                'data': cached
+            })
+
+        # 2. 無快取 → 告知前端尚未查詢
         return jsonify({
-            'status': 'cached',
+            'status': 'not_found',
             'period_key': period_key,
-            'used': True,
-            'data': cached
+            'used': False
         })
-
-    # 2. 無快取 → 告知前端尚未查詢
-    return jsonify({
-        'status': 'not_found',
-        'period_key': period_key,
-        'used': False
-    })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/ai_report/<ticker>', methods=['POST'])
@@ -3171,22 +3176,62 @@ def _fetch_finreport(ticker: str) -> dict:
 
     result['ratios']['annual'] = ratios_annual
 
-    # 季報衍生比率（簡版）
+    # 季報衍生比率（完整版，與年報欄位一致）
     ratios_q = []
     for row in result['quarterly'].get('income', []):
         period = row.get('period', '')
-        rev  = row.get('total_revenue') or row.get('totalrevenue')
-        gp   = row.get('gross_profit')  or row.get('grossprofit')
-        ni   = row.get('net_income') or row.get('netincome') or row.get('net_income_common_stockholders')
+        rev    = row.get('total_revenue')    or row.get('totalrevenue')
+        gp     = row.get('gross_profit')     or row.get('grossprofit')
+        op_q   = row.get('operating_income') or row.get('ebit')
+        ni     = row.get('net_income') or row.get('netincome') or row.get('net_income_common_stockholders')
+
         def pct(a, b):
             fa, fb = safe_float(a), safe_float(b)
             if fa is None or fb is None or fb == 0: return None
             return round(fa / fb * 100, 2)
+
+        # 對應季報資產負債表
+        bal_row_q    = next((b for b in result['quarterly'].get('balance', [])  if b.get('period') == period), {})
+        equity_q     = bal_row_q.get('stockholders_equity') or bal_row_q.get('common_stock_equity') or bal_row_q.get('total_equity_gross_minority_interest')
+        assets_q     = bal_row_q.get('total_assets')        or bal_row_q.get('totalassets')
+        total_liab_q = bal_row_q.get('total_liabilities_net_minority_interest') or bal_row_q.get('total_liabilities')
+        cur_assets_q = bal_row_q.get('current_assets')      or bal_row_q.get('total_current_assets')
+        cur_liab_q   = bal_row_q.get('current_liabilities') or bal_row_q.get('total_current_liabilities')
+
+        # 對應季報現金流量表
+        cf_row_q = next((c for c in result['quarterly'].get('cashflow', []) if c.get('period') == period), {})
+        op_cf_q  = cf_row_q.get('operating_cash_flow') or cf_row_q.get('cash_from_operating_activities') or cf_row_q.get('total_cash_from_operating_activities')
+        cap_ex_q = cf_row_q.get('capital_expenditure')  or cf_row_q.get('capital_expenditures')
+
+        # 流動比率
+        cur_ratio_q = None
+        ca_f, cl_f = safe_float(cur_assets_q), safe_float(cur_liab_q)
+        if ca_f and cl_f and cl_f != 0:
+            cur_ratio_q = round(ca_f / cl_f, 2)
+
+        # 自由現金流
+        fcf_q = None
+        o_f, c_f = safe_float(op_cf_q), safe_float(cap_ex_q)
+        if o_f is not None and c_f is not None:
+            fcf_q = round(o_f - abs(c_f), 2)
+
         ratios_q.append({
-            'period':      period,
-            'revenue_b':   safe_float(rev),
-            'net_income_b':safe_float(ni),
-            'gpm':         pct(gp, rev),
+            'period':         period,
+            'revenue_b':      safe_float(rev),
+            'gross_profit_b': safe_float(gp),
+            'op_income_b':    safe_float(op_q),
+            'net_income_b':   safe_float(ni),
+            'op_cashflow_b':  safe_float(op_cf_q),
+            'fcf_b':          fcf_q,
+            'gpm':            pct(gp,   rev),
+            'opm':            pct(op_q, rev),
+            'npm':            pct(ni,   rev),
+            'roe':            pct(ni,   equity_q),
+            'roa':            pct(ni,   assets_q),
+            'debt_ratio':     pct(total_liab_q, assets_q),
+            'cur_ratio':      cur_ratio_q,
+            'equity_b':       safe_float(equity_q),
+            'assets_b':       safe_float(assets_q),
         })
     result['ratios']['quarterly'] = ratios_q
 
