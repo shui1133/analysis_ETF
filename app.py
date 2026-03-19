@@ -53,22 +53,20 @@ POPULAR_ETF = [
     {'code': '00904',  'name': '新光臺灣半導體30'},
     {'code': '00905',  'name': 'FT臺灣Smart'},
     {'code': '00912',  'name': '中信臺灣智慧50'},
-    {'code': '00913',  'name': '中信臺灣ESG'},
+    {'code': '00913',  'name': '兆豐台灣晶圓製造'},
     {'code': '00916',  'name': '國泰全球品牌50'},
     {'code': '00917',  'name': '中信特選金融'},
     {'code': '00918',  'name': '大華優利高填息30'},
-    {'code': '00920',  'name': '富邦入息REITs+債'},
-    {'code': '00921',  'name': '兆豐台灣晶圓製造'},
+    {'code': '00920',  'name': '富邦ESG綠色電力'},
+    {'code': '00921',  'name': '兆豐龍頭等權重'},
     {'code': '00922',  'name': '國泰台灣領袖50'},
     {'code': '00923',  'name': '群益台ESG低碳50'},
-    {'code': '00925',  'name': '富邦臺灣製造業'},
-    {'code': '00926',  'name': '凱基金融股'},
+    {'code': '00926',  'name': '凱基全球菁英55'},
     {'code': '00927',  'name': '群益半導體收益'},
     {'code': '00932',  'name': '兆豐永續高息等權'},
-    {'code': '00933',  'name': '國泰台灣產業龍頭'},
-    {'code': '00935',  'name': '野村台灣價值成長'},
-    {'code': '00936',  'name': '台新臺灣IC設計'},
-    {'code': '00938',  'name': '永豐ESG低碳高息'},
+    {'code': '00935',  'name': '野村臺灣新科技50'},
+    {'code': '00936',  'name': '台新永續高息中小'},
+    {'code': '00938',  'name': '凱基優選30'},
 ]
 import io
 import requests as _req
@@ -582,12 +580,18 @@ def hot_summary():
                 return ticker, None, None
 
         # 最多 10 個 thread 並行（避免 yfinance 限流）
+        # timeout=25 防止單支股票抓取過慢拖垮整個請求，造成 Render 502
         max_workers = min(10, len(need_fetch)) if need_fetch else 1
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {pool.submit(_fetch_one, t): t for t in need_fetch}
-            for fut in as_completed(futures):
-                ticker_done, summary, _ = fut.result()
-                result[ticker_done] = summary
+            for fut in as_completed(futures, timeout=28):
+                try:
+                    ticker_done, summary, _ = fut.result(timeout=25)
+                    result[ticker_done] = summary
+                except Exception as e:
+                    ticker_done = futures[fut]
+                    print(f"  [hot_summary] {ticker_done} timeout/error: {e}")
+                    result[ticker_done] = None
 
         # 確保回傳順序與請求一致（未抓到的補 None）
         ordered = {t: result.get(t) for t in tickers}
