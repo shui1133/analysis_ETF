@@ -1410,13 +1410,15 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <h3 class="font-bold text-white flex items-center gap-2">
               <i class="fa-solid fa-robot text-violet-400"></i>AI 財務健診報告
               <span class="text-xs text-slate-500 font-normal ml-1">由 Claude 自動生成</span>
-              <!-- 配額狀態徽章 -->
-              <span id="fin-ai-quota-badge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full ml-1"></span>
+              <!-- 產生時間（有報告時顯示） -->
+              <span id="fin-ai-datetime" class="hidden text-xs text-slate-400 font-normal ml-1 flex items-center gap-1">
+                <i class="fa-regular fa-clock"></i><span id="fin-ai-datetime-text"></span>
+              </span>
             </h3>
             <div class="flex items-center gap-2">
               <!-- 快取來源說明 -->
               <span id="fin-ai-cache-note" class="hidden text-xs text-emerald-400 flex items-center gap-1">
-                <i class="fa-solid fa-circle-check"></i>已從 GitHub 快取載入
+                <i class="fa-solid fa-circle-check"></i>已從快取載入
               </span>
               <button id="fin-ai-btn" onclick="generateFinAI()"
                 class="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-900/60 text-violet-300 border border-violet-700/50 hover:bg-violet-800/60 transition flex items-center gap-1">
@@ -6738,16 +6740,12 @@ async function _autoLoadFinAICache(ticker) {
       _showFinAIReport(
         result.data.report_text,
         _finData?.source || 'yfinance',
-        true
+        true,
+        result.data?.generated_at || null
       );
-      _updateQuotaBadge(true, true);
-      const btn = document.getElementById('fin-ai-btn');
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已從快取載入';
-      }
     } else {
-      _updateQuotaBadge(false, false);
+      // 無快取：重置按鈕為「產生 AI 分析」
+      _updateFinAIBtn(false, false, null);
     }
   } catch (e) {
     // 查詢失敗靜默處理
@@ -6775,30 +6773,51 @@ function _getFinAIPeriodKey() {
   return `${yyyy}${mm}${dd}`;
 }
 
-function _updateQuotaBadge(used, fromCache) {
-  const badge = document.getElementById('fin-ai-quota-badge');
-  const btn   = document.getElementById('fin-ai-btn');
+// ── 更新按鈕狀態與產生時間顯示 ─────────────────────────────────
+function _updateFinAIBtn(hasReport, fromCache, generatedAt) {
+  const btn       = document.getElementById('fin-ai-btn');
   const cacheNote = document.getElementById('fin-ai-cache-note');
-  if (!badge) return;
-  if (used) {
-    badge.textContent = '今日已用';
-    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full ml-1 bg-amber-900/60 text-amber-300 border border-amber-700/50';
-    badge.classList.remove('hidden');
-    if (btn) {
-      btn.disabled = true;
-      btn.classList.add('opacity-50', 'cursor-not-allowed');
-      btn.title = '今日 13:30 ~ 明日 13:30 已使用一次 AI 分析';
+  const dtEl      = document.getElementById('fin-ai-datetime');
+  const dtText    = document.getElementById('fin-ai-datetime-text');
+
+  // 產生時間（有報告才顯示）
+  if (dtEl && dtText) {
+    if (hasReport && generatedAt) {
+      try {
+        // generatedAt 是台灣時間 ISO string（後端以 Asia/Taipei 產生）
+        const d = new Date(generatedAt);
+        // 格式化為台灣時間顯示
+        const fmt = d.toLocaleString('zh-TW', {
+          timeZone: 'Asia/Taipei',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit',
+          hour12: false
+        });
+        dtText.textContent = `產生於 ${fmt}`;
+        dtEl.classList.remove('hidden');
+      } catch(e) {
+        dtEl.classList.add('hidden');
+      }
+    } else {
+      dtEl.classList.add('hidden');
     }
-  } else {
-    badge.textContent = '今日可用';
-    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full ml-1 bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
-    badge.classList.remove('hidden');
-    if (btn) {
+  }
+
+  // 按鈕：有報告時顯示「重新產生」，讓用戶可隨時更新
+  if (btn) {
+    if (hasReport) {
       btn.disabled = false;
       btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>重新產生';
+      btn.title = '重新呼叫 Claude 產生最新報告';
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析';
       btn.title = '';
     }
   }
+
   if (cacheNote) {
     if (fromCache) cacheNote.classList.remove('hidden');
     else           cacheNote.classList.add('hidden');
@@ -6816,13 +6835,14 @@ async function _checkFinAIQuota(ticker) {
   }
 }
 
-function _showFinAIReport(text, source, fromCache) {
+function _showFinAIReport(text, source, fromCache, generatedAt) {
   const srcNote = document.getElementById('fin-ai-source-note');
   document.getElementById('fin-ai-text').textContent = text;
   if (srcNote) srcNote.textContent = source || '';
   document.getElementById('fin-ai-loading').classList.add('hidden');
   document.getElementById('fin-ai-result').classList.remove('hidden');
   document.getElementById('fin-ai-placeholder').classList.add('hidden');
+  _updateFinAIBtn(true, fromCache, generatedAt);
 }
 
 async function generateFinAI() {
@@ -6842,30 +6862,22 @@ async function generateFinAI() {
     checkResult = { status: 'not_found', used: false, period_key: periodKey };
   }
 
-  // ── STEP 2：若 GitHub 已有快取，直接顯示 ─────────────────────
+  // ── STEP 2：若 GitHub 已有快取，直接顯示（但按鈕仍可重新產生）──
   if (checkResult.status === 'cached' && checkResult.data?.report_text) {
     _showFinAIReport(
       checkResult.data.report_text,
       _finData?.source || 'yfinance',
-      true
+      true,
+      checkResult.data?.generated_at || null
     );
-    _updateQuotaBadge(true, true);
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已從快取載入'; }
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>重新產生';
+    }
     return;
   }
 
-  // ── STEP 3：無快取，檢查配額（防止重複點擊）─────────────────
-  if (checkResult.used) {
-    // 配額已用但快取讀不到（可能 GitHub 暫時無法存取），顯示說明
-    document.getElementById('fin-ai-placeholder').innerHTML =
-      `<i class="fa-solid fa-clock text-amber-400 text-2xl mb-2 block"></i>
-       <span class="text-amber-300 text-sm">今日（13:30 起）已使用一次 AI 分析，<br>
-       下次可用時間：明日 13:30 後</span>`;
-    document.getElementById('fin-ai-placeholder').classList.remove('hidden');
-    _updateQuotaBadge(true, false);
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析'; }
-    return;
-  }
+  // ── STEP 3：無快取，直接進入產生流程（移除配額限制）────────
 
   // ── STEP 4：呼叫 Claude API（透過後端 /api/ai_report POST）──
   _finAILoading = true;
@@ -6947,11 +6959,11 @@ ${summaryLines || '（資料不足）'}
     }
     if (!aiText) throw new Error('取得的 AI 分析內容為空');
 
-    _showFinAIReport(aiText, source, result.status === 'cached');
-    _updateQuotaBadge(true, result.status === 'cached');
+    _showFinAIReport(aiText, source, result.status === 'cached',
+                     result.data?.generated_at || null);
     if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已產生（今日配額已用）';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>重新產生';
     }
 
   } catch (e) {
@@ -7283,19 +7295,22 @@ let _wlDragSrc   = null;   // 拖曳來源 index
 // ── 開啟自選股面板 ──────────────────────────────────────────────
 async function openWatchlistPanel() {
   const modal = document.getElementById('watchlistModal');
-  // 若面板已開啟，避免重複觸發
-  if (!modal.classList.contains('hidden')) return;
-  // ── 防禦：確認 Script#1 依賴函數存在（僅警告，不中止開啟）──
-  if (typeof calcHotRow !== 'function') {
-    console.warn('[自選股] calcHotRow 尚未就緒，面板仍可開啟，行情欄位可能空白');
-  }
-  _wlAbort = false;   // ★ 重置中止旗標（修正：關閉後再開啟不會卡住）
-  modal.classList.remove('hidden');
+  if (!modal) return;
+
+  // ★ 核心修正：不論 modal 目前狀態，都強制重置後開啟
+  //   原本的 guard「if (!modal.classList.contains('hidden')) return」
+  //   會在 modal 處於「已開啟但 await 還在等待」時靜默返回，
+  //   造成用戶「按了沒反應」的體驗。
+  modal.classList.add('hidden');           // 先強制關閉（清除殘留狀態）
+  _wlAbort = true;                         // 中止任何舊的 async 流程
+  await new Promise(r => setTimeout(r, 0)); // 讓 microtask 清空
+
+  _wlAbort = false;
+  modal.classList.remove('hidden');        // 立即開啟（同步，不等任何 API）
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
 
-  // ★ 防禦：初始渲染若 DOM 尚未就緒或函式未定義，不會靜默失敗卡住後續互動
   try {
     setWlViewMode('trade');
     renderWlTableHeader();
@@ -7304,44 +7319,60 @@ async function openWatchlistPanel() {
     console.error('[自選股] 初始渲染錯誤:', e);
   }
 
-  // ── ① 立即顯示 localStorage 快取（面板馬上有內容，不等 API）──
+  // ── ① 立即用 localStorage 快取顯示內容（同步，面板馬上有東西）──
   _updateWlCountBadge(_wlCodes.length);
   if (_wlCodes.length === 0) {
     _showWlEmpty(true);
   } else {
     _showWlEmpty(false);
-    renderWlTable();   // 用快取先畫
+    renderWlTable();
   }
 
-  // ── ② 背景同步後端清單（只更新代碼，不重複觸發載入）──────────
+  // ── ② 背景非阻塞同步後端（不 await，不讓用戶等待）────────────
+  //   ★ 改為完全非阻塞：後端同步在背景跑，面板已經可以互動
   _showWlSyncHint(true);
-  let backendCodes = null;
-  try {
-    const d = await Promise.race([
-      wlApiFetch('/api/watchlist'),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))  // ★ 5s→8s 避免冷啟動過早放棄
-    ]);
-    _showWlSyncHint(false);
-    if (!_wlAbort && d && d.status === 'success') {
-      backendCodes = d.codes || [];
-      _wlCodes = backendCodes;
-      _lsSave(_wlCodes);
+  (async () => {
+    try {
+      const d = await Promise.race([
+        wlApiFetch('/api/watchlist'),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+      ]);
+      if (_wlAbort) return;   // 面板已被關閉，不再更新
+      _showWlSyncHint(false);
+      if (d && d.status === 'success') {
+        const newCodes = d.codes || [];
+        const changed = JSON.stringify(newCodes) !== JSON.stringify(_wlCodes);
+        _wlCodes = newCodes;
+        _lsSave(_wlCodes);
+        _updateWlCountBadge(_wlCodes.length);
+        if (_wlCodes.length === 0) {
+          _showWlEmpty(true);
+          return;
+        }
+        _showWlEmpty(false);
+        if (changed) renderWlTable();   // 有變化才重繪
+        // 補抓新增的股票資料
+        const missing = _wlCodes.filter(c => _wlData[c] === undefined);
+        if (missing.length > 0) {
+          _showWlLoading(true);
+          try { await _loadWlStocks(missing); } catch(e) { console.error('[自選股]', e); }
+          finally { if (!_wlAbort) _showWlLoading(false); }
+        } else {
+          renderWlTable();
+          updateWlSummary();
+        }
+      }
+    } catch(e) {
+      if (!_wlAbort) {
+        _showWlSyncHint(false);
+        console.warn('[自選股] 後端同步失敗，使用 localStorage:', e.message);
+      }
     }
-  } catch(e) {
-    _showWlSyncHint(false);
-    console.warn('[自選股] 後端不可用，繼續使用 localStorage 內容');
-  }
+  })();
 
-  if (_wlAbort) return;
-
-  _updateWlCountBadge(_wlCodes.length);
-  if (_wlCodes.length === 0) {
-    _showWlEmpty(true);
-    return;
-  }
+  // ── ③ 立即補抓 localStorage 裡已有代碼但缺行情的資料 ──────────
+  if (_wlCodes.length === 0) return;
   _showWlEmpty(false);
-
-  // ── ③ 統一在此補抓缺少行情資料的股票（②完成後執行一次）──────
   const missing = _wlCodes.filter(c => _wlData[c] === undefined);
   if (missing.length === 0) {
     renderWlTable();
@@ -7350,18 +7381,19 @@ async function openWatchlistPanel() {
   }
   _showWlLoading(true);
   try {
-    await _loadWlStocks(missing);   // ★ 包 try-catch，確保 loading 狀態一定能還原
+    await _loadWlStocks(missing);
   } catch(e) {
-    console.error('[自選股] _loadWlStocks 錯誤:', e);
+    console.error('[自選股] 載入股票資料錯誤:', e);
   } finally {
-    _showWlLoading(false);
+    if (!_wlAbort) _showWlLoading(false);
   }
 }
 
 function closeWatchlistPanel() {
-  document.getElementById('watchlistModal').classList.add('hidden');
+  _wlAbort = true;   // ★ 先設旗標，讓背景 async IIFE 知道要停止
+  const modal = document.getElementById('watchlistModal');
+  if (modal) modal.classList.add('hidden');
   document.body.style.overflow = '';
-  _wlAbort = true;
 }
 
 // ── 新增自選股 ──────────────────────────────────────────────────

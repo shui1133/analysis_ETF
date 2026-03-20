@@ -1410,13 +1410,15 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <h3 class="font-bold text-white flex items-center gap-2">
               <i class="fa-solid fa-robot text-violet-400"></i>AI 財務健診報告
               <span class="text-xs text-slate-500 font-normal ml-1">由 Claude 自動生成</span>
-              <!-- 配額狀態徽章 -->
-              <span id="fin-ai-quota-badge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full ml-1"></span>
+              <!-- 產生時間（有報告時顯示） -->
+              <span id="fin-ai-datetime" class="hidden text-xs text-slate-400 font-normal ml-1 flex items-center gap-1">
+                <i class="fa-regular fa-clock"></i><span id="fin-ai-datetime-text"></span>
+              </span>
             </h3>
             <div class="flex items-center gap-2">
               <!-- 快取來源說明 -->
               <span id="fin-ai-cache-note" class="hidden text-xs text-emerald-400 flex items-center gap-1">
-                <i class="fa-solid fa-circle-check"></i>已從 GitHub 快取載入
+                <i class="fa-solid fa-circle-check"></i>已從快取載入
               </span>
               <button id="fin-ai-btn" onclick="generateFinAI()"
                 class="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-900/60 text-violet-300 border border-violet-700/50 hover:bg-violet-800/60 transition flex items-center gap-1">
@@ -6738,16 +6740,12 @@ async function _autoLoadFinAICache(ticker) {
       _showFinAIReport(
         result.data.report_text,
         _finData?.source || 'yfinance',
-        true
+        true,
+        result.data?.generated_at || null
       );
-      _updateQuotaBadge(true, true);
-      const btn = document.getElementById('fin-ai-btn');
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已從快取載入';
-      }
     } else {
-      _updateQuotaBadge(false, false);
+      // 無快取：重置按鈕為「產生 AI 分析」
+      _updateFinAIBtn(false, false, null);
     }
   } catch (e) {
     // 查詢失敗靜默處理
@@ -6775,30 +6773,51 @@ function _getFinAIPeriodKey() {
   return `${yyyy}${mm}${dd}`;
 }
 
-function _updateQuotaBadge(used, fromCache) {
-  const badge = document.getElementById('fin-ai-quota-badge');
-  const btn   = document.getElementById('fin-ai-btn');
+// ── 更新按鈕狀態與產生時間顯示 ─────────────────────────────────
+function _updateFinAIBtn(hasReport, fromCache, generatedAt) {
+  const btn       = document.getElementById('fin-ai-btn');
   const cacheNote = document.getElementById('fin-ai-cache-note');
-  if (!badge) return;
-  if (used) {
-    badge.textContent = '今日已用';
-    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full ml-1 bg-amber-900/60 text-amber-300 border border-amber-700/50';
-    badge.classList.remove('hidden');
-    if (btn) {
-      btn.disabled = true;
-      btn.classList.add('opacity-50', 'cursor-not-allowed');
-      btn.title = '今日 13:30 ~ 明日 13:30 已使用一次 AI 分析';
+  const dtEl      = document.getElementById('fin-ai-datetime');
+  const dtText    = document.getElementById('fin-ai-datetime-text');
+
+  // 產生時間（有報告才顯示）
+  if (dtEl && dtText) {
+    if (hasReport && generatedAt) {
+      try {
+        // generatedAt 是台灣時間 ISO string（後端以 Asia/Taipei 產生）
+        const d = new Date(generatedAt);
+        // 格式化為台灣時間顯示
+        const fmt = d.toLocaleString('zh-TW', {
+          timeZone: 'Asia/Taipei',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit',
+          hour12: false
+        });
+        dtText.textContent = `產生於 ${fmt}`;
+        dtEl.classList.remove('hidden');
+      } catch(e) {
+        dtEl.classList.add('hidden');
+      }
+    } else {
+      dtEl.classList.add('hidden');
     }
-  } else {
-    badge.textContent = '今日可用';
-    badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full ml-1 bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
-    badge.classList.remove('hidden');
-    if (btn) {
+  }
+
+  // 按鈕：有報告時顯示「重新產生」，讓用戶可隨時更新
+  if (btn) {
+    if (hasReport) {
       btn.disabled = false;
       btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>重新產生';
+      btn.title = '重新呼叫 Claude 產生最新報告';
+    } else {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析';
       btn.title = '';
     }
   }
+
   if (cacheNote) {
     if (fromCache) cacheNote.classList.remove('hidden');
     else           cacheNote.classList.add('hidden');
@@ -6816,13 +6835,14 @@ async function _checkFinAIQuota(ticker) {
   }
 }
 
-function _showFinAIReport(text, source, fromCache) {
+function _showFinAIReport(text, source, fromCache, generatedAt) {
   const srcNote = document.getElementById('fin-ai-source-note');
   document.getElementById('fin-ai-text').textContent = text;
   if (srcNote) srcNote.textContent = source || '';
   document.getElementById('fin-ai-loading').classList.add('hidden');
   document.getElementById('fin-ai-result').classList.remove('hidden');
   document.getElementById('fin-ai-placeholder').classList.add('hidden');
+  _updateFinAIBtn(true, fromCache, generatedAt);
 }
 
 async function generateFinAI() {
@@ -6842,30 +6862,22 @@ async function generateFinAI() {
     checkResult = { status: 'not_found', used: false, period_key: periodKey };
   }
 
-  // ── STEP 2：若 GitHub 已有快取，直接顯示 ─────────────────────
+  // ── STEP 2：若 GitHub 已有快取，直接顯示（但按鈕仍可重新產生）──
   if (checkResult.status === 'cached' && checkResult.data?.report_text) {
     _showFinAIReport(
       checkResult.data.report_text,
       _finData?.source || 'yfinance',
-      true
+      true,
+      checkResult.data?.generated_at || null
     );
-    _updateQuotaBadge(true, true);
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已從快取載入'; }
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>重新產生';
+    }
     return;
   }
 
-  // ── STEP 3：無快取，檢查配額（防止重複點擊）─────────────────
-  if (checkResult.used) {
-    // 配額已用但快取讀不到（可能 GitHub 暫時無法存取），顯示說明
-    document.getElementById('fin-ai-placeholder').innerHTML =
-      `<i class="fa-solid fa-clock text-amber-400 text-2xl mb-2 block"></i>
-       <span class="text-amber-300 text-sm">今日（13:30 起）已使用一次 AI 分析，<br>
-       下次可用時間：明日 13:30 後</span>`;
-    document.getElementById('fin-ai-placeholder').classList.remove('hidden');
-    _updateQuotaBadge(true, false);
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>產生 AI 分析'; }
-    return;
-  }
+  // ── STEP 3：無快取，直接進入產生流程（移除配額限制）────────
 
   // ── STEP 4：呼叫 Claude API（透過後端 /api/ai_report POST）──
   _finAILoading = true;
@@ -6947,11 +6959,11 @@ ${summaryLines || '（資料不足）'}
     }
     if (!aiText) throw new Error('取得的 AI 分析內容為空');
 
-    _showFinAIReport(aiText, source, result.status === 'cached');
-    _updateQuotaBadge(true, result.status === 'cached');
+    _showFinAIReport(aiText, source, result.status === 'cached',
+                     result.data?.generated_at || null);
     if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>已產生（今日配額已用）';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-rotate-right mr-1"></i>重新產生';
     }
 
   } catch (e) {
