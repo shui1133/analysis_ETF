@@ -104,6 +104,18 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # 三層快取管理器（本機 → GitHub → yfinance）
 cache_mgr = CacheManager(data_dir=DATA_DIR)
 
+# ── 記憶體快取版本戳記（Render 無狀態環境，不依賴磁碟檔案）──────
+_refresh_state = {
+    'status':     'idle',      # idle | running | done | error
+    'version':    '',
+    'updated_at': '',
+    'trigger':    '',
+    'success':    0,
+    'fail':       0,
+    'started_at': '',
+    'message':    '',
+}
+
 # 全域快取
 cached_results    = {}
 etf_memory_cache  = {}
@@ -405,20 +417,21 @@ def get_popular_stocks():
 @app.route('/api/cache_version', methods=['GET'])
 def get_cache_version():
     """
-    回傳後端快取版本戳記。
+    回傳後端快取版本戳記與更新進度。
     前端每 5 分鐘輪詢，若版本有變化（表示排程已完成更新），
     則清空 localStorage 快取，強制下次查詢重新載入最新資料。
+    status: idle | running | done | error
     """
-    try:
-        version_file = os.path.join(DATA_DIR, "cache_version.json")
-        if os.path.exists(version_file):
-            with open(version_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return jsonify({'status': 'ok', 'version': data.get('version', ''),
-                            'updated_at': data.get('updated_at', '')})
-        return jsonify({'status': 'ok', 'version': '', 'updated_at': ''})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    return jsonify({
+        'status':     'ok',
+        'version':    _refresh_state['version'],
+        'updated_at': _refresh_state['updated_at'],
+        'job_status': _refresh_state['status'],
+        'success':    _refresh_state['success'],
+        'fail':       _refresh_state['fail'],
+        'started_at': _refresh_state['started_at'],
+        'message':    _refresh_state['message'],
+    })
 
 
 @app.route('/api/hot_summary', methods=['POST'])
@@ -3527,6 +3540,12 @@ def admin_refresh_cache():
 
     def _do_refresh():
         """在背景執行緒中執行全量更新，避免 HTTP 請求逾時"""
+        import time as _time
+        _refresh_state['status']     = 'running'
+        _refresh_state['started_at'] = pd.Timestamp.now().isoformat()
+        _refresh_state['success']    = 0
+        _refresh_state['fail']       = 0
+        _refresh_state['message']    = '更新中...'
         try:
             from github_cache import CacheManager as _CM
             fetcher = ETFDataFetcher(output_dir=DATA_DIR)
@@ -3541,7 +3560,9 @@ def admin_refresh_cache():
                 pass
 
             all_tickers = list(dict.fromkeys(stocks + etfs + wl))  # 保序去重
-            print(f"[admin_refresh] 開始更新 {len(all_tickers)} 支（"
+            total = len(all_tickers)
+            _refresh_state['message'] = f'共 {total} 支（股票{len(stocks)} ETF{len(etfs)} 自選股{len(wl)}）'
+            print(f"[admin_refresh] 開始更新 {total} 支（"
                   f"熱門股票{len(stocks)} ＋ ETF{len(etfs)} ＋ 自選股{len(wl)}）")
 
             success = fail = 0
@@ -3560,15 +3581,30 @@ def admin_refresh_cache():
                 except Exception as e:
                     print(f"  [admin_refresh] {tk} 失敗: {e}")
                     fail += 1
+                # 即時更新進度
+                _refresh_state['success'] = success
+                _refresh_state['fail']    = fail
 
-            # 更新快取版本戳記（通知前端重新載入）
+            # 完成：更新版本戳記
+            now_ts = str(int(_time.time()))
+            now_iso = pd.Timestamp.now().isoformat()
+            _refresh_state.update({
+                'status':     'done',
+                'version':    now_ts,
+                'updated_at': now_iso,
+                'trigger':    'admin_refresh',
+                'success':    success,
+                'fail':       fail,
+                'message':    f'完成：成功 {success} ／ 失敗 {fail}',
+            })
+
+            # 同時也寫磁碟（本機環境備用，Render 上不保證存活）
             try:
-                import time as _time
                 version_file = os.path.join(DATA_DIR, 'cache_version.json')
                 with open(version_file, 'w', encoding='utf-8') as _f:
                     json.dump({
-                        'version':    str(int(_time.time())),
-                        'updated_at': pd.Timestamp.now().isoformat(),
+                        'version':    now_ts,
+                        'updated_at': now_iso,
                         'trigger':    'admin_refresh',
                         'success':    success,
                         'fail':       fail,
@@ -3580,6 +3616,10 @@ def admin_refresh_cache():
 
         except Exception as e:
             import traceback
+            _refresh_state.update({
+                'status':  'error',
+                'message': str(e),
+            })
             print(f"[admin_refresh] ❌ 全量更新失敗: {e}")
             traceback.print_exc()
 
