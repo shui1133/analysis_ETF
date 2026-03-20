@@ -7283,19 +7283,22 @@ let _wlDragSrc   = null;   // 拖曳來源 index
 // ── 開啟自選股面板 ──────────────────────────────────────────────
 async function openWatchlistPanel() {
   const modal = document.getElementById('watchlistModal');
-  // 若面板已開啟，避免重複觸發
-  if (!modal.classList.contains('hidden')) return;
-  // ── 防禦：確認 Script#1 依賴函數存在（僅警告，不中止開啟）──
-  if (typeof calcHotRow !== 'function') {
-    console.warn('[自選股] calcHotRow 尚未就緒，面板仍可開啟，行情欄位可能空白');
-  }
-  _wlAbort = false;   // ★ 重置中止旗標（修正：關閉後再開啟不會卡住）
-  modal.classList.remove('hidden');
+  if (!modal) return;
+
+  // ★ 核心修正：不論 modal 目前狀態，都強制重置後開啟
+  //   原本的 guard「if (!modal.classList.contains('hidden')) return」
+  //   會在 modal 處於「已開啟但 await 還在等待」時靜默返回，
+  //   造成用戶「按了沒反應」的體驗。
+  modal.classList.add('hidden');           // 先強制關閉（清除殘留狀態）
+  _wlAbort = true;                         // 中止任何舊的 async 流程
+  await new Promise(r => setTimeout(r, 0)); // 讓 microtask 清空
+
+  _wlAbort = false;
+  modal.classList.remove('hidden');        // 立即開啟（同步，不等任何 API）
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
 
-  // ★ 防禦：初始渲染若 DOM 尚未就緒或函式未定義，不會靜默失敗卡住後續互動
   try {
     setWlViewMode('trade');
     renderWlTableHeader();
@@ -7304,44 +7307,60 @@ async function openWatchlistPanel() {
     console.error('[自選股] 初始渲染錯誤:', e);
   }
 
-  // ── ① 立即顯示 localStorage 快取（面板馬上有內容，不等 API）──
+  // ── ① 立即用 localStorage 快取顯示內容（同步，面板馬上有東西）──
   _updateWlCountBadge(_wlCodes.length);
   if (_wlCodes.length === 0) {
     _showWlEmpty(true);
   } else {
     _showWlEmpty(false);
-    renderWlTable();   // 用快取先畫
+    renderWlTable();
   }
 
-  // ── ② 背景同步後端清單（只更新代碼，不重複觸發載入）──────────
+  // ── ② 背景非阻塞同步後端（不 await，不讓用戶等待）────────────
+  //   ★ 改為完全非阻塞：後端同步在背景跑，面板已經可以互動
   _showWlSyncHint(true);
-  let backendCodes = null;
-  try {
-    const d = await Promise.race([
-      wlApiFetch('/api/watchlist'),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))  // ★ 5s→8s 避免冷啟動過早放棄
-    ]);
-    _showWlSyncHint(false);
-    if (!_wlAbort && d && d.status === 'success') {
-      backendCodes = d.codes || [];
-      _wlCodes = backendCodes;
-      _lsSave(_wlCodes);
+  (async () => {
+    try {
+      const d = await Promise.race([
+        wlApiFetch('/api/watchlist'),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+      ]);
+      if (_wlAbort) return;   // 面板已被關閉，不再更新
+      _showWlSyncHint(false);
+      if (d && d.status === 'success') {
+        const newCodes = d.codes || [];
+        const changed = JSON.stringify(newCodes) !== JSON.stringify(_wlCodes);
+        _wlCodes = newCodes;
+        _lsSave(_wlCodes);
+        _updateWlCountBadge(_wlCodes.length);
+        if (_wlCodes.length === 0) {
+          _showWlEmpty(true);
+          return;
+        }
+        _showWlEmpty(false);
+        if (changed) renderWlTable();   // 有變化才重繪
+        // 補抓新增的股票資料
+        const missing = _wlCodes.filter(c => _wlData[c] === undefined);
+        if (missing.length > 0) {
+          _showWlLoading(true);
+          try { await _loadWlStocks(missing); } catch(e) { console.error('[自選股]', e); }
+          finally { if (!_wlAbort) _showWlLoading(false); }
+        } else {
+          renderWlTable();
+          updateWlSummary();
+        }
+      }
+    } catch(e) {
+      if (!_wlAbort) {
+        _showWlSyncHint(false);
+        console.warn('[自選股] 後端同步失敗，使用 localStorage:', e.message);
+      }
     }
-  } catch(e) {
-    _showWlSyncHint(false);
-    console.warn('[自選股] 後端不可用，繼續使用 localStorage 內容');
-  }
+  })();
 
-  if (_wlAbort) return;
-
-  _updateWlCountBadge(_wlCodes.length);
-  if (_wlCodes.length === 0) {
-    _showWlEmpty(true);
-    return;
-  }
+  // ── ③ 立即補抓 localStorage 裡已有代碼但缺行情的資料 ──────────
+  if (_wlCodes.length === 0) return;
   _showWlEmpty(false);
-
-  // ── ③ 統一在此補抓缺少行情資料的股票（②完成後執行一次）──────
   const missing = _wlCodes.filter(c => _wlData[c] === undefined);
   if (missing.length === 0) {
     renderWlTable();
@@ -7350,18 +7369,19 @@ async function openWatchlistPanel() {
   }
   _showWlLoading(true);
   try {
-    await _loadWlStocks(missing);   // ★ 包 try-catch，確保 loading 狀態一定能還原
+    await _loadWlStocks(missing);
   } catch(e) {
-    console.error('[自選股] _loadWlStocks 錯誤:', e);
+    console.error('[自選股] 載入股票資料錯誤:', e);
   } finally {
-    _showWlLoading(false);
+    if (!_wlAbort) _showWlLoading(false);
   }
 }
 
 function closeWatchlistPanel() {
-  document.getElementById('watchlistModal').classList.add('hidden');
+  _wlAbort = true;   // ★ 先設旗標，讓背景 async IIFE 知道要停止
+  const modal = document.getElementById('watchlistModal');
+  if (modal) modal.classList.add('hidden');
   document.body.style.overflow = '';
-  _wlAbort = true;
 }
 
 // ── 新增自選股 ──────────────────────────────────────────────────
