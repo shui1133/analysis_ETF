@@ -3449,6 +3449,149 @@ def watchlist_remove():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════
+# ★ 背景排程啟動（模組層級 — Gunicorn / Render 環境必須放在這裡）
+#
+# 問題根因：Render 以 "gunicorn app:app" 啟動，是 import 模組，
+# 而非執行 python app.py，因此 if __name__ == '__main__' 內的程式碼
+# 永遠不會被執行 → 排程器從未啟動 → 資料永遠停在舊快取。
+#
+# 修正：將 start_scheduler 移至模組層級（任何 import 都會執行），
+# 並以環境變數 _SCHEDULER_STARTED 防止 Gunicorn 多 worker 重複啟動。
+#
+# 排程內容（每交易日 16:00 台灣時間自動執行）：
+#   1. 熱門股票（POPULAR_STOCKS）   → yfinance 重新抓取 → 更新 GitHub
+#   2. 熱門 ETF（POPULAR_ETF）      → yfinance 重新抓取 → 更新 GitHub
+#   3. 自選股（watchlist）          → yfinance 重新抓取 → 更新 GitHub
+#   4. 寫入 cache_version.json      → 通知前端清除 localStorage 快取
+# ═══════════════════════════════════════════════════════════════
+def _build_popular_stocks_list():
+    """將 POPULAR_STOCKS 統一轉為代碼字串清單（相容 dict / list 兩種格式）"""
+    if isinstance(POPULAR_STOCKS, dict):
+        return list(POPULAR_STOCKS.keys())
+    return [s['code'] if isinstance(s, dict) else str(s) for s in POPULAR_STOCKS]
+
+
+if not os.environ.get('_SCHEDULER_STARTED'):
+    os.environ['_SCHEDULER_STARTED'] = '1'
+    try:
+        _popular_stock_codes = _build_popular_stocks_list()
+        _popular_etf_codes   = [e['code'] for e in POPULAR_ETF]
+
+        print("=" * 60)
+        print(f"[Scheduler] 啟動背景排程（每交易日 16:00 台灣時間）")
+        print(f"[Scheduler] 熱門股票 {len(_popular_stock_codes)} 支 ／"
+              f" 熱門ETF {len(_popular_etf_codes)} 支")
+        print("=" * 60)
+
+        start_scheduler(
+            cache=cache_mgr,
+            fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
+            watchlist_reader=_wl_read,
+            popular_stocks=_popular_stock_codes,
+            popular_etfs=_popular_etf_codes,
+        )
+    except Exception as _sched_err:
+        print(f"[Scheduler] ⚠️  排程器啟動失敗（非致命）: {_sched_err}")
+else:
+    print("[Scheduler] ℹ️  排程器已由另一 worker 啟動，略過重複初始化")
+
+
+# ═══════════════════════════════════════════════════════════════
+# 手動觸發排程更新 API（供 cron-job.org 或管理員呼叫）
+# GET/POST /api/admin/refresh_cache?secret=YOUR_SECRET
+# ═══════════════════════════════════════════════════════════════
+@app.route('/api/admin/refresh_cache', methods=['GET', 'POST'])
+def admin_refresh_cache():
+    """
+    手動觸發全量快取更新（熱門股票 + 熱門ETF + 自選股）。
+    可搭配 cron-job.org 在收盤後呼叫，作為排程器的保險備援。
+
+    安全保護：需帶 secret 參數，與環境變數 ADMIN_SECRET 比對。
+    若未設定 ADMIN_SECRET，則僅限本機（127.0.0.1）呼叫。
+    """
+    import threading as _th
+
+    admin_secret = os.environ.get('ADMIN_SECRET', '')
+    req_secret   = request.args.get('secret', '') or (request.get_json(silent=True) or {}).get('secret', '')
+
+    # 安全驗證
+    if admin_secret:
+        if req_secret != admin_secret:
+            return jsonify({'status': 'error', 'message': '未授權'}), 403
+    else:
+        # 未設定 ADMIN_SECRET → 只接受 localhost
+        remote = request.remote_addr or ''
+        if remote not in ('127.0.0.1', '::1', 'localhost'):
+            return jsonify({'status': 'error', 'message': '請設定 ADMIN_SECRET 環境變數以允許遠端呼叫'}), 403
+
+    def _do_refresh():
+        """在背景執行緒中執行全量更新，避免 HTTP 請求逾時"""
+        try:
+            from github_cache import CacheManager as _CM
+            fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+
+            # 合併所有需更新的代碼（去重）
+            stocks = _build_popular_stocks_list()
+            etfs   = [e['code'] for e in POPULAR_ETF]
+            wl     = []
+            try:
+                wl = _wl_read() or []
+            except Exception:
+                pass
+
+            all_tickers = list(dict.fromkeys(stocks + etfs + wl))  # 保序去重
+            print(f"[admin_refresh] 開始更新 {len(all_tickers)} 支（"
+                  f"熱門股票{len(stocks)} ＋ ETF{len(etfs)} ＋ 自選股{len(wl)}）")
+
+            success = fail = 0
+            for tk in all_tickers:
+                try:
+                    result = fetcher.fetch_stock_analysis(tk)
+                    if result and result.get('ohlcv'):
+                        # 強制寫入 GitHub（不依賴快取判斷）
+                        if hasattr(cache_mgr, 'force_refresh'):
+                            cache_mgr.force_refresh(tk, fetcher, data_types=['price', 'dividend', 'fundamental'])
+                        # 清除記憶體快取，確保下次查詢重新載入
+                        analysis_cache.pop(tk, None)
+                        success += 1
+                    else:
+                        fail += 1
+                except Exception as e:
+                    print(f"  [admin_refresh] {tk} 失敗: {e}")
+                    fail += 1
+
+            # 更新快取版本戳記（通知前端重新載入）
+            try:
+                import time as _time
+                version_file = os.path.join(DATA_DIR, 'cache_version.json')
+                with open(version_file, 'w', encoding='utf-8') as _f:
+                    json.dump({
+                        'version':    str(int(_time.time())),
+                        'updated_at': pd.Timestamp.now().isoformat(),
+                        'trigger':    'admin_refresh',
+                        'success':    success,
+                        'fail':       fail,
+                    }, _f, ensure_ascii=False)
+            except Exception:
+                pass
+
+            print(f"[admin_refresh] 完成：成功 {success} ／ 失敗 {fail}")
+
+        except Exception as e:
+            import traceback
+            print(f"[admin_refresh] ❌ 全量更新失敗: {e}")
+            traceback.print_exc()
+
+    # 在背景執行緒執行，立即回傳 202 Accepted
+    _th.Thread(target=_do_refresh, daemon=True).start()
+
+    return jsonify({
+        'status':  'accepted',
+        'message': '已在背景啟動全量快取更新，請稍後查詢 /api/cache_version 確認完成',
+    }), 202
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("=" * 60)
@@ -3457,16 +3600,5 @@ if __name__ == '__main__':
     print(f"Port: {port}")
     print("=" * 60)
     host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
-
-    # 啟動每交易日 16:00（台灣時間）背景快取排程
-    start_scheduler(
-        cache=cache_mgr,
-        fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
-        watchlist_reader=_wl_read,
-        popular_stocks=list(POPULAR_STOCKS.keys()) if isinstance(POPULAR_STOCKS, dict)
-                       else list(POPULAR_STOCKS),
-        popular_etfs=[e['code'] for e in POPULAR_ETF],
-        data_dir=DATA_DIR,
-    )
-
+    # ★ start_scheduler 已移至模組層級，這裡不再重複呼叫
     app.run(debug=False, host=host, port=port)
