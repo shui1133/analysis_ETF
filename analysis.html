@@ -161,8 +161,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
       </button>
-      <button onclick="openWatchlistPanel()"
-              id="btnWatchlist"
+      <button id="btnWatchlist"
+              onclick="openWatchlistPanel().catch(e=>console.error('[自選股] openWatchlistPanel 錯誤:',e))"
               class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-star"></i>自選股
       </button>
@@ -3266,7 +3266,7 @@ function drawCandleChartPeriod(data, period) {
           borderColor:     wickColors,
           borderWidth: 0,
           barPercentage:   wickPct,
-          categoryPercentage: 0.9,
+          categoryPercentage: 1.0,   // ★ 佔滿整格，使影線對齊格子中央（與實體重疊中央）
           order: 2,
         },
         // ③ MA 均線
@@ -5673,8 +5673,12 @@ async function loadHotStocksSequential(onlyCodes) {
       }
       // 非 ok 或 status != success → 降級
       console.warn('[hot_summary] 批次 API 回傳異常，降級逐支請求');
+      updateHotProgress(countLoaded(), total, '⚠️ 伺服器啟動中，改為逐支載入...');
     } catch(e) {
+      const isTimeout = e.name === 'TimeoutError' || e.message.includes('timeout');
+      const msg = isTimeout ? '⚠️ 伺服器回應逾時（冷啟動中），改為逐支載入...' : '⚠️ 網路異常，改為逐支載入...';
       console.warn('[hot_summary] 批次請求失敗，降級逐支請求:', e.message);
+      updateHotProgress(countLoaded(), total, msg);
     }
 
     // ── ③ 降級：逐支 GitHub 快取 + yfinance（原有邏輯）──────────
@@ -5822,90 +5826,6 @@ function _summaryToDataFormat(code, s) {
 }
 
 
-  // ── 先從 IndexedDB 快取填充，減少 API 請求（補抓模式亦適用）──
-  _cacheHits = 0;
-  for (const s of targetList) {
-    if (hotStockData[s.code] !== undefined) continue;
-    const cached = await hotCacheLoad(s.code);
-    if (cached) {
-      hotStockData[s.code] = cached;
-      _cacheHits++;
-    }
-  }
-  if (_cacheHits > 0) {
-    renderHotTable();
-  }
-
-  // ── 以已載入數量為基準（快取命中後才計算，避免重複計算）──
-  const countLoaded = () => hotStockList.filter(s => hotStockData[s.code] !== undefined).length;
-  let loaded = countLoaded();
-
-  updateHotProgress(loaded, total,
-    onlyCodes ? ('補抓 ' + targetList.length + ' 支缺少資料...')
-              : (_cacheHits > 0 ? '快取命中 ' + _cacheHits + ' 支，載入剩餘資料...' : '準備載入...'));
-
-  // 若補抓模式且有已載入資料，先顯示已有的
-  if (onlyCodes && loaded > 0) {
-    renderHotTable();
-  }
-
-  // ── GitHub 快取層（IDB 未命中的批次查詢）──────────────────────
-  const afterLS = targetList.filter(s => hotStockData[s.code] === undefined);
-  if (afterLS.length > 0) {
-    const ghResults = await Promise.all(afterLS.map(async s => {
-      if (hotLoadAbort) return null;
-      const ghData = await ghStockCacheLoad(s.code);
-      return ghData ? { code: s.code, data: ghData } : null;
-    }));
-    let ghHits = 0;
-    for (const r of ghResults) {
-      if (r && r.data) {
-        hotStockData[r.code] = r.data;
-        await hotCacheSave(r.code, r.data);   // 回填 IDB
-        ghHits++;
-      }
-    }
-    if (ghHits > 0) {
-      loaded = countLoaded();
-      updateHotProgress(loaded, total, 'GitHub 快取命中 ' + ghHits + ' 支，載入剩餘資料...');
-      renderHotTable();
-    }
-  }
-
-  const fetchWithRetry = async (code, maxRetry = 3) => {
-    for (let attempt = 1; attempt <= maxRetry; attempt++) {
-      try {
-        const r = await fetch('/api/stock_analysis/' + code);
-        const d = await r.json();
-        if (d.status === 'success') return d.data;
-        if (r.status !== 500 && r.status !== 503) return null;
-      } catch (e) { /* 網路異常，繼續重試 */ }
-      if (attempt < maxRetry) await new Promise(r => setTimeout(r, 400 * attempt));
-    }
-    return null;
-  };
-
-  for (let i = 0; i < targetList.length; i += BATCH) {
-    if (hotLoadAbort) break;
-    const batch = targetList.slice(i, i + BATCH);
-    await Promise.all(batch.map(async (s) => {
-      if (hotStockData[s.code] !== undefined) return;  // 已有資料（快取），跳過不重複計算
-      const result = await fetchWithRetry(s.code);
-      hotStockData[s.code] = result;
-      if (result) await hotCacheSave(s.code, result);   // 成功才存快取（寫 IDB）
-      // ── 取得任一支就立即更新進度條與表格 ──
-      const nowLoaded = countLoaded();
-      updateHotProgress(nowLoaded, total, '已載入 ' + nowLoaded + ' / ' + total + ' 支...');
-      renderHotTable();
-    }));
-  }
-
-  loaded = countLoaded();
-  const cacheNote = _cacheHits > 0 ? '（快取命中 ' + _cacheHits + ' 支）' : '';
-  updateHotProgress(loaded, total, '載入完成，共 ' + loaded + ' 支 ' + cacheNote);
-  document.getElementById('hotSummaryRow').classList.remove('hidden');
-  updateHotSummary();
-}
 
 function updateHotProgress(loaded, total, text) {
   const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
@@ -7365,14 +7285,24 @@ async function openWatchlistPanel() {
   const modal = document.getElementById('watchlistModal');
   // 若面板已開啟，避免重複觸發
   if (!modal.classList.contains('hidden')) return;
+  // ── 防禦：確認 Script#1 依賴函數存在（僅警告，不中止開啟）──
+  if (typeof calcHotRow !== 'function') {
+    console.warn('[自選股] calcHotRow 尚未就緒，面板仍可開啟，行情欄位可能空白');
+  }
   _wlAbort = false;   // ★ 重置中止旗標（修正：關閉後再開啟不會卡住）
   modal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
-  setWlViewMode('trade');
-  renderWlTableHeader();
-  _updateAddCurrentBtn();
+
+  // ★ 防禦：初始渲染若 DOM 尚未就緒或函式未定義，不會靜默失敗卡住後續互動
+  try {
+    setWlViewMode('trade');
+    renderWlTableHeader();
+    _updateAddCurrentBtn();
+  } catch(e) {
+    console.error('[自選股] 初始渲染錯誤:', e);
+  }
 
   // ── ① 立即顯示 localStorage 快取（面板馬上有內容，不等 API）──
   _updateWlCountBadge(_wlCodes.length);
@@ -7389,7 +7319,7 @@ async function openWatchlistPanel() {
   try {
     const d = await Promise.race([
       wlApiFetch('/api/watchlist'),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))  // ★ 5s→8s 避免冷啟動過早放棄
     ]);
     _showWlSyncHint(false);
     if (!_wlAbort && d && d.status === 'success') {
@@ -7419,8 +7349,13 @@ async function openWatchlistPanel() {
     return;
   }
   _showWlLoading(true);
-  await _loadWlStocks(missing);
-  _showWlLoading(false);
+  try {
+    await _loadWlStocks(missing);   // ★ 包 try-catch，確保 loading 狀態一定能還原
+  } catch(e) {
+    console.error('[自選股] _loadWlStocks 錯誤:', e);
+  } finally {
+    _showWlLoading(false);
+  }
 }
 
 function closeWatchlistPanel() {
@@ -7547,7 +7482,7 @@ async function reloadWatchlist() {
 
 // ── 批次載入股票資料 ────────────────────────────────────────────
 async function _loadWlStocks(codes) {
-  _wlAbort = false;
+  // _wlAbort 由 openWatchlistPanel / closeWatchlistPanel 統一管理，此處不重置
   const total = _wlCodes.length;
   document.getElementById('wlProgress').classList.remove('hidden');
   document.getElementById('wlSummaryRow').classList.add('hidden');
@@ -7831,11 +7766,16 @@ function updateWlSummary() {
 
 // ── 工具函式 ────────────────────────────────────────────────────
 function _showWlEmpty(show) {
-  document.getElementById('wlEmptyState').classList.toggle('hidden', !show);
-  document.getElementById('wlTableWrap').classList.toggle('hidden', show);
+  const emptyEl = document.getElementById('wlEmptyState');
+  const tableEl = document.getElementById('wlTableWrap');
+  if (!emptyEl || !tableEl) return;   // ★ DOM guard
+  emptyEl.classList.toggle('hidden', !show);
+  tableEl.classList.toggle('hidden', show);
   if (show) {
-    document.getElementById('wlProgress').classList.add('hidden');
-    document.getElementById('wlSummaryRow').classList.add('hidden');
+    const prog = document.getElementById('wlProgress');
+    const summ = document.getElementById('wlSummaryRow');
+    if (prog) prog.classList.add('hidden');
+    if (summ) summ.classList.add('hidden');
   }
 }
 function _showWlLoading(show) {
@@ -7859,7 +7799,7 @@ function _showWlSyncHint(show) {
     if (wrap) wrap.parentNode.insertBefore(hint, wrap);
   }
   hint.style.display = show ? 'block' : 'none';
-  if (show) hint.textContent = '⟳ 正在與伺服器同步（最多 20 秒）…';
+  if (show) hint.textContent = '⟳ 正在與伺服器同步…';
 }
 function _updateWlCountBadge(n) {
   const el = document.getElementById('wl-count-badge');
@@ -7915,6 +7855,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // ① 立即從 localStorage 載入 → 按鈕馬上可用，不等 API
   _wlCodes = _lsLoad();
   _updateBtnBadge();
+
+  // ★ 綁定自選股按鈕（addEventListener 比 onclick 優先，不衝突）
+  const _wlBtn = document.getElementById('btnWatchlist');
+  if (_wlBtn) {
+    // onclick 已直接呼叫 openWatchlistPanel，此處不重複綁定避免觸發兩次
+    // 保留 addEventListener 僅供程式化觸發需求
+  }
 
   // ② 監聽個股載入，更新「加入當前個股」按鈕
   const stockArea = document.getElementById('stockArea');
