@@ -162,7 +162,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
       </button>
       <button id="btnWatchlist"
-              onclick="openWatchlistPanel()"
+              onclick="openWatchlistPanel().catch(e=>console.error('[自選股] openWatchlistPanel 錯誤:',e))"
               class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-star"></i>自選股
       </button>
@@ -7294,9 +7294,15 @@ async function openWatchlistPanel() {
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
-  setWlViewMode('trade');
-  renderWlTableHeader();
-  _updateAddCurrentBtn();
+
+  // ★ 防禦：初始渲染若 DOM 尚未就緒或函式未定義，不會靜默失敗卡住後續互動
+  try {
+    setWlViewMode('trade');
+    renderWlTableHeader();
+    _updateAddCurrentBtn();
+  } catch(e) {
+    console.error('[自選股] 初始渲染錯誤:', e);
+  }
 
   // ── ① 立即顯示 localStorage 快取（面板馬上有內容，不等 API）──
   _updateWlCountBadge(_wlCodes.length);
@@ -7313,7 +7319,7 @@ async function openWatchlistPanel() {
   try {
     const d = await Promise.race([
       wlApiFetch('/api/watchlist'),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))  // ★ 5s→8s 避免冷啟動過早放棄
     ]);
     _showWlSyncHint(false);
     if (!_wlAbort && d && d.status === 'success') {
@@ -7343,8 +7349,13 @@ async function openWatchlistPanel() {
     return;
   }
   _showWlLoading(true);
-  await _loadWlStocks(missing);
-  _showWlLoading(false);
+  try {
+    await _loadWlStocks(missing);   // ★ 包 try-catch，確保 loading 狀態一定能還原
+  } catch(e) {
+    console.error('[自選股] _loadWlStocks 錯誤:', e);
+  } finally {
+    _showWlLoading(false);
+  }
 }
 
 function closeWatchlistPanel() {
@@ -7471,7 +7482,7 @@ async function reloadWatchlist() {
 
 // ── 批次載入股票資料 ────────────────────────────────────────────
 async function _loadWlStocks(codes) {
-  _wlAbort = false;
+  // _wlAbort 由 openWatchlistPanel / closeWatchlistPanel 統一管理，此處不重置
   const total = _wlCodes.length;
   document.getElementById('wlProgress').classList.remove('hidden');
   document.getElementById('wlSummaryRow').classList.add('hidden');
@@ -7755,11 +7766,16 @@ function updateWlSummary() {
 
 // ── 工具函式 ────────────────────────────────────────────────────
 function _showWlEmpty(show) {
-  document.getElementById('wlEmptyState').classList.toggle('hidden', !show);
-  document.getElementById('wlTableWrap').classList.toggle('hidden', show);
+  const emptyEl = document.getElementById('wlEmptyState');
+  const tableEl = document.getElementById('wlTableWrap');
+  if (!emptyEl || !tableEl) return;   // ★ DOM guard
+  emptyEl.classList.toggle('hidden', !show);
+  tableEl.classList.toggle('hidden', show);
   if (show) {
-    document.getElementById('wlProgress').classList.add('hidden');
-    document.getElementById('wlSummaryRow').classList.add('hidden');
+    const prog = document.getElementById('wlProgress');
+    const summ = document.getElementById('wlSummaryRow');
+    if (prog) prog.classList.add('hidden');
+    if (summ) summ.classList.add('hidden');
   }
 }
 function _showWlLoading(show) {
@@ -7783,7 +7799,7 @@ function _showWlSyncHint(show) {
     if (wrap) wrap.parentNode.insertBefore(hint, wrap);
   }
   hint.style.display = show ? 'block' : 'none';
-  if (show) hint.textContent = '⟳ 正在與伺服器同步（最多 20 秒）…';
+  if (show) hint.textContent = '⟳ 正在與伺服器同步…';
 }
 function _updateWlCountBadge(n) {
   const el = document.getElementById('wl-count-badge');
