@@ -162,7 +162,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
       </button>
       <button id="btnWatchlist"
-              onclick="if(typeof openWatchlistPanel==='function'){openWatchlistPanel();}else{document.getElementById('btnWatchlist')._pending=true;}"
+              onclick="openWatchlistPanel()"
               class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-star"></i>自選股
       </button>
@@ -7285,11 +7285,9 @@ async function openWatchlistPanel() {
   const modal = document.getElementById('watchlistModal');
   // 若面板已開啟，避免重複觸發
   if (!modal.classList.contains('hidden')) return;
-  // ── 防禦：確認 Script#1 依賴函數存在 ──
+  // ── 防禦：確認 Script#1 依賴函數存在（僅警告，不中止開啟）──
   if (typeof calcHotRow !== 'function') {
-    console.error('[自選股] Script#1 未載入，請重新整理頁面（Ctrl+Shift+R）');
-    alert('頁面資源載入不完整，請按 Ctrl+Shift+R 強制重新整理後再試。');
-    return;
+    console.warn('[自選股] calcHotRow 尚未就緒，面板仍可開啟，行情欄位可能空白');
   }
   _wlAbort = false;   // ★ 重置中止旗標（修正：關閉後再開啟不會卡住）
   modal.classList.remove('hidden');
@@ -7842,15 +7840,11 @@ document.addEventListener('DOMContentLoaded', () => {
   _wlCodes = _lsLoad();
   _updateBtnBadge();
 
-  // ★ 綁定自選股按鈕（避免 onclick 在 Script#2 載入前被呼叫導致無反應）
+  // ★ 綁定自選股按鈕（addEventListener 比 onclick 優先，不衝突）
   const _wlBtn = document.getElementById('btnWatchlist');
   if (_wlBtn) {
-    _wlBtn.addEventListener('click', openWatchlistPanel);
-    // 若使用者在 Script#2 載入前已按過按鈕，補觸發
-    if (_wlBtn._pending) {
-      _wlBtn._pending = false;
-      openWatchlistPanel();
-    }
+    // onclick 已直接呼叫 openWatchlistPanel，此處不重複綁定避免觸發兩次
+    // 保留 addEventListener 僅供程式化觸發需求
   }
 
   // ② 監聽個股載入，更新「加入當前個股」按鈕
