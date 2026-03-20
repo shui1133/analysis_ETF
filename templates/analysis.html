@@ -7290,26 +7290,32 @@ let _wlViewMode  = 'trade';
 let _wlSortKey   = null;
 let _wlSortAsc   = true;
 let _wlAbort     = false;
+let _wlOpening   = false;  // ★ 防重入旗標：避免快速連續點擊造成 _wlAbort 狀態汙染
 let _wlDragSrc   = null;   // 拖曳來源 index
 
 // ── 開啟自選股面板 ──────────────────────────────────────────────
 async function openWatchlistPanel() {
-  const modal = document.getElementById('watchlistModal');
-  if (!modal) return;
+  // ★ 防重入保護：若已在開啟流程中（_wlOpening），忽略此次呼叫
+  //   避免快速連續點擊時，第二次呼叫把 _wlAbort 設為 true，
+  //   中斷第一次流程，造成「按了沒反應」。
+  if (_wlOpening) return;
+  _wlOpening = true;
 
-  // ★ 核心修正：不論 modal 目前狀態，都強制重置後開啟
-  //   原本的 guard「if (!modal.classList.contains('hidden')) return」
-  //   會在 modal 處於「已開啟但 await 還在等待」時靜默返回，
-  //   造成用戶「按了沒反應」的體驗。
-  modal.classList.add('hidden');           // 先強制關閉（清除殘留狀態）
-  _wlAbort = true;                         // 中止任何舊的 async 流程
-  await new Promise(r => setTimeout(r, 0)); // 讓 microtask 清空
+  const modal = document.getElementById('watchlistModal');
+  if (!modal) { _wlOpening = false; return; }
+
+  // 中止任何舊的背景 async 流程（例如上次未關完的載入）
+  _wlAbort = true;
+  await new Promise(r => setTimeout(r, 0)); // 讓舊的 microtask 有機會退出
 
   _wlAbort = false;
   modal.classList.remove('hidden');        // 立即開啟（同步，不等任何 API）
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
+
+  // 開啟後立即釋放旗標，讓下次點擊（如關閉後重開）可以正常進入
+  _wlOpening = false;
 
   try {
     setWlViewMode('trade');
@@ -7390,7 +7396,8 @@ async function openWatchlistPanel() {
 }
 
 function closeWatchlistPanel() {
-  _wlAbort = true;   // ★ 先設旗標，讓背景 async IIFE 知道要停止
+  _wlOpening = false; // ★ 釋放防重入旗標，讓下次點擊可以正常進入
+  _wlAbort = true;    // 中止背景 async IIFE
   const modal = document.getElementById('watchlistModal');
   if (modal) modal.classList.add('hidden');
   document.body.style.overflow = '';
