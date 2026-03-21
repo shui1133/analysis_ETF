@@ -12,62 +12,9 @@ import json
 import os
 import platform
 import numpy as np
-from datetime import datetime, timedelta
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
 from github_cache import CacheManager, start_scheduler
-
-# 熱門 ETF 清單（排程每日 16:00 更新前50筆至 GitHub）
-POPULAR_ETF = [
-    {'code': '0050',   'name': '元大台灣50'},
-    {'code': '0056',   'name': '元大高股息'},
-    {'code': '006208', 'name': '富邦台50'},
-    {'code': '00878',  'name': '國泰永續高股息'},
-    {'code': '00713',  'name': '元大台灣高息低波'},
-    {'code': '00919',  'name': '群益台灣精選高息'},
-    {'code': '00929',  'name': '復華台灣科技優息'},
-    {'code': '00915',  'name': '凱基優選高股息30'},
-    {'code': '00679B', 'name': '元大美債20年'},
-    {'code': '00757',  'name': '統一MSCI台灣ESG'},
-    {'code': '00850',  'name': '元大臺灣ESG永續'},
-    {'code': '00900',  'name': '富邦特選高股息30'},
-    {'code': '00907',  'name': '永豐優息存股'},
-    {'code': '00930',  'name': '永豐台灣ESG'},
-    {'code': '00934',  'name': '中信成長高股息'},
-    {'code': '00939',  'name': '統一台灣高息動能'},
-    {'code': '00940',  'name': '元大台灣價值高息'},
-    {'code': '00692',  'name': '富邦公司治理'},
-    {'code': '00701',  'name': '國泰股利精選30'},
-    {'code': '00730',  'name': '富邦臺灣優質高息'},
-    {'code': '00731',  'name': 'FH富時高息低波'},
-    {'code': '00733',  'name': '富邦臺灣中小'},
-    {'code': '00770',  'name': '國泰北美科技'},
-    {'code': '00858',  'name': '永豐美國500大'},
-    {'code': '00875',  'name': '國泰網路資安'},
-    {'code': '00888',  'name': '永豐台灣ESG優質'},
-    {'code': '00891',  'name': '中信關鍵半導體'},
-    {'code': '00892',  'name': '富邦醫療'},
-    {'code': '00893',  'name': '國泰智能電動車'},
-    {'code': '00894',  'name': '中信小台灣精選'},
-    {'code': '00896',  'name': '中信綠能及電動車'},
-    {'code': '00904',  'name': '新光臺灣半導體30'},
-    {'code': '00905',  'name': 'FT臺灣Smart'},
-    {'code': '00912',  'name': '中信臺灣智慧50'},
-    {'code': '00913',  'name': '兆豐台灣晶圓製造'},
-    {'code': '00916',  'name': '國泰全球品牌50'},
-    {'code': '00917',  'name': '中信特選金融'},
-    {'code': '00918',  'name': '大華優利高填息30'},
-    {'code': '00920',  'name': '富邦ESG綠色電力'},
-    {'code': '00921',  'name': '兆豐龍頭等權重'},
-    {'code': '00922',  'name': '國泰台灣領袖50'},
-    {'code': '00923',  'name': '群益台ESG低碳50'},
-    {'code': '00926',  'name': '凱基全球菁英55'},
-    {'code': '00927',  'name': '群益半導體收益'},
-    {'code': '00932',  'name': '兆豐永續高息等權'},
-    {'code': '00935',  'name': '野村臺灣新科技50'},
-    {'code': '00936',  'name': '台新永續高息中小'},
-    {'code': '00938',  'name': '凱基優選30'},
-]
 import io
 import requests as _req
 
@@ -100,21 +47,7 @@ app.json = NumpyJSONProvider(app)
 DATA_DIR = get_data_dir()
 print(f"資料目錄: {DATA_DIR}")
 os.makedirs(DATA_DIR, exist_ok=True)
-
-# 三層快取管理器（本機 → GitHub → yfinance）
 cache_mgr = CacheManager(data_dir=DATA_DIR)
-
-# ── 記憶體快取版本戳記（Render 無狀態環境，不依賴磁碟檔案）──────
-_refresh_state = {
-    'status':     'idle',      # idle | running | done | error
-    'version':    '',
-    'updated_at': '',
-    'trigger':    '',
-    'success':    0,
-    'fail':       0,
-    'started_at': '',
-    'message':    '',
-}
 
 # 全域快取
 cached_results    = {}
@@ -414,418 +347,6 @@ def get_popular_stocks():
     return jsonify({'status': 'success', 'stocks': POPULAR_STOCKS})
 
 
-@app.route('/api/cache_version', methods=['GET'])
-def get_cache_version():
-    """
-    回傳後端快取版本戳記與更新進度。
-    前端每 5 分鐘輪詢，若版本有變化（表示排程已完成更新），
-    則清空 localStorage 快取，強制下次查詢重新載入最新資料。
-    status: idle | running | done | error
-    """
-    return jsonify({
-        'status':     'ok',
-        'version':    _refresh_state['version'],
-        'updated_at': _refresh_state['updated_at'],
-        'job_status': _refresh_state['status'],
-        'success':    _refresh_state['success'],
-        'fail':       _refresh_state['fail'],
-        'started_at': _refresh_state['started_at'],
-        'message':    _refresh_state['message'],
-    })
-
-
-@app.route('/api/hot_summary', methods=['POST'])
-def hot_summary():
-    """
-    批次回傳熱門股票/ETF 輕量摘要（供熱門面板表格使用）。
-
-    Request body: { "tickers": ["2330", "00878", ...] }  最多 55 支
-    Response:     { "status": "success", "data": { "2330": {...}, "00878": {...} } }
-
-    每支只回傳表格需要的 ~25 個欄位（< 1 KB），
-    比完整 /api/stock_analysis 小 95%（~80 KB）。
-
-    快取優先順序：
-      L1 記憶體 analysis_cache（5分鐘）→
-      L2 本機/GitHub CacheManager price CSV →
-      L3 完整 stock_analysis（最慢，降級備援）
-    多支股票以 ThreadPoolExecutor 平行處理，大幅縮短等待時間。
-    """
-    import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    try:
-        body    = request.get_json(force=True) or {}
-        tickers = [str(t).strip().upper() for t in body.get('tickers', [])[:55]]
-        if not tickers:
-            return jsonify({'status': 'error', 'message': 'tickers 不可為空'}), 400
-
-        result = {}
-        need_fetch = []   # 需要去 L2/L3 抓的
-
-        # ── L1：記憶體快取（免 I/O，最快）──────────────────────
-        for ticker in tickers:
-            ce = analysis_cache.get(ticker)
-            if ce and (time.time() - ce.get('ts', 0)) < 300:
-                result[ticker] = _extract_hot_summary(ce['data'])
-            else:
-                need_fetch.append(ticker)
-
-        # ── L2/L3：平行抓取（ThreadPoolExecutor）─────────────────
-        def _fetch_one(ticker):
-            """單支股票：先查 CacheManager price rows，再降級完整抓取"""
-            import time as _time
-            try:
-                # L2a：本機 price CSV（最快 I/O）
-                rows = cache_mgr.get_price(ticker, fetcher=None)
-                if rows and len(rows) >= 20:
-                    summary = _build_summary_from_rows(ticker, rows)
-                    if summary:
-                        return ticker, summary, None   # (ticker, summary, full_data)
-
-                # L2b：GitHub 快取（公開 raw 讀取）
-                try:
-                    from github_cache import _gh_raw_get
-                    content = _gh_raw_get(f"data/{ticker}/analysis.json")
-                    if content:
-                        full = json.loads(content)
-                        analysis_cache[ticker] = {'data': full, 'ts': _time.time()}
-                        return ticker, _extract_hot_summary(full), full
-                except Exception:
-                    pass
-
-                # L3：完整 yfinance 抓取（最慢，備援）
-                fetcher = ETFDataFetcher(output_dir=DATA_DIR)
-                raw = fetcher.fetch_stock_analysis(ticker)
-                if not raw or not raw.get('ohlcv'):
-                    return ticker, None, None
-
-                ohlcv      = raw['ohlcv']
-                indicators = raw.get('indicators', {})
-                info       = raw.get('info', {})
-                divs       = raw.get('dividend_data', [])
-
-                last = ohlcv[-1]
-                prev = ohlcv[-2] if len(ohlcv) >= 2 else last
-                change     = round(last['close'] - prev['close'], 2)
-                change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
-
-                annual_div = 0
-                if divs:
-                    one_yr_ago = (pd.Timestamp.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
-                    annual_div = sum(d['dividend'] for d in divs if d['date'] >= one_yr_ago)
-                div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
-
-                def last_val(lst):
-                    if not lst: return None
-                    return next((v for v in reversed(lst) if v is not None), None)
-
-                latest_ind = {k: last_val(indicators.get(k)) for k in
-                              ('ma5','ma10','ma20','ma60','ma120','ma200',
-                               'macd','macd_signal','rsi','k','d')}
-
-                recent60 = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
-                support  = round(min(r['low']  for r in recent60), 2)
-                resist   = round(max(r['high'] for r in recent60), 2)
-
-                trend          = _calc_trend(last['close'], latest_ind)
-                chip           = _estimate_chip(ohlcv, trend)
-                recommendation = _generate_recommendation(
-                    ticker, last['close'], latest_ind, trend, chip,
-                    info, div_yield, support, resist)
-
-                def to_lots(v): return max(1, round(v / 1000)) if v else 0
-                CHART_DAYS  = 1260
-                chart_ohlcv = ohlcv[-CHART_DAYS:] if len(ohlcv) > CHART_DAYS else ohlcv
-                chart_len   = len(chart_ohlcv)
-                offset      = len(ohlcv) - chart_len
-
-                def slice_ind(key):
-                    lst = indicators.get(key, [])
-                    return lst[offset:offset + chart_len] if len(lst) >= offset + chart_len else lst[-chart_len:]
-
-                full_data = {
-                    'ticker': ticker, 'name': raw.get('name', ticker),
-                    'source': raw.get('source', 'yfinance'),
-                    'is_simulated': raw.get('is_simulated', False),
-                    'latest': {
-                        'date': last['date'], 'open': last['open'],
-                        'high': last['high'], 'low': last['low'],
-                        'close': last['close'], 'volume': to_lots(last['volume']),
-                        'change': change, 'change_pct': change_pct,
-                    },
-                    'fundamentals': {
-                        'pe_ratio': info.get('pe_ratio'), 'pb_ratio': info.get('pb_ratio'),
-                        'div_yield': div_yield, 'annual_div': round(annual_div, 4),
-                        'eps': info.get('eps'), 'roe': info.get('roe'),
-                        'profit_margin': info.get('profit_margin'),
-                        'market_cap': info.get('market_cap'),
-                        'sector': info.get('sector', ''), 'industry': info.get('industry', ''),
-                        '52w_high': info.get('52w_high'), '52w_low': info.get('52w_low'),
-                        'description': info.get('description', ''),
-                    },
-                    'technical': {'latest': latest_ind, 'support': support,
-                                  'resist': resist, 'trend': trend},
-                    'chip': chip, 'recommendation': recommendation,
-                    'dividends': divs[-20:] if divs else [],
-                    'chart': {
-                        'dates':       [r['date']         for r in chart_ohlcv],
-                        'opens':       [r['open']         for r in chart_ohlcv],
-                        'highs':       [r['high']         for r in chart_ohlcv],
-                        'lows':        [r['low']          for r in chart_ohlcv],
-                        'closes':      [r['close']        for r in chart_ohlcv],
-                        'volumes':     [to_lots(r['volume']) for r in chart_ohlcv],
-                        'ma5':         slice_ind('ma5'),   'ma10': slice_ind('ma10'),
-                        'ma20':        slice_ind('ma20'),  'ma60': slice_ind('ma60'),
-                        'ma120':       slice_ind('ma120'), 'ma200': slice_ind('ma200'),
-                        'macd':        slice_ind('macd'),
-                        'macd_signal': slice_ind('macd_signal'),
-                        'macd_hist':   slice_ind('macd_hist'),
-                        'rsi':         slice_ind('rsi'),
-                        'k':           slice_ind('k'), 'd': slice_ind('d'),
-                    }
-                }
-                analysis_cache[ticker] = {'data': full_data, 'ts': _time.time()}
-                return ticker, _extract_hot_summary(full_data), full_data
-
-            except Exception as e:
-                print(f"  [hot_summary] {ticker} 失敗: {e}")
-                return ticker, None, None
-
-        # 最多 10 個 thread 並行（避免 yfinance 限流）
-        # timeout=25 防止單支股票抓取過慢拖垮整個請求，造成 Render 502
-        max_workers = min(10, len(need_fetch)) if need_fetch else 1
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(_fetch_one, t): t for t in need_fetch}
-            for fut in as_completed(futures, timeout=28):
-                try:
-                    ticker_done, summary, _ = fut.result(timeout=25)
-                    result[ticker_done] = summary
-                except Exception as e:
-                    ticker_done = futures[fut]
-                    print(f"  [hot_summary] {ticker_done} timeout/error: {e}")
-                    result[ticker_done] = None
-
-        # 確保回傳順序與請求一致（未抓到的補 None）
-        ordered = {t: result.get(t) for t in tickers}
-        return jsonify({'status': 'success', 'data': ordered})
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
-def _extract_hot_summary(data_out: dict) -> dict:
-    """
-    從完整 stock_analysis data_out 萃取熱門面板表格所需的輕量摘要。
-    對應前端 calcHotRow() 所需的全部欄位。
-    """
-    lat   = data_out.get('latest',   {})
-    tech  = data_out.get('technical', {}).get('latest', {})
-    rec   = data_out.get('recommendation', {})
-    fund  = data_out.get('fundamentals',   {})
-    trend = (data_out.get('technical') or {}).get('trend') or {}
-    chart = data_out.get('chart', {})
-
-    closes = chart.get('closes',  [])
-    opens  = chart.get('opens',   [])
-    vols   = chart.get('volumes', [])
-    n60    = min(60, len(closes))
-    up_days = down_days = flat_days = up_vol = down_vol = total_vol = 0
-    for i in range(len(closes) - n60, len(closes)):
-        diff = closes[i] - (opens[i] or closes[i])
-        v    = vols[i] or 0
-        total_vol += v
-        if   diff > 0: up_days   += 1; up_vol   += v
-        elif diff < 0: down_days += 1; down_vol += v
-        else:          flat_days += 1
-    up_vol_pct   = round(up_vol   / total_vol * 100) if total_vol else 0
-    down_vol_pct = round(down_vol / total_vol * 100) if total_vol else 0
-
-    ma5, ma20, ma60 = tech.get('ma5'), tech.get('ma20'), tech.get('ma60')
-    if ma5 and ma20 and ma60:
-        if   ma5 > ma20 > ma60: matrend =  1
-        elif ma5 < ma20 < ma60: matrend = -1
-        elif ma5 > ma20:        matrend =  2
-        else:                   matrend = -2
-    else:
-        matrend = 0
-
-    return {
-        'name':         data_out.get('name', ''),
-        'close':        lat.get('close'),
-        'change':       lat.get('change'),
-        'change_pct':   lat.get('change_pct'),
-        'volume':       lat.get('volume'),
-        'high':         lat.get('high'),
-        'low':          lat.get('low'),
-        'ma5':          ma5,
-        'ma10':         tech.get('ma10'),
-        'ma20':         ma20,
-        'ma60':         ma60,
-        'ma120':        tech.get('ma120'),
-        'ma200':        tech.get('ma200'),
-        'matrend':      matrend,
-        'updays':       up_days,
-        'downdays':     down_days,
-        'flatdays':     flat_days,
-        'upvolpct':     up_vol_pct,
-        'downvolpct':   down_vol_pct,
-        'rating':       rec.get('rating'),
-        'rating_score': rec.get('total_score', 0),
-        'rating_color': rec.get('rating_color', '#64748b'),
-        'rating_bg':    rec.get('rating_bg',    '#1e293b'),
-        'rating_icon':  rec.get('rating_icon',  ''),
-        'target_price': rec.get('target_price'),
-        'target_type':  rec.get('target_type',  'none'),
-        'trend_label':  trend.get('label', '--'),
-        'trend_color':  trend.get('color', '#94a3b8'),
-        'pe_ratio':     fund.get('pe_ratio'),
-        'div_yield':    fund.get('div_yield'),
-        'reasons_buy':  rec.get('reasons_buy',  []),
-        'reasons_sell': rec.get('reasons_sell', []),
-    }
-
-
-def _build_summary_from_rows(ticker: str, rows: list) -> dict | None:
-    """
-    從 CacheManager 回傳的 price rows 快速建立輕量摘要。
-    只需 price CSV 就能計算行情 + 均線 + 趨勢 + 初步評級，
-    不需完整 fundamentals/dividends 資料（那些欄位留 None）。
-    """
-    try:
-        ohlcv = []
-        for r in rows:
-            c = float(r.get('close', r.get('收盤價', 0)) or 0)
-            if c <= 0:
-                continue
-            ohlcv.append({
-                'date':   str(r.get('date',   r.get('日期',   ''))),
-                'open':   float(r.get('open',   r.get('開盤價', c))),
-                'high':   float(r.get('high',   r.get('最高價', c))),
-                'low':    float(r.get('low',    r.get('最低價', c))),
-                'close':  c,
-                'volume': int(float(r.get('volume', r.get('成交量', 0)) or 0)),
-            })
-        if len(ohlcv) < 20:
-            return None
-
-        indicators = calc_technical_indicators(ohlcv)
-
-        def last_val(lst):
-            if not lst: return None
-            return next((v for v in reversed(lst) if v is not None), None)
-
-        latest_ind = {k: last_val(indicators.get(k)) for k in
-                      ('ma5','ma10','ma20','ma60','ma120','ma200',
-                       'macd','macd_signal','rsi','k','d')}
-
-        last = ohlcv[-1]
-        prev = ohlcv[-2] if len(ohlcv) >= 2 else last
-        change     = round(last['close'] - prev['close'], 2)
-        change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
-
-        def to_lots(v): return max(1, round(v / 1000)) if v else 0
-
-        recent60  = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
-        support   = round(min(r['low']  for r in recent60), 2)
-        resist    = round(max(r['high'] for r in recent60), 2)
-        trend     = _calc_trend(last['close'], latest_ind)
-        chip      = _estimate_chip(ohlcv, trend)
-        rec       = _generate_recommendation(
-            ticker, last['close'], latest_ind, trend, chip,
-            {}, None, support, resist)   # info={}, div_yield=None（快速模式）
-
-        # 計算 matrend
-        ma5, ma20, ma60 = latest_ind.get('ma5'), latest_ind.get('ma20'), latest_ind.get('ma60')
-        if ma5 and ma20 and ma60:
-            if   ma5 > ma20 > ma60: matrend =  1
-            elif ma5 < ma20 < ma60: matrend = -1
-            elif ma5 > ma20:        matrend =  2
-            else:                   matrend = -2
-        else:
-            matrend = 0
-
-        # 計算 60 日漲跌統計
-        closes_60 = [r['close'] for r in recent60]
-        opens_60  = [r['open']  for r in recent60]
-        vols_60   = [r['volume'] for r in recent60]
-        n60 = len(closes_60)
-        up_days = down_days = flat_days = up_vol = down_vol = total_vol = 0
-        for i in range(n60):
-            diff = closes_60[i] - opens_60[i]
-            v    = vols_60[i]
-            total_vol += v
-            if   diff > 0: up_days   += 1; up_vol   += v
-            elif diff < 0: down_days += 1; down_vol += v
-            else:          flat_days += 1
-        up_vol_pct   = round(up_vol   / total_vol * 100) if total_vol else 0
-        down_vol_pct = round(down_vol / total_vol * 100) if total_vol else 0
-
-        return {
-            'name':         ticker,   # price CSV 無名稱，前端 STOCK_NAMES_ZH 補
-            'close':        last['close'],
-            'change':       change,
-            'change_pct':   change_pct,
-            'volume':       to_lots(last['volume']),
-            'high':         last['high'],
-            'low':          last['low'],
-            'ma5':          ma5,
-            'ma10':         latest_ind.get('ma10'),
-            'ma20':         ma20,
-            'ma60':         ma60,
-            'ma120':        latest_ind.get('ma120'),
-            'ma200':        latest_ind.get('ma200'),
-            'matrend':      matrend,
-            'updays':       up_days,
-            'downdays':     down_days,
-            'flatdays':     flat_days,
-            'upvolpct':     up_vol_pct,
-            'downvolpct':   down_vol_pct,
-            'rating':       rec.get('rating'),
-            'rating_score': rec.get('total_score', 0),
-            'rating_color': rec.get('rating_color', '#64748b'),
-            'rating_bg':    rec.get('rating_bg',    '#1e293b'),
-            'rating_icon':  rec.get('rating_icon',  ''),
-            'target_price': rec.get('target_price'),
-            'target_type':  rec.get('target_type',  'none'),
-            'trend_label':  trend.get('label', '--'),
-            'trend_color':  trend.get('color', '#94a3b8'),
-            'pe_ratio':     None,   # 需完整抓取才有
-            'div_yield':    None,
-            'reasons_buy':  rec.get('reasons_buy',  []),
-            'reasons_sell': rec.get('reasons_sell', []),
-        }
-    except Exception as e:
-        print(f"  [_build_summary_from_rows] {ticker} 失敗: {e}")
-        return None
-
-
-@app.route('/api/stock_cache/<ticker>', methods=['GET'])
-def get_stock_cache(ticker):
-    """
-    前端三層快取的 GitHub 讀取層。
-    前端 ghStockCacheLoad() 呼叫此 API 讀取 GitHub 快取的完整 stock_analysis 資料。
-    回傳格式：
-      有快取 → { status:'cached', data:{...} }
-      無快取 → { status:'not_found' }
-    """
-    ticker = ticker.upper().strip()
-    if not ticker:
-        return jsonify({'status': 'error', 'message': '請提供股票代碼'}), 400
-    try:
-        from github_cache import _gh_raw_get
-        import json as _json
-        content = _gh_raw_get(f"data/{ticker}/analysis.json")
-        if content:
-            cached_data = _json.loads(content)
-            return jsonify({'status': 'cached', 'data': cached_data})
-        return jsonify({'status': 'not_found'})
-    except Exception as e:
-        print(f"  [stock_cache] {ticker} 讀取失敗: {e}")
-        return jsonify({'status': 'not_found'})
-
-
 @app.route('/api/stock_analysis/<ticker>', methods=['GET'])
 def get_stock_analysis(ticker):
     """
@@ -873,6 +394,42 @@ def get_stock_analysis(ticker):
         indicators = raw.get('indicators', {})
         info       = raw.get('info', {})
         divs       = raw.get('dividend_data', [])
+
+        # ── ★ 同步寫入 GitHub 快取（三層持久化）────────────────
+        # data_fetcher 內部的舊版 _gh_cache 僅在 enabled 時寫入；
+        # 這裡再透過新版 CacheManager 確保本機 meta 時間戳記正確更新，
+        # 並補充 gh_save 以防 data_fetcher 那層因 token 未設定而略過。
+        if raw.get('source') != 'simulated' and not raw.get('is_simulated', False):
+            try:
+                from github_cache import local_save_price, gh_save_price, \
+                                        local_save_dividend, gh_save_dividend, \
+                                        local_save_fundamental, gh_save_fundamental
+                # 股價（統一為英文欄位存檔）
+                price_list = [
+                    {'date': str(r['date'])[:10],
+                     'open':   round(float(r.get('open',   r.get('close', 0))), 2),
+                     'high':   round(float(r.get('high',   r.get('close', 0))), 2),
+                     'low':    round(float(r.get('low',    r.get('close', 0))), 2),
+                     'close':  round(float(r['close']), 2),
+                     'volume': int(r.get('volume', 0))}
+                    for r in ohlcv if r.get('close')
+                ]
+                if price_list:
+                    local_save_price(DATA_DIR, ticker, price_list)
+                    gh_save_price(ticker, price_list)
+
+                # 配息
+                if divs:
+                    local_save_dividend(DATA_DIR, ticker, divs)
+                    gh_save_dividend(ticker, divs)
+
+                # 基本面
+                if info:
+                    local_save_fundamental(DATA_DIR, ticker, info)
+                    gh_save_fundamental(ticker, info)
+
+            except Exception as e_cache:
+                print(f'  [stock_analysis] 快取寫入失敗（非致命）: {e_cache}')
 
         # ── 若 yfinance 缺少基本面資料，從 TWSE/MOPS 補充 ──────
         needs_supplement = (
@@ -1062,19 +619,6 @@ def get_stock_analysis(ticker):
         }
 
         analysis_cache[ticker] = {'data': data_out, 'ts': time.time()}
-
-        # 同步寫入 GitHub analysis.json（供前端 ghStockCacheLoad 快取讀取）
-        try:
-            from github_cache import _gh_writer
-            import json as _json_gh
-            _gh_writer.put(
-                f"data/{ticker}/analysis.json",
-                _json_gh.dumps(data_out, ensure_ascii=False),
-                f"analysis: {ticker} {pd.Timestamp.now().date()}"
-            )
-        except Exception as _e_gh:
-            print(f"  [stock_analysis] GitHub analysis.json 同步失敗（非致命）: {{_e_gh}}")
-
         return jsonify({'status': 'success', 'data': data_out})
 
     except Exception as e:
@@ -2194,50 +1738,29 @@ def efficient_frontier():
         if len(tickers) > 15:
             return jsonify({'status':'error','message':'最多支援15支股票'}), 400
 
-        # ── 初始化 GitHub 快取 ───────────────────────────────
-        try:
-            from github_cache import GitHubCache
-            _ef_gh = GitHubCache()
-        except ImportError:
-            _ef_gh = None
+        # ── 初始化：移除舊版獨立 GitHubCache 實例，改用全域 cache_mgr ──
+        # （cache_mgr 已在模組頂層建立，三層快取邏輯統一由它管理）
 
-        # ── L1: Render /tmp 快取 ─────────────────────────────
+        # ── L1 + L2：透過 cache_mgr 統一取得（本機 → GitHub）────
         prices = {}
         cached_from = {}
         for tk in tickers:
-            tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
-            if os.path.exists(tmp_path):
+            rows = cache_mgr.get_price(tk, fetcher=None)  # fetcher=None：不觸發 L3 網路
+            if rows and len(rows) >= 20:
                 try:
-                    tmp_df    = pd.read_csv(tmp_path, encoding='utf-8-sig')
-                    date_col  = next((c for c in tmp_df.columns if c in ['日期','date','Date']), None)
-                    close_col = next((c for c in tmp_df.columns if c in ['收盤價','close','Close']), None)
-                    if date_col and close_col and len(tmp_df) >= 20:
+                    # 相容 ohlcv 格式（含 open/high/low）與簡化格式（僅 date/close）
+                    date_col  = next((c for c in rows[0] if c in ['日期', 'date', 'Date']), None)
+                    close_col = next((c for c in rows[0] if c in ['收盤價', 'close', 'Close']), None)
+                    if date_col and close_col:
                         s = pd.Series(
-                            tmp_df[close_col].values,
-                            index=pd.to_datetime(tmp_df[date_col])
-                        ).dropna()
-                        prices[tk] = s
-                        cached_from[tk] = '/tmp'
-                except Exception:
-                    pass
-
-        # ── L2: GitHub 持久化快取 ────────────────────────────
-        for tk in tickers:
-            if tk in prices:
-                continue
-            if _ef_gh and _ef_gh.enabled and _ef_gh.is_fresh(tk, 'price'):
-                rows = _ef_gh.load_price(tk)
-                if rows and len(rows) >= 20:
-                    try:
-                        s = pd.Series(
-                            [float(r.get('close', r.get('收盤價', 0))) for r in rows],
-                            index=pd.to_datetime([r.get('date', r.get('日期','')) for r in rows])
+                            [float(r[close_col]) for r in rows],
+                            index=pd.to_datetime([r[date_col] for r in rows])
                         ).dropna()
                         if len(s) >= 20:
                             prices[tk] = s
-                            cached_from[tk] = 'GitHub'
-                    except Exception:
-                        pass
+                            cached_from[tk] = 'local/github'
+                except Exception:
+                    pass
 
         need_fetch = [tk for tk in tickers if tk not in prices]
         if cached_from:
@@ -2311,28 +1834,22 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # 存快取
+            # 存快取（使用 cache_mgr 統一格式：英文欄位 date/close）
             for tk in need_fetch:
                 if tk not in prices:
                     continue
                 price_series = prices[tk]
                 try:
-                    tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
-                    pdf = price_series.reset_index()
-                    pdf.columns = ['日期', '收盤價']
-                    pdf['日期'] = pdf['日期'].astype(str).str[:10]
-                    pdf.to_csv(tmp_path, index=False, encoding='utf-8-sig')
-                except Exception as e_tmp:
-                    print(f"  [EF] /tmp 存檔 {tk} 失敗: {e_tmp}")
-                if _ef_gh and _ef_gh.enabled:
-                    try:
-                        price_list = [
-                            {'date': str(d)[:10], 'close': round(float(v), 2)}
-                            for d, v in price_series.items() if pd.notna(v)
-                        ]
-                        _ef_gh.save_price(tk, price_list)
-                    except Exception as e_gh:
-                        print(f"  [EF] GitHub {tk} 失敗: {e_gh}")
+                    price_list = [
+                        {'date': str(d)[:10], 'close': round(float(v), 2)}
+                        for d, v in price_series.items() if pd.notna(v)
+                    ]
+                    # local_save_price 同時更新 meta 時間戳記，確保 is_local_fresh() 正確判斷
+                    from github_cache import local_save_price, gh_save_price
+                    local_save_price(DATA_DIR, tk, price_list)
+                    gh_save_price(tk, price_list)
+                except Exception as e_save:
+                    print(f"  [EF] 存快取 {tk} 失敗: {e_save}")
 
         if failed:
             return jsonify({'status':'error',
@@ -2890,193 +2407,6 @@ def claude_proxy():
         return jsonify({'error': str(e)}), 500
 
 
-# ═══════════════════════════════════════════════════════════════
-# AI 財務健診報告 API（每日 13:30 起算限制一次；GitHub 持久化）
-# GET  /api/ai_report/<ticker>  → 讀取快取（若有效則直接回傳）
-# POST /api/ai_report/<ticker>  → 呼叫 Claude API 並儲存至 GitHub
-# ═══════════════════════════════════════════════════════════════
-
-def _ai_report_period_key():
-    """
-    回傳當前「報告期間」識別字串。
-    規則：台灣時間每日 13:30 起算為新的一天。
-      - 13:30 前 → 屬於「前一日 13:30 起的那個期間」
-      - 13:30 後 → 屬於「今日 13:30 起的期間」
-    格式：YYYYMMDD（期間開始日期）
-    """
-    import pytz
-    tz_tw = pytz.timezone('Asia/Taipei')
-    now_tw = datetime.now(tz_tw)
-    cutoff = now_tw.replace(hour=13, minute=30, second=0, microsecond=0)
-    if now_tw < cutoff:
-        # 還沒到今天 13:30，屬於昨天的那個期間
-        period_date = (now_tw - timedelta(days=1)).date()
-    else:
-        period_date = now_tw.date()
-    return period_date.strftime('%Y%m%d')
-
-
-def _ai_report_gh_path(ticker: str, period_key: str) -> str:
-    return f"ai_reports/{ticker}/{period_key}.json"
-
-
-def _ai_report_read_gh(ticker: str, period_key: str):
-    """從 GitHub 讀取 AI 報告，回傳 dict 或 None"""
-    try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if not gh.enabled:
-            return None
-        path = _ai_report_gh_path(ticker, period_key)
-        content, _ = gh._get(path)
-        if content:
-            return json.loads(content)
-    except Exception as e:
-        print(f"  [AI Report] GitHub 讀取失敗: {e}")
-    return None
-
-
-def _ai_report_write_gh(ticker: str, period_key: str, data: dict):
-    """將 AI 報告寫入 GitHub"""
-    try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if not gh.enabled:
-            return False
-        path = _ai_report_gh_path(ticker, period_key)
-        gh._put(path, json.dumps(data, ensure_ascii=False, indent=2),
-                f"ai_report: {ticker} {period_key}")
-        print(f"  [AI Report] ✅ {ticker} 報告已寫入 GitHub（期間 {period_key}）")
-        return True
-    except Exception as e:
-        print(f"  [AI Report] ❌ GitHub 寫入失敗: {e}")
-        return False
-
-
-@app.route('/api/ai_report/<ticker>', methods=['GET'])
-def ai_report_get(ticker):
-    """
-    讀取 AI 財務健診報告（優先 GitHub 快取）
-    回傳：
-      { status:'cached', data:{...}, period_key:'YYYYMMDD', used:true/false }
-      { status:'not_found', period_key:'YYYYMMDD' }
-    """
-    try:
-        ticker = ticker.strip().upper()
-        period_key = _ai_report_period_key()
-
-        # 1. 先查 GitHub
-        cached = _ai_report_read_gh(ticker, period_key)
-        if cached:
-            return jsonify({
-                'status': 'cached',
-                'period_key': period_key,
-                'used': True,
-                'data': cached
-            })
-
-        # 2. 無快取 → 告知前端尚未查詢
-        return jsonify({
-            'status': 'not_found',
-            'period_key': period_key,
-            'used': False
-        })
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
-@app.route('/api/ai_report/<ticker>', methods=['POST'])
-def ai_report_post(ticker):
-    """
-    呼叫 Claude API 產生 AI 財務健診報告，並存入 GitHub。
-    每個期間（13:30 起算）只能成功產生一次；已有快取時直接回傳快取，不重複扣費。
-    """
-    import requests as req
-
-    ticker = ticker.strip().upper()
-    period_key = _ai_report_period_key()
-
-    # ── 1. 若 GitHub 已有快取，直接回傳，不重新呼叫 ──────────────
-    cached = _ai_report_read_gh(ticker, period_key)
-    if cached:
-        return jsonify({
-            'status': 'cached',
-            'period_key': period_key,
-            'used': True,
-            'data': cached
-        })
-
-    # ── 2. 取得 Claude API Key ────────────────────────────────────
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
-    if not api_key:
-        return jsonify({'status': 'error', 'message': '伺服器未設定 ANTHROPIC_API_KEY'}), 500
-
-    # ── 3. 從前端接收 prompt ──────────────────────────────────────
-    try:
-        body = request.get_json(force=True)
-        messages = body.get('messages', [])
-        model    = body.get('model', 'claude-sonnet-4-20250514')
-        max_tokens = int(body.get('max_tokens', 1500))
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'請求格式錯誤: {e}'}), 400
-
-    if not messages:
-        return jsonify({'status': 'error', 'message': 'messages 不可為空'}), 400
-
-    # ── 4. 呼叫 Claude API ───────────────────────────────────────
-    try:
-        resp = req.post(
-            'https://api.anthropic.com/v1/messages',
-            headers={
-                'Content-Type':      'application/json',
-                'x-api-key':         api_key,
-                'anthropic-version': '2023-06-01',
-            },
-            json={
-                'model':      model,
-                'max_tokens': max_tokens,
-                'messages':   messages,
-            },
-            timeout=90
-        )
-        if not resp.ok:
-            return jsonify({'status': 'error',
-                            'message': f'Claude API 回應 {resp.status_code}',
-                            'detail':  resp.text[:300]}), resp.status_code
-
-        ai_json = resp.json()
-        ai_text = ''
-        for block in ai_json.get('content', []):
-            if block.get('type') == 'text':
-                ai_text += block['text']
-
-        if not ai_text.strip():
-            return jsonify({'status': 'error', 'message': '取得的 AI 分析內容為空'}), 500
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-    # ── 5. 儲存至 GitHub ─────────────────────────────────────────
-    import pytz
-    tz_tw   = pytz.timezone('Asia/Taipei')
-    now_tw  = datetime.now(tz_tw)
-    report_data = {
-        'ticker':      ticker,
-        'period_key':  period_key,
-        'generated_at': now_tw.isoformat(),
-        'report_text': ai_text,
-    }
-    _ai_report_write_gh(ticker, period_key, report_data)
-
-    return jsonify({
-        'status':     'generated',
-        'period_key': period_key,
-        'used':       True,
-        'data':       report_data
-    })
-
 
 @app.route('/api/finreport/<ticker>', methods=['GET'])
 def get_finreport(ticker):
@@ -3294,62 +2624,22 @@ def _fetch_finreport(ticker: str) -> dict:
 
     result['ratios']['annual'] = ratios_annual
 
-    # 季報衍生比率（完整版，與年報欄位一致）
+    # 季報衍生比率（簡版）
     ratios_q = []
     for row in result['quarterly'].get('income', []):
         period = row.get('period', '')
-        rev    = row.get('total_revenue')    or row.get('totalrevenue')
-        gp     = row.get('gross_profit')     or row.get('grossprofit')
-        op_q   = row.get('operating_income') or row.get('ebit')
-        ni     = row.get('net_income') or row.get('netincome') or row.get('net_income_common_stockholders')
-
+        rev  = row.get('total_revenue') or row.get('totalrevenue')
+        gp   = row.get('gross_profit')  or row.get('grossprofit')
+        ni   = row.get('net_income') or row.get('netincome') or row.get('net_income_common_stockholders')
         def pct(a, b):
             fa, fb = safe_float(a), safe_float(b)
             if fa is None or fb is None or fb == 0: return None
             return round(fa / fb * 100, 2)
-
-        # 對應季報資產負債表
-        bal_row_q    = next((b for b in result['quarterly'].get('balance', [])  if b.get('period') == period), {})
-        equity_q     = bal_row_q.get('stockholders_equity') or bal_row_q.get('common_stock_equity') or bal_row_q.get('total_equity_gross_minority_interest')
-        assets_q     = bal_row_q.get('total_assets')        or bal_row_q.get('totalassets')
-        total_liab_q = bal_row_q.get('total_liabilities_net_minority_interest') or bal_row_q.get('total_liabilities')
-        cur_assets_q = bal_row_q.get('current_assets')      or bal_row_q.get('total_current_assets')
-        cur_liab_q   = bal_row_q.get('current_liabilities') or bal_row_q.get('total_current_liabilities')
-
-        # 對應季報現金流量表
-        cf_row_q = next((c for c in result['quarterly'].get('cashflow', []) if c.get('period') == period), {})
-        op_cf_q  = cf_row_q.get('operating_cash_flow') or cf_row_q.get('cash_from_operating_activities') or cf_row_q.get('total_cash_from_operating_activities')
-        cap_ex_q = cf_row_q.get('capital_expenditure')  or cf_row_q.get('capital_expenditures')
-
-        # 流動比率
-        cur_ratio_q = None
-        ca_f, cl_f = safe_float(cur_assets_q), safe_float(cur_liab_q)
-        if ca_f and cl_f and cl_f != 0:
-            cur_ratio_q = round(ca_f / cl_f, 2)
-
-        # 自由現金流
-        fcf_q = None
-        o_f, c_f = safe_float(op_cf_q), safe_float(cap_ex_q)
-        if o_f is not None and c_f is not None:
-            fcf_q = round(o_f - abs(c_f), 2)
-
         ratios_q.append({
-            'period':         period,
-            'revenue_b':      safe_float(rev),
-            'gross_profit_b': safe_float(gp),
-            'op_income_b':    safe_float(op_q),
-            'net_income_b':   safe_float(ni),
-            'op_cashflow_b':  safe_float(op_cf_q),
-            'fcf_b':          fcf_q,
-            'gpm':            pct(gp,   rev),
-            'opm':            pct(op_q, rev),
-            'npm':            pct(ni,   rev),
-            'roe':            pct(ni,   equity_q),
-            'roa':            pct(ni,   assets_q),
-            'debt_ratio':     pct(total_liab_q, assets_q),
-            'cur_ratio':      cur_ratio_q,
-            'equity_b':       safe_float(equity_q),
-            'assets_b':       safe_float(assets_q),
+            'period':      period,
+            'revenue_b':   safe_float(rev),
+            'net_income_b':safe_float(ni),
+            'gpm':         pct(gp, rev),
         })
     result['ratios']['quarterly'] = ratios_q
 
@@ -3435,6 +2725,104 @@ def _fetch_mops_finreport(ticker: str, headers: dict) -> dict:
     return result if result['annual']['income'] else None
 
 
+# ═══════════════════════════════════════════════════════════════
+# GitHub 快取診斷 API
+# GET /api/cache_status
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/cache_status', methods=['GET'])
+def cache_status():
+    """
+    診斷 GitHub 快取設定狀態。
+    瀏覽器開啟此 URL 即可確認 token 是否正確設定。
+    回傳：
+      - token_set      : GH_CACHE_TOKEN 是否已設定
+      - token_valid    : token 是否通過 GitHub API 驗證
+      - repo           : 目標 Repo
+      - branch         : 目標分支
+      - write_enabled  : 寫入功能是否啟用
+      - local_data_dir : 本機快取目錄
+      - local_files    : 本機快取檔案數量
+      - github_data_readable : GitHub data/ 目錄是否可讀
+    """
+    import requests as _req
+    from github_cache import GITHUB_REPO, GITHUB_BRANCH, _gh_writer, _gh_raw_get
+
+    token = os.environ.get('GH_CACHE_TOKEN', '')
+    token_set = bool(token)
+    token_valid = False
+    repo_accessible = False
+    github_data_readable = False
+    http_status = None
+
+    if token_set:
+        try:
+            r = _req.get(
+                f'https://api.github.com/repos/{GITHUB_REPO}',
+                headers={
+                    'Authorization': f'token {token}',
+                    'Accept': 'application/vnd.github.v3+json'
+                },
+                timeout=8
+            )
+            http_status = r.status_code
+            token_valid = (r.status_code == 200)
+            repo_accessible = token_valid
+        except Exception as e:
+            http_status = f'例外: {e}'
+
+    # 測試 GitHub data/ 目錄是否可讀（不需 token，public repo）
+    test_content = _gh_raw_get('data/readme.txt')
+    github_data_readable = test_content is not None
+
+    # 本機快取檔案統計
+    local_files = []
+    try:
+        for f in os.listdir(DATA_DIR):
+            if f.endswith(('_price.csv', '_dividend.csv', '_fundamental.json', '_meta.json')):
+                local_files.append(f)
+    except Exception:
+        pass
+
+    result = {
+        'status': 'ok',
+        'github': {
+            'repo':                  GITHUB_REPO,
+            'branch':                GITHUB_BRANCH,
+            'token_set':             token_set,
+            'token_valid':           token_valid,
+            'write_enabled':         _gh_writer.enabled,
+            'github_api_http':       http_status,
+            'github_data_readable':  github_data_readable,
+        },
+        'local': {
+            'data_dir':   DATA_DIR,
+            'file_count': len(local_files),
+            'files':      sorted(local_files)[:30],  # 最多顯示30筆
+        },
+        'diagnosis': [],
+    }
+
+    # 自動診斷建議
+    diag = result['diagnosis']
+    if not token_set:
+        diag.append('❌ GH_CACHE_TOKEN 未設定 → GitHub 寫入完全停用')
+        diag.append('   修復：Render Dashboard → Environment → 新增 GH_CACHE_TOKEN=ghp_xxx')
+    elif not token_valid:
+        diag.append(f'❌ Token 驗證失敗（HTTP {http_status}）→ 請重新產生 GitHub PAT')
+        diag.append('   GitHub → Settings → Developer settings → Personal access tokens')
+        diag.append('   需要權限：Contents: Read and write（Fine-grained）或 repo（Classic）')
+    else:
+        diag.append('✅ GitHub Token 正常，寫入功能已啟用')
+
+    if not github_data_readable:
+        diag.append('⚠️  GitHub data/ 目錄不可讀（可能 data/readme.txt 不存在，屬正常首次狀態）')
+
+    if len(local_files) == 0:
+        diag.append('⚠️  本機快取目前為空（Render 重啟後正常，需等待首次 API 呼叫觸發寫入）')
+
+    return jsonify(result)
+
 
 # ═══════════════════════════════════════════════════════════════
 # 自選股 API（後端持久化儲存）
@@ -3446,9 +2834,7 @@ WL_FILE = os.path.join(DATA_DIR, 'watchlist.json')
 
 def _wl_read() -> list:
     """讀取自選股代碼清單（含 GitHub Cache 備援）"""
-    import threading
-
-    # 1. 先從本地磁碟讀（快速路徑，不阻塞）
+    # 1. 先從本地磁碟讀
     if os.path.exists(WL_FILE):
         try:
             with open(WL_FILE, 'r', encoding='utf-8') as f:
@@ -3456,34 +2842,20 @@ def _wl_read() -> list:
                 return data.get('codes', [])
         except Exception:
             pass
-
-    # 2. 本地沒有，從 GitHub Cache 還原（帶 5 秒 timeout，避免阻塞 HTTP request）
-    result_holder = []
-
-    def _gh_restore():
-        try:
-            from github_cache import GitHubCache
-            gh = GitHubCache()
-            if gh.enabled:
-                content, _ = gh._get('watchlist/watchlist.json')
-                if content:
-                    data = json.loads(content)
-                    codes = data.get('codes', [])
-                    result_holder.extend(codes)
-                    _wl_write(codes)   # 回寫本地，下次直接讀磁碟
-                    print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
-        except Exception as e:
-            print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
-
-    t = threading.Thread(target=_gh_restore, daemon=True)
-    t.start()
-    t.join(timeout=5)   # 最多等 5 秒，超時直接回傳空清單
-
-    if not t.is_alive() and result_holder:
-        return result_holder
-
-    if t.is_alive():
-        print("  [自選股] GitHub 備援逾時（5s），回傳空清單")
+    # 2. 本地沒有，從 GitHub Cache 還原
+    try:
+        from github_cache import _gh_raw_get
+        import json as _json
+        content = _gh_raw_get('watchlist/watchlist.json')
+        if content:
+            data = _json.loads(content)
+            codes = data.get('codes', [])
+            # 回寫本地
+            _wl_write(codes)
+            print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
+            return codes
+    except Exception as e:
+        print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
     return []
 
 def _wl_write(codes: list):
@@ -3500,12 +2872,13 @@ def _wl_write(codes: list):
         print(f"  [自選股] 本地寫入失敗: {e}")
     # 同步 GitHub Cache（非同步不阻塞，失敗 silent）
     try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if gh.enabled:
-            gh._put('watchlist/watchlist.json',
-                    json.dumps(payload, ensure_ascii=False),
-                    f'watchlist: {len(unique)} stocks')
+        from github_cache import _gh_writer
+        if _gh_writer.enabled:
+            _gh_writer.put(
+                'watchlist/watchlist.json',
+                json.dumps(payload, ensure_ascii=False),
+                f'watchlist: {len(unique)} stocks'
+            )
     except Exception as e:
         print(f"  [自選股] GitHub 備份失敗（非致命）: {e}")
 
@@ -3563,175 +2936,48 @@ def watchlist_remove():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-# ═══════════════════════════════════════════════════════════════
-# ★ 背景排程啟動（模組層級 — Gunicorn / Render 環境必須放在這裡）
-#
-# 問題根因：Render 以 "gunicorn app:app" 啟動，是 import 模組，
-# 而非執行 python app.py，因此 if __name__ == '__main__' 內的程式碼
-# 永遠不會被執行 → 排程器從未啟動 → 資料永遠停在舊快取。
-#
-# 修正：將 start_scheduler 移至模組層級（任何 import 都會執行），
-# 並以環境變數 _SCHEDULER_STARTED 防止 Gunicorn 多 worker 重複啟動。
-#
-# 排程內容（每交易日 16:00 台灣時間自動執行）：
-#   1. 熱門股票（POPULAR_STOCKS）   → yfinance 重新抓取 → 更新 GitHub
-#   2. 熱門 ETF（POPULAR_ETF）      → yfinance 重新抓取 → 更新 GitHub
-#   3. 自選股（watchlist）          → yfinance 重新抓取 → 更新 GitHub
-#   4. 寫入 cache_version.json      → 通知前端清除 localStorage 快取
-# ═══════════════════════════════════════════════════════════════
-def _build_popular_stocks_list():
-    """將 POPULAR_STOCKS 統一轉為代碼字串清單（相容 dict / list 兩種格式）"""
-    if isinstance(POPULAR_STOCKS, dict):
-        return list(POPULAR_STOCKS.keys())
-    return [s['code'] if isinstance(s, dict) else str(s) for s in POPULAR_STOCKS]
+# ── 排程器：延遲啟動（避免阻塞 Render 啟動健康檢查）──────────
+_scheduler_started = False  # 防止同一 process 重複啟動
 
-
-if not os.environ.get('_SCHEDULER_STARTED'):
-    os.environ['_SCHEDULER_STARTED'] = '1'
+def _init_scheduler():
+    """
+    啟動背景排程器。
+    ★ 改為延遲啟動：由 @app.before_request 在第一次請求時觸發，
+      避免 gunicorn/Render 啟動時因初始化耗時而 Timed Out。
+    """
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    _scheduler_started = True   # 先設旗標，防止多執行緒重入
     try:
-        _popular_stock_codes = _build_popular_stocks_list()
-        _popular_etf_codes   = [e['code'] for e in POPULAR_ETF]
-
-        print("=" * 60)
-        print(f"[Scheduler] 啟動背景排程（每交易日 16:00 台灣時間）")
-        print(f"[Scheduler] 熱門股票 {len(_popular_stock_codes)} 支 ／"
-              f" 熱門ETF {len(_popular_etf_codes)} 支")
-        print("=" * 60)
-
+        # 修正：POPULAR_STOCKS 是 list[dict]，需提取 'code' 欄位
+        if POPULAR_STOCKS and isinstance(POPULAR_STOCKS[0], dict):
+            pop_codes = [s['code'] for s in POPULAR_STOCKS]
+        else:
+            pop_codes = list(POPULAR_STOCKS)
         start_scheduler(
             cache=cache_mgr,
             fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
             watchlist_reader=_wl_read,
-            popular_stocks=_popular_stock_codes,
-            popular_etfs=_popular_etf_codes,
+            popular_stocks=pop_codes,
         )
-    except Exception as _sched_err:
-        print(f"[Scheduler] ⚠️  排程器啟動失敗（非致命）: {_sched_err}")
-else:
-    print("[Scheduler] ℹ️  排程器已由另一 worker 啟動，略過重複初始化")
+        print("  [App] ✅ 排程器已啟動（首次請求觸發）")
+    except Exception as e:
+        print(f"  [App] ⚠️  排程器啟動失敗（非致命）: {e}")
+        _scheduler_started = False   # 失敗時重置，允許下次重試
 
 
-# ═══════════════════════════════════════════════════════════════
-# 手動觸發排程更新 API（供 cron-job.org 或管理員呼叫）
-# GET/POST /api/admin/refresh_cache?secret=YOUR_SECRET
-# ═══════════════════════════════════════════════════════════════
-@app.route('/api/admin/refresh_cache', methods=['GET', 'POST'])
-def admin_refresh_cache():
-    """
-    手動觸發全量快取更新（熱門股票 + 熱門ETF + 自選股）。
-    可搭配 cron-job.org 在收盤後呼叫，作為排程器的保險備援。
+@app.before_request
+def _lazy_init():
+    """第一次 HTTP 請求時啟動排程器（延遲初始化，避免阻塞 Render 啟動）"""
+    if not _scheduler_started:
+        _init_scheduler()
 
-    安全保護：需帶 secret 參數，與環境變數 ADMIN_SECRET 比對。
-    若未設定 ADMIN_SECRET，則僅限本機（127.0.0.1）呼叫。
-    """
-    import threading as _th
 
-    admin_secret = os.environ.get('ADMIN_SECRET', '')
-    req_secret   = request.args.get('secret', '') or (request.get_json(silent=True) or {}).get('secret', '')
-
-    # 安全驗證
-    if admin_secret:
-        if req_secret != admin_secret:
-            return jsonify({'status': 'error', 'message': '未授權'}), 403
-    else:
-        # 未設定 ADMIN_SECRET → 只接受 localhost
-        remote = request.remote_addr or ''
-        if remote not in ('127.0.0.1', '::1', 'localhost'):
-            return jsonify({'status': 'error', 'message': '請設定 ADMIN_SECRET 環境變數以允許遠端呼叫'}), 403
-
-    def _do_refresh():
-        """在背景執行緒中執行全量更新，避免 HTTP 請求逾時"""
-        import time as _time
-        _refresh_state['status']     = 'running'
-        _refresh_state['started_at'] = pd.Timestamp.now().isoformat()
-        _refresh_state['success']    = 0
-        _refresh_state['fail']       = 0
-        _refresh_state['message']    = '更新中...'
-        try:
-            from github_cache import CacheManager as _CM
-            fetcher = ETFDataFetcher(output_dir=DATA_DIR)
-
-            # 合併所有需更新的代碼（去重）
-            stocks = _build_popular_stocks_list()
-            etfs   = [e['code'] for e in POPULAR_ETF]
-            wl     = []
-            try:
-                wl = _wl_read() or []
-            except Exception:
-                pass
-
-            all_tickers = list(dict.fromkeys(stocks + etfs + wl))  # 保序去重
-            total = len(all_tickers)
-            _refresh_state['message'] = f'共 {total} 支（股票{len(stocks)} ETF{len(etfs)} 自選股{len(wl)}）'
-            print(f"[admin_refresh] 開始更新 {total} 支（"
-                  f"熱門股票{len(stocks)} ＋ ETF{len(etfs)} ＋ 自選股{len(wl)}）")
-
-            success = fail = 0
-            for tk in all_tickers:
-                try:
-                    result = fetcher.fetch_stock_analysis(tk)
-                    if result and result.get('ohlcv'):
-                        # 強制寫入 GitHub（不依賴快取判斷）
-                        if hasattr(cache_mgr, 'force_refresh'):
-                            cache_mgr.force_refresh(tk, fetcher, data_types=['price', 'dividend', 'fundamental'])
-                        # 清除記憶體快取，確保下次查詢重新載入
-                        analysis_cache.pop(tk, None)
-                        success += 1
-                    else:
-                        fail += 1
-                except Exception as e:
-                    print(f"  [admin_refresh] {tk} 失敗: {e}")
-                    fail += 1
-                # 即時更新進度
-                _refresh_state['success'] = success
-                _refresh_state['fail']    = fail
-
-            # 完成：更新版本戳記
-            now_ts = str(int(_time.time()))
-            now_iso = pd.Timestamp.now().isoformat()
-            _refresh_state.update({
-                'status':     'done',
-                'version':    now_ts,
-                'updated_at': now_iso,
-                'trigger':    'admin_refresh',
-                'success':    success,
-                'fail':       fail,
-                'message':    f'完成：成功 {success} ／ 失敗 {fail}',
-            })
-
-            # 同時也寫磁碟（本機環境備用，Render 上不保證存活）
-            try:
-                version_file = os.path.join(DATA_DIR, 'cache_version.json')
-                with open(version_file, 'w', encoding='utf-8') as _f:
-                    json.dump({
-                        'version':    now_ts,
-                        'updated_at': now_iso,
-                        'trigger':    'admin_refresh',
-                        'success':    success,
-                        'fail':       fail,
-                    }, _f, ensure_ascii=False)
-            except Exception:
-                pass
-
-            print(f"[admin_refresh] 完成：成功 {success} ／ 失敗 {fail}")
-
-        except Exception as e:
-            import traceback
-            _refresh_state.update({
-                'status':  'error',
-                'message': str(e),
-            })
-            print(f"[admin_refresh] ❌ 全量更新失敗: {e}")
-            traceback.print_exc()
-
-    # 在背景執行緒執行，立即回傳 202 Accepted
-    _th.Thread(target=_do_refresh, daemon=True).start()
-
-    return jsonify({
-        'status':  'accepted',
-        'message': '已在背景啟動全量快取更新，請稍後查詢 /api/cache_version 確認完成',
-    }), 202
-
+# ── Gunicorn pre-fork 說明 ────────────────────────────────────
+# gunicorn --workers > 1 時每個 worker 都會 import app，
+# 排程器改為 before_request 延遲啟動，每個 worker 各自啟動一個排程執行緒（daemon），
+# 不影響請求處理，且不會在模組載入時阻塞健康檢查。
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
@@ -3741,5 +2987,4 @@ if __name__ == '__main__':
     print(f"Port: {port}")
     print("=" * 60)
     host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
-    # ★ start_scheduler 已移至模組層級，這裡不再重複呼叫
     app.run(debug=False, host=host, port=port)
