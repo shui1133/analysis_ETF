@@ -7478,7 +7478,8 @@ ${summaryLines || '（資料不足）'}
       `<i class="fa-solid fa-circle-exclamation text-red-400 text-2xl mb-2 block"></i>
        <span class="text-red-400">AI 分析失敗：${e.message}</span>`;
     document.getElementById('fin-ai-placeholder').classList.remove('hidden');
-    _updateQuotaBadge(false, false);
+    // 修復：_updateQuotaBadge 曾未定義，此處直接隱藏配額徽章
+    (function(){ const b = document.getElementById('fin-ai-quota-badge'); if(b) b.classList.add('hidden'); })();
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i>重新嘗試';
@@ -7486,6 +7487,15 @@ ${summaryLines || '（資料不足）'}
   } finally {
     _finAILoading = false;
   }
+}
+
+// ── _updateQuotaBadge（補充定義，防止其他地方呼叫時報錯）────────
+function _updateQuotaBadge(show, isCached) {
+  const badge = document.getElementById('fin-ai-quota-badge');
+  if (!badge) return;
+  if (!show) { badge.classList.add('hidden'); return; }
+  badge.classList.remove('hidden');
+  badge.textContent = isCached ? '✅ 來自快取' : '🤖 AI 生成';
 }
 
 </script>
