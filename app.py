@@ -350,17 +350,10 @@ def get_popular_stocks():
 # 前端一次 POST 多個 ticker，後端批次回傳摘要，避免逐支請求
 # ─────────────────────────────────────────────────────────────────
 def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
-    """
-    將 fetch_stock_analysis 結果轉為前端 hot_summary / _summaryToDataFormat 所需格式。
-    必須包含 _summaryToDataFormat 引用的所有欄位：
-      trend_label, trend_color, rating, rating_score, rating_color, rating_bg, rating_icon,
-      target_price, target_type, reasons_buy, reasons_sell,
-      updays, downdays, flatdays, upvolpct, downvolpct, matrend, ma200
-    """
+    """將 fetch_stock_analysis 結果轉為前端 hot_summary 所需格式"""
     ohlcv = raw.get('ohlcv', [])
     if not ohlcv:
         return None
-
     last = ohlcv[-1]
     prev = ohlcv[-2] if len(ohlcv) >= 2 else last
     change     = round(last['close'] - prev['close'], 2)
@@ -370,20 +363,7 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
     def last_val(lst):
         return next((v for v in reversed(lst or []) if v is not None), None)
 
-    lv_ma5   = last_val(indicators.get('ma5'))
-    lv_ma10  = last_val(indicators.get('ma10'))
-    lv_ma20  = last_val(indicators.get('ma20'))
-    lv_ma60  = last_val(indicators.get('ma60'))
-    lv_ma120 = last_val(indicators.get('ma120'))
-    lv_ma200 = last_val(indicators.get('ma200'))
-    lv_rsi   = last_val(indicators.get('rsi'))
-    lv_macd  = last_val(indicators.get('macd'))
-    lv_macd_s= last_val(indicators.get('macd_signal'))
-    lv_macd_h= last_val(indicators.get('macd_hist'))
-    lv_k     = last_val(indicators.get('k'))
-    lv_d     = last_val(indicators.get('d'))
-
-    # ── 近 12 個月配息殖利率 ──────────────────────────────────
+    # 近 12 個月配息殖利率
     divs = raw.get('dividend_data', [])
     annual_div = 0.0
     if divs:
@@ -392,62 +372,7 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
     div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
 
     info = raw.get('info', {})
-
-    # ── 趨勢判斷（複用既有函數）────────────────────────────────
-    latest_ind = {
-        'ma5': lv_ma5, 'ma10': lv_ma10, 'ma20': lv_ma20,
-        'ma60': lv_ma60, 'ma120': lv_ma120,
-        'macd': lv_macd, 'macd_signal': lv_macd_s,
-        'rsi': lv_rsi, 'k': lv_k, 'd': lv_d,
-    }
-    trend = _calc_trend(last['close'], latest_ind)
-
-    # ── 支撐/壓力（近60日）─────────────────────────────────────
-    recent60 = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
-    support  = round(min(r['low']  for r in recent60), 2)
-    resist   = round(max(r['high'] for r in recent60), 2)
-
-    # ── 籌碼估算 ───────────────────────────────────────────────
-    chip = _estimate_chip(ohlcv, trend)
-
-    # ── 投資建議（複用既有函數）────────────────────────────────
-    rec = _generate_recommendation(
-        ticker, last['close'], latest_ind, trend, chip,
-        info, div_yield, support, resist
-    )
-
-    # ── 近60日漲跌統計（供 calcHotRow _precomputed 使用）──────
-    recent = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
-    updays = downdays = flatdays = 0
-    upvol  = downvol  = totvol   = 0
-    for i in range(1, len(recent)):
-        c0 = recent[i-1]['close']
-        c1 = recent[i]['close']
-        v1 = recent[i].get('volume', 0) or 0
-        totvol += v1
-        if c1 > c0:
-            updays  += 1; upvol  += v1
-        elif c1 < c0:
-            downdays += 1; downvol += v1
-        else:
-            flatdays += 1
-    upvolpct   = round(upvol   / totvol * 100, 1) if totvol else 0
-    downvolpct = round(downvol / totvol * 100, 1) if totvol else 0
-
-    # ── 均線排列判斷（matrend）─────────────────────────────────
-    mas = [v for v in [lv_ma5, lv_ma20, lv_ma60] if v is not None]
-    if len(mas) == 3:
-        if mas[0] > mas[1] > mas[2]:
-            matrend = '多頭排列'
-        elif mas[0] < mas[1] < mas[2]:
-            matrend = '空頭排列'
-        else:
-            matrend = '盤整'
-    else:
-        matrend = '—'
-
     return {
-        # ── 基本行情 ──────────────────────────────────────────
         'ticker':      ticker,
         'name':        raw.get('name', ticker),
         'close':       last['close'],
@@ -458,46 +383,21 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         'change':      change,
         'change_pct':  change_pct,
         'date':        last['date'],
-        # ── 技術指標 ──────────────────────────────────────────
-        'ma5':         lv_ma5,
-        'ma10':        lv_ma10,
-        'ma20':        lv_ma20,
-        'ma60':        lv_ma60,
-        'ma120':       lv_ma120,
-        'ma200':       lv_ma200,
-        'rsi':         lv_rsi,
-        'macd':        lv_macd,
-        'macd_signal': lv_macd_s,
-        'macd_hist':   lv_macd_h,
-        'k':           lv_k,
-        'd':           lv_d,
-        # ── 趨勢（_summaryToDataFormat 需要）─────────────────
-        'trend_label': trend.get('label'),
-        'trend_color': trend.get('color'),
-        # ── 投資評級（_summaryToDataFormat 需要）─────────────
-        'rating':       rec.get('rating'),
-        'rating_score': rec.get('total_score'),
-        'rating_color': rec.get('rating_color'),
-        'rating_bg':    rec.get('rating_bg'),
-        'rating_icon':  rec.get('rating_icon'),
-        'target_price': rec.get('target_price'),
-        'target_type':  rec.get('target_type'),
-        'reasons_buy':  rec.get('reasons_buy', []),
-        'reasons_sell': rec.get('reasons_sell', []),
-        # ── 60日統計（calcHotRow _precomputed 需要）──────────
-        'updays':      updays,
-        'downdays':    downdays,
-        'flatdays':    flatdays,
-        'upvolpct':    upvolpct,
-        'downvolpct':  downvolpct,
-        'matrend':     matrend,
-        # ── 基本面 ────────────────────────────────────────────
+        'ma5':         last_val(indicators.get('ma5')),
+        'ma10':        last_val(indicators.get('ma10')),
+        'ma20':        last_val(indicators.get('ma20')),
+        'ma60':        last_val(indicators.get('ma60')),
+        'ma120':       last_val(indicators.get('ma120')),
+        'rsi':         last_val(indicators.get('rsi')),
+        'macd':        last_val(indicators.get('macd')),
+        'macd_signal': last_val(indicators.get('macd_signal')),
+        'macd_hist':   last_val(indicators.get('macd_hist')),
+        'k':           last_val(indicators.get('k')),
+        'd':           last_val(indicators.get('d')),
         'div_yield':   div_yield,
         'pe_ratio':    info.get('pe_ratio'),
         'pb_ratio':    info.get('pb_ratio'),
         'market_cap':  info.get('market_cap'),
-        'support':     support,
-        'resist':      resist,
     }
 
 
@@ -507,84 +407,49 @@ def hot_summary():
     批次取得多支股票摘要（熱門股票頁 / 自選股一次請求）
     輸入: { tickers: ['2330', '2317', ...] }
     輸出: { status: 'success', data: { '2330': {...}, '2317': {...} } }
-
-    效能策略：
-      1. 記憶體快取命中（5min）→ 直接回傳，0 網路請求
-      2. 快取未命中 → ThreadPoolExecutor 平行抓取（最多 5 線程）
-      3. 整體批次最長 25 秒，避免觸發 Render gunicorn 30s timeout
-      4. 單次批次上限 15 支
     """
     import time as _time
-    from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeout
-
     try:
         body    = request.get_json(force=True) or {}
         tickers = [str(t).strip().upper() for t in body.get('tickers', []) if str(t).strip()]
         if not tickers:
             return jsonify({'status': 'error', 'message': '請提供 tickers 清單'}), 400
 
-        MAX_BATCH   = 15   # Render 30s 上限，15支×最壞2s=30s
-        MAX_WORKERS = 5    # 平行線程數
+        # 單次批次上限，避免 Render 超時
+        MAX_BATCH = 20
         tickers = tickers[:MAX_BATCH]
 
-        result     = {}
-        need_fetch = []
+        result  = {}
+        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
 
-        # ── ① 記憶體快取命中（直接回傳，零網路）──────────────
         for ticker in tickers:
+            # ── L1：記憶體快取（5 分鐘）────────────────────────
             cache_entry = analysis_cache.get(ticker)
             if cache_entry and (_time.time() - cache_entry.get('ts', 0)) < 300:
                 raw = cache_entry.get('data')
-                if raw and raw.get('ohlcv'):
+                if raw:
                     result[ticker] = _build_hot_summary(ticker, raw)
                     continue
-            need_fetch.append(ticker)
 
-        if not need_fetch:
-            return jsonify({'status': 'success', 'data': result})
+            # ── L2：從後端抓取 ──────────────────────────────────
+            try:
+                raw = None
+                for _attempt in range(2):
+                    try:
+                        raw = fetcher.fetch_stock_analysis(ticker)
+                        if raw and raw.get('ohlcv'):
+                            break
+                    except Exception:
+                        pass
+                if raw and raw.get('ohlcv'):
+                    analysis_cache[ticker] = {'data': raw, 'ts': _time.time()}
+                    result[ticker] = _build_hot_summary(ticker, raw)
+                else:
+                    result[ticker] = None
+            except Exception as e:
+                print(f"  [hot_summary] {ticker} 失敗: {e}")
+                result[ticker] = None
 
-        print(f"  [hot_summary] 快取命中 {len(result)} 支，需抓取 {len(need_fetch)} 支")
-
-        # ── ② 平行抓取 ────────────────────────────────────────
-        def _fetch_one(ticker: str):
-            f = ETFDataFetcher(output_dir=DATA_DIR)
-            for attempt in range(2):
-                try:
-                    raw = f.fetch_stock_analysis(ticker)
-                    if raw and raw.get('ohlcv'):
-                        return ticker, raw
-                except Exception as e:
-                    print(f"  [hot_summary] {ticker} 第{attempt+1}次失敗: {e}")
-            return ticker, None
-
-        deadline = _time.time() + 25  # 整體批次最長 25 秒
-
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            futures = {pool.submit(_fetch_one, tk): tk for tk in need_fetch}
-            for future in as_completed(futures, timeout=max(1, deadline - _time.time())):
-                try:
-                    ticker, raw = future.result(timeout=12)
-                    if raw and raw.get('ohlcv'):
-                        analysis_cache[ticker] = {'data': raw, 'ts': _time.time()}
-                        result[ticker] = _build_hot_summary(ticker, raw)
-                    else:
-                        result[ticker] = None
-                except FutureTimeout:
-                    tk = futures[future]
-                    print(f"  [hot_summary] {tk} 超時")
-                    result[tk] = None
-                except Exception as e:
-                    tk = futures[future]
-                    print(f"  [hot_summary] {tk} 例外: {e}")
-                    result[tk] = None
-
-        for tk in tickers:
-            if tk not in result:
-                result[tk] = None
-
-        hit  = sum(1 for v in result.values() if v is not None)
-        miss = sum(1 for v in result.values() if v is None)
-        print(f"  [hot_summary] 完成：成功 {hit}，失敗/null {miss}")
         return jsonify({'status': 'success', 'data': result})
 
     except Exception as e:
@@ -2889,23 +2754,82 @@ def _fetch_finreport(ticker: str) -> dict:
 
     result['ratios']['annual'] = ratios_annual
 
-    # 季報衍生比率（簡版）
+    # 季報衍生比率（完整版，補全所有前端需要的欄位）
     ratios_q = []
+
+    def pct_q(a, b):
+        fa, fb = safe_float(a), safe_float(b)
+        if fa is None or fb is None or fb == 0:
+            return None
+        return round(fa / fb * 100, 2)
+
     for row in result['quarterly'].get('income', []):
         period = row.get('period', '')
-        rev  = row.get('total_revenue') or row.get('totalrevenue')
-        gp   = row.get('gross_profit')  or row.get('grossprofit')
-        ni   = row.get('net_income') or row.get('netincome') or row.get('net_income_common_stockholders')
-        def pct(a, b):
-            fa, fb = safe_float(a), safe_float(b)
-            if fa is None or fb is None or fb == 0: return None
-            return round(fa / fb * 100, 2)
+        rev = row.get('total_revenue')    or row.get('totalrevenue')
+        gp  = row.get('gross_profit')     or row.get('grossprofit')
+        op  = row.get('operating_income') or row.get('ebit')
+        ni  = (row.get('net_income')
+               or row.get('netincome')
+               or row.get('net_income_common_stockholders'))
+
+        # 對應同期資產負債表
+        bal_row = next(
+            (b for b in result['quarterly'].get('balance', [])
+             if b.get('period') == period), {}
+        )
+        assets     = bal_row.get('total_assets')   or bal_row.get('totalassets')
+        equity     = (bal_row.get('stockholders_equity')
+                      or bal_row.get('common_stock_equity')
+                      or bal_row.get('total_equity_gross_minority_interest'))
+        total_liab = (bal_row.get('total_liabilities_net_minority_interest')
+                      or bal_row.get('total_liabilities'))
+        cur_assets = (bal_row.get('current_assets')
+                      or bal_row.get('total_current_assets'))
+        cur_liab   = (bal_row.get('current_liabilities')
+                      or bal_row.get('total_current_liabilities'))
+
+        # 對應同期現金流量表
+        cf_row = next(
+            (c for c in result['quarterly'].get('cashflow', [])
+             if c.get('period') == period), {}
+        )
+        op_cf  = (cf_row.get('operating_cash_flow')
+                  or cf_row.get('cash_from_operating_activities')
+                  or cf_row.get('total_cash_from_operating_activities'))
+        cap_ex = (cf_row.get('capital_expenditure')
+                  or cf_row.get('capital_expenditures'))
+
+        # 流動比率
+        cur_ratio = None
+        ca_f, cl_f = safe_float(cur_assets), safe_float(cur_liab)
+        if ca_f is not None and cl_f and cl_f != 0:
+            cur_ratio = round(ca_f / cl_f, 2)
+
+        # 自由現金流
+        fcf = None
+        o_f, c_f = safe_float(op_cf), safe_float(cap_ex)
+        if o_f is not None and c_f is not None:
+            fcf = round(o_f - abs(c_f), 2)
+
         ratios_q.append({
-            'period':      period,
-            'revenue_b':   safe_float(rev),
-            'net_income_b':safe_float(ni),
-            'gpm':         pct(gp, rev),
+            'period':         period,
+            'revenue_b':      safe_float(rev),
+            'gross_profit_b': safe_float(gp),
+            'op_income_b':    safe_float(op),
+            'net_income_b':   safe_float(ni),
+            'op_cashflow_b':  safe_float(op_cf),
+            'fcf_b':          fcf,
+            'gpm':            pct_q(gp,  rev),
+            'opm':            pct_q(op,  rev),
+            'npm':            pct_q(ni,  rev),
+            'roe':            pct_q(ni,  equity),
+            'roa':            pct_q(ni,  assets),
+            'debt_ratio':     pct_q(total_liab, assets),
+            'cur_ratio':      cur_ratio,
+            'equity_b':       safe_float(equity),
+            'assets_b':       safe_float(assets),
         })
+
     result['ratios']['quarterly'] = ratios_q
 
     return result
