@@ -881,12 +881,16 @@ def get_stock_analysis(ticker):
             info.get('eps')           is None or
             info.get('roe')           is None or
             info.get('profit_margin') is None or
+            info.get('52w_high')      is None or
+            info.get('52w_low')       is None or
+            info.get('market_cap')    in (None, 0) or
             not info.get('description')
         )
         if needs_supplement:
             try:
                 twse_extra = _fetch_twse_fundamentals(ticker)
-                for key in ('pe_ratio', 'pb_ratio', 'eps', 'roe', 'profit_margin', 'description'):
+                for key in ('pe_ratio', 'pb_ratio', 'eps', 'roe', 'profit_margin', 'description',
+                            '52w_high', '52w_low', 'market_cap'):
                     if twse_extra.get(key) is not None and info.get(key) in (None, '', 0):
                         info[key] = twse_extra[key]
                 # div_yield_pct 是百分比，轉為小數存入 div_yield（僅當 yfinance 未提供時備用）
@@ -941,6 +945,26 @@ def get_stock_analysis(ticker):
         recent60 = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
         support  = round(min(r['low']  for r in recent60), 2)
         resist   = round(max(r['high'] for r in recent60), 2)
+
+        # ── 52週高低備援：從 OHLCV 計算（所有來源均 None 時使用）──
+        if info.get('52w_high') is None or info.get('52w_low') is None:
+            try:
+                recent252 = ohlcv[-252:] if len(ohlcv) >= 252 else ohlcv
+                if info.get('52w_high') is None:
+                    info['52w_high'] = round(max(r['high'] for r in recent252), 2)
+                if info.get('52w_low') is None:
+                    info['52w_low']  = round(min(r['low']  for r in recent252), 2)
+                print(f"  [52w] 從 OHLCV 計算備援: high={info['52w_high']}, low={info['52w_low']}")
+            except Exception:
+                pass
+
+        # ── 市值備援：股本（TWSE 補充的 _shares_outstanding）× 最新收盤 ──
+        if info.get('market_cap') in (None, 0) and info.get('_shares_outstanding'):
+            try:
+                info['market_cap'] = int(info['_shares_outstanding'] * last['close'])
+                print(f"  [market_cap] 從股本估算: {info['market_cap']:,}")
+            except Exception:
+                pass
 
         # ── 趨勢判斷 ─────────────────────────────────────────
         trend = _calc_trend(last['close'], latest_ind)
@@ -1429,7 +1453,84 @@ def _fetch_twse_fundamentals(ticker: str) -> dict:
             print(f'  TWSE 個股基本資料查詢失敗（非致命）: {e}')
 
     # ══════════════════════════════════════════════════════════
-    # 6. 靜態備援資料庫（當所有線上來源均失敗時使用）
+    # 6. TWSE 動態補充：近52週最高/最低 + 市值估算
+    #    資料來源：TWSE STOCK_DAY（月成交資訊）+ company API
+    # ══════════════════════════════════════════════════════════
+    if result.get('52w_high') is None or result.get('52w_low') is None or result.get('market_cap') in (None, 0):
+        try:
+            now_ts = pd.Timestamp.now()
+            highs, lows = [], []
+            # 逐月抓近13個月月成交，涵蓋完整52週
+            for m_offset in range(0, 13):
+                ts_m = now_ts - pd.DateOffset(months=m_offset)
+                date_str = ts_m.strftime('%Y%m%d')
+                url_day = (f'https://www.twse.com.tw/exchangeReport/STOCK_DAY'
+                           f'?response=json&date={date_str}&stockNo={ticker}')
+                try:
+                    r_day = _req.get(url_day, headers=headers, timeout=8)
+                    if not r_day.ok:
+                        continue
+                    jday = r_day.json()
+                    if jday.get('stat') != 'OK':
+                        continue
+                    for row in jday.get('data', []):
+                        # 欄位: 0=日期,1=成交股數,2=成交金額,3=開盤,4=最高,5=最低,6=收盤,...
+                        if len(row) < 7:
+                            continue
+                        try:
+                            h = float(str(row[4]).replace(',', ''))
+                            l = float(str(row[5]).replace(',', ''))
+                            if h > 0: highs.append(h)
+                            if l > 0: lows.append(l)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                if len(highs) >= 200:
+                    break
+
+            if highs and result.get('52w_high') is None:
+                result['52w_high'] = round(max(highs), 2)
+                print(f"  TWSE STOCK_DAY 52w_high={result['52w_high']}")
+            if lows and result.get('52w_low') is None:
+                result['52w_low'] = round(min(lows), 2)
+                print(f"  TWSE STOCK_DAY 52w_low={result['52w_low']}")
+        except Exception as e:
+            print(f'  TWSE STOCK_DAY 52w 查詢失敗（非致命）: {e}')
+
+    # 市值：從 TWSE 個股基本資料 API 取得股本，乘以最新收盤估算
+    if result.get('market_cap') in (None, 0):
+        try:
+            url_co2 = f'https://www.twse.com.tw/zh/api/basic/company?stockNo={ticker}'
+            r_co2 = _req.get(url_co2, headers=headers, timeout=8)
+            if r_co2.ok:
+                jco2 = r_co2.json()
+                cap_amount = jco2.get('capitalAmount') or jco2.get('capital_amount', '')
+                close_str  = jco2.get('closePrice') or jco2.get('close_price', '')
+                if cap_amount:
+                    try:
+                        cap_val = float(str(cap_amount).replace(',', ''))
+                        if cap_val > 0:
+                            shares = cap_val / 10   # 股本(元) ÷ 面值10元 = 股數
+                            if close_str:
+                                try:
+                                    c = float(str(close_str).replace(',', ''))
+                                    result['market_cap'] = int(shares * c)
+                                except Exception:
+                                    pass
+                            if result.get('market_cap') in (None, 0):
+                                h52 = result.get('52w_high')
+                                l52 = result.get('52w_low')
+                                if h52 and l52:
+                                    result['market_cap'] = int(shares * (h52 + l52) / 2)
+                            print(f"  TWSE company 市值估算: {result.get('market_cap')}")
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f'  TWSE 市值估算失敗（非致命）: {e}')
+
+    # ══════════════════════════════════════════════════════════
+    # 7. 靜態備援資料庫（當所有線上來源均失敗時使用）
     #    資料來源：公開資訊觀測站、各券商公開資料（定期人工維護）
     #    適用場景：Render/雲端 Egress Proxy 封鎖外部 API 時
     # ══════════════════════════════════════════════════════════
