@@ -36,6 +36,7 @@ from backtest import PortfolioBacktestV3
 from github_cache import CacheManager, start_scheduler
 import io
 import requests as _req
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ── 載入 .env（本機開發用；Render 環境直接讀系統環境變數）──
 try:
@@ -572,54 +573,159 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
     }
 
 
+def _fetch_one_hot(ticker: str, fetcher) -> tuple:
+    """
+    單支股票查詢（供 ThreadPoolExecutor 呼叫）。
+    查詢順序：
+      L0 記憶體快取（5 分鐘）
+      L1 cache_mgr 本機快取（免網路）
+      L2 cache_mgr GitHub 快取（免 yfinance）
+      L3 yfinance 網路抓取（前三層皆無才觸發，結果存回快取）
+    回傳 (ticker, summary_dict_or_None)
+    """
+    import time as _time
+
+    # ── L0：記憶體快取 ─────────────────────────────────────────────
+    cache_entry = analysis_cache.get(ticker)
+    if cache_entry and (_time.time() - cache_entry.get('ts', 0)) < 300:
+        raw = cache_entry.get('data')
+        if raw:
+            return ticker, _build_hot_summary(ticker, raw)
+
+    # ── L1/L2：cache_mgr 三層快取（fetcher=None 不觸發網路）─────────
+    try:
+        ohlcv_rows = cache_mgr.get_price(ticker, fetcher=None)
+        div_rows   = cache_mgr.get_dividend(ticker, fetcher=None)
+        info       = cache_mgr.get_fundamental(ticker, fetcher=None)
+
+        if ohlcv_rows and len(ohlcv_rows) >= 20:
+            def _norm_ohlcv(rows):
+                result = []
+                for r in rows:
+                    date_val  = r.get('date') or r.get('日期') or ''
+                    close_val = r.get('close') or r.get('Close') or r.get('收盤價')
+                    open_val  = r.get('open')  or r.get('Open')  or r.get('開盤價')
+                    high_val  = r.get('high')  or r.get('High')  or r.get('最高價')
+                    low_val   = r.get('low')   or r.get('Low')   or r.get('最低價')
+                    vol_val   = r.get('volume') or r.get('Volume') or r.get('成交量') or 0
+                    if not close_val:
+                        continue
+                    try:
+                        result.append({
+                            'date':   str(date_val)[:10],
+                            'open':   float(open_val)  if open_val  else float(close_val),
+                            'high':   float(high_val)  if high_val  else float(close_val),
+                            'low':    float(low_val)   if low_val   else float(close_val),
+                            'close':  float(close_val),
+                            'volume': int(float(vol_val)) if vol_val else 0,
+                        })
+                    except (ValueError, TypeError):
+                        continue
+                return result
+
+            ohlcv = _norm_ohlcv(ohlcv_rows)
+            if len(ohlcv) >= 20:
+                indicators = calc_technical_indicators(ohlcv)
+                if isinstance(POPULAR_STOCKS, dict):
+                    stock_name = POPULAR_STOCKS.get(ticker, ticker)
+                elif isinstance(POPULAR_STOCKS, list):
+                    stock_name = next(
+                        (s.get('name', ticker) for s in POPULAR_STOCKS
+                         if s.get('code') == ticker or s.get('ticker') == ticker),
+                        ticker
+                    )
+                else:
+                    stock_name = ticker
+
+                raw = {
+                    'ohlcv':         ohlcv,
+                    'indicators':    indicators,
+                    'dividend_data': div_rows or [],
+                    'info':          info or {},
+                    'name':          stock_name,
+                }
+                analysis_cache[ticker] = {'data': raw, 'ts': _time.time()}
+                print(f"  [hot_summary/{ticker}] ✅ 快取命中（本機/GitHub），免 yfinance")
+                return ticker, _build_hot_summary(ticker, raw)
+    except Exception as e:
+        print(f"  [hot_summary/{ticker}] 快取組裝失敗，降級至 yfinance: {e}")
+
+    # ── L3：yfinance 網路抓取 ──────────────────────────────────────
+    if fetcher is None:
+        return ticker, None
+    try:
+        raw = None
+        for _attempt in range(2):
+            try:
+                raw = fetcher.fetch_stock_analysis(ticker)
+                if raw and raw.get('ohlcv'):
+                    break
+            except Exception:
+                pass
+        if raw and raw.get('ohlcv'):
+            analysis_cache[ticker] = {'data': raw, 'ts': _time.time()}
+            # 存回本機 + GitHub，下次可直接命中快取
+            try:
+                from github_cache import (local_save_price, local_save_dividend,
+                                          local_save_fundamental, gh_save_price,
+                                          gh_save_dividend, gh_save_fundamental)
+                if raw.get('ohlcv'):
+                    local_save_price(DATA_DIR, ticker, raw['ohlcv'])
+                    gh_save_price(ticker, raw['ohlcv'])
+                if raw.get('dividend_data'):
+                    local_save_dividend(DATA_DIR, ticker, raw['dividend_data'])
+                    gh_save_dividend(ticker, raw['dividend_data'])
+                if raw.get('info'):
+                    local_save_fundamental(DATA_DIR, ticker, raw['info'])
+                    gh_save_fundamental(ticker, raw['info'])
+            except Exception as e_save:
+                print(f"  [hot_summary/{ticker}] 快取存檔失敗（不影響回應）: {e_save}")
+            print(f"  [hot_summary/{ticker}] 🌐 yfinance 成功，已存快取")
+            return ticker, _build_hot_summary(ticker, raw)
+        return ticker, None
+    except Exception as e:
+        print(f"  [hot_summary/{ticker}] 失敗: {e}")
+        return ticker, None
+
+
 @app.route('/api/hot_summary', methods=['POST'])
 def hot_summary():
     """
     批次取得多支股票摘要（熱門股票頁 / 自選股一次請求）
     輸入: { tickers: ['2330', '2317', ...] }
     輸出: { status: 'success', data: { '2330': {...}, '2317': {...} } }
+
+    ★ 修復版：三層快取優先 + ThreadPoolExecutor 並發，避免 Render 502
     """
-    import time as _time
     try:
         body    = request.get_json(force=True) or {}
         tickers = [str(t).strip().upper() for t in body.get('tickers', []) if str(t).strip()]
         if not tickers:
             return jsonify({'status': 'error', 'message': '請提供 tickers 清單'}), 400
 
-        # 單次批次上限，避免 Render 超時（每支 yfinance 約 1-2s，10支較安全）
-        MAX_BATCH = 10
+        # 快取命中時 15 支無壓力；冷啟動時並發 3 執行緒也可在 25 秒內完成
+        MAX_BATCH = 15
         tickers = tickers[:MAX_BATCH]
 
-        result  = {}
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+        result  = {}
 
-        for ticker in tickers:
-            # ── L1：記憶體快取（5 分鐘）────────────────────────
-            cache_entry = analysis_cache.get(ticker)
-            if cache_entry and (_time.time() - cache_entry.get('ts', 0)) < 300:
-                raw = cache_entry.get('data')
-                if raw:
-                    result[ticker] = _build_hot_summary(ticker, raw)
-                    continue
+        # 並發 3 執行緒（避免 yfinance rate-limit），25 秒硬上限
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(_fetch_one_hot, tk, fetcher): tk for tk in tickers}
+            for fut in as_completed(futures, timeout=25):
+                try:
+                    tk, summary = fut.result(timeout=5)
+                    result[tk] = summary
+                except Exception as e:
+                    tk = futures[fut]
+                    print(f"  [hot_summary] {tk} future 例外: {e}")
+                    result[tk] = None
 
-            # ── L2：從後端抓取 ──────────────────────────────────
-            try:
-                raw = None
-                for _attempt in range(2):
-                    try:
-                        raw = fetcher.fetch_stock_analysis(ticker)
-                        if raw and raw.get('ohlcv'):
-                            break
-                    except Exception:
-                        pass
-                if raw and raw.get('ohlcv'):
-                    analysis_cache[ticker] = {'data': raw, 'ts': _time.time()}
-                    result[ticker] = _build_hot_summary(ticker, raw)
-                else:
-                    result[ticker] = None
-            except Exception as e:
-                print(f"  [hot_summary] {ticker} 失敗: {e}")
-                result[ticker] = None
+        # 補齊 timeout 未完成的 ticker
+        for tk in tickers:
+            if tk not in result:
+                result[tk] = None
 
         return jsonify({'status': 'success', 'data': result})
 
