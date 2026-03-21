@@ -464,7 +464,20 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
     def last_val(lst):
         return next((v for v in reversed(lst or []) if v is not None), None)
 
-    # 近 12 個月配息殖利率
+    # ── 技術指標最新值 ──────────────────────────────────────────
+    ma5   = last_val(indicators.get('ma5'))
+    ma10  = last_val(indicators.get('ma10'))
+    ma20  = last_val(indicators.get('ma20'))
+    ma60  = last_val(indicators.get('ma60'))
+    ma120 = last_val(indicators.get('ma120'))
+    ma200 = last_val(indicators.get('ma200'))
+    macd  = last_val(indicators.get('macd'))
+    macd_signal = last_val(indicators.get('macd_signal'))
+    rsi   = last_val(indicators.get('rsi'))
+    k     = last_val(indicators.get('k'))
+    d     = last_val(indicators.get('d'))
+
+    # ── 近 12 個月配息殖利率 ────────────────────────────────────
     divs = raw.get('dividend_data', [])
     annual_div = 0.0
     if divs:
@@ -473,32 +486,89 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
     div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
 
     info = raw.get('info', {})
+
+    # ── 均線排列（matrend）─────────────────────────────────────
+    matrend = 0
+    if ma5 and ma20 and ma60:
+        if   ma5 > ma20 and ma20 > ma60: matrend =  1   # 多頭排列
+        elif ma5 < ma20 and ma20 < ma60: matrend = -1   # 空頭排列
+        elif ma5 > ma20:                 matrend =  2   # 偏多整理
+        else:                            matrend = -2   # 偏空整理
+
+    # ── 近 60 日漲跌統計 ───────────────────────────────────────
+    recent = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
+    up_days = down_days = flat_days = 0
+    up_vol  = down_vol  = total_vol = 0
+    for bar in recent:
+        diff = bar['close'] - bar.get('open', bar['close'])
+        v    = bar.get('volume', 0) or 0
+        total_vol += v
+        if diff > 0:      up_days   += 1; up_vol   += v
+        elif diff < 0:    down_days += 1; down_vol += v
+        else:             flat_days += 1
+    up_vol_pct   = round(up_vol   / total_vol * 100) if total_vol else 0
+    down_vol_pct = round(down_vol / total_vol * 100) if total_vol else 0
+
+    # ── 近 60 日支撐/壓力 ──────────────────────────────────────
+    support = round(min(bar['low']  for bar in recent), 2)
+    resist  = round(max(bar['high'] for bar in recent), 2)
+
+    # ── 趨勢判斷 ──────────────────────────────────────────────
+    latest_ind = {'ma5': ma5, 'ma20': ma20, 'ma60': ma60,
+                  'macd': macd, 'macd_signal': macd_signal, 'rsi': rsi,
+                  'k': k, 'd': d}
+    trend = _calc_trend(last['close'], latest_ind)
+
+    # ── 法人籌碼估算 ───────────────────────────────────────────
+    chip = _estimate_chip(ohlcv, trend)
+
+    # ── 投資評級 ──────────────────────────────────────────────
+    rec = _generate_recommendation(
+        ticker, last['close'], latest_ind, trend, chip,
+        info, div_yield, support, resist
+    )
+
     return {
-        'ticker':      ticker,
-        'name':        raw.get('name', ticker),
-        'close':       last['close'],
-        'open':        last.get('open'),
-        'high':        last['high'],
-        'low':         last['low'],
-        'volume':      last.get('volume', 0),
-        'change':      change,
-        'change_pct':  change_pct,
-        'date':        last['date'],
-        'ma5':         last_val(indicators.get('ma5')),
-        'ma10':        last_val(indicators.get('ma10')),
-        'ma20':        last_val(indicators.get('ma20')),
-        'ma60':        last_val(indicators.get('ma60')),
-        'ma120':       last_val(indicators.get('ma120')),
-        'rsi':         last_val(indicators.get('rsi')),
-        'macd':        last_val(indicators.get('macd')),
-        'macd_signal': last_val(indicators.get('macd_signal')),
-        'macd_hist':   last_val(indicators.get('macd_hist')),
-        'k':           last_val(indicators.get('k')),
-        'd':           last_val(indicators.get('d')),
-        'div_yield':   div_yield,
-        'pe_ratio':    info.get('pe_ratio'),
-        'pb_ratio':    info.get('pb_ratio'),
-        'market_cap':  info.get('market_cap'),
+        'ticker':       ticker,
+        'name':         raw.get('name', ticker),
+        'close':        last['close'],
+        'open':         last.get('open'),
+        'high':         last['high'],
+        'low':          last['low'],
+        'volume':       last.get('volume', 0),
+        'change':       change,
+        'change_pct':   change_pct,
+        'date':         last['date'],
+        # 技術指標
+        'ma5': ma5, 'ma10': ma10, 'ma20': ma20,
+        'ma60': ma60, 'ma120': ma120, 'ma200': ma200,
+        'macd': macd, 'macd_signal': macd_signal,
+        'rsi': rsi, 'k': k, 'd': d,
+        # 基本面
+        'div_yield':  div_yield,
+        'pe_ratio':   info.get('pe_ratio'),
+        'pb_ratio':   info.get('pb_ratio'),
+        'market_cap': info.get('market_cap'),
+        # 均線排列 & 60 日統計
+        'matrend':    matrend,
+        'updays':     up_days,
+        'downdays':   down_days,
+        'flatdays':   flat_days,
+        'upvolpct':   up_vol_pct,
+        'downvolpct': down_vol_pct,
+        # 趨勢
+        'trend_label': trend.get('label'),
+        'trend_color': trend.get('color'),
+        # 投資評級
+        'rating':       rec.get('rating'),
+        'rating_score': rec.get('total_score', 0),
+        'rating_color': rec.get('rating_color', '#64748b'),
+        'rating_bg':    rec.get('rating_bg', '#1e293b'),
+        'rating_icon':  rec.get('rating_icon', ''),
+        'target_price': rec.get('target_price'),
+        'target_type':  rec.get('target_type', 'none'),
+        'reasons_buy':  rec.get('reasons_buy', []),
+        'reasons_sell': rec.get('reasons_sell', []),
     }
 
 
@@ -516,8 +586,8 @@ def hot_summary():
         if not tickers:
             return jsonify({'status': 'error', 'message': '請提供 tickers 清單'}), 400
 
-        # 單次批次上限，避免 Render 超時
-        MAX_BATCH = 20
+        # 單次批次上限，避免 Render 超時（每支 yfinance 約 1-2s，10支較安全）
+        MAX_BATCH = 10
         tickers = tickers[:MAX_BATCH]
 
         result  = {}
