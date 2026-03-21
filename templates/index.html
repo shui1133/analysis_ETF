@@ -1084,7 +1084,14 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tickers })
             });
-            const d1 = await r1.json();
+            // ★ 修正：先檢查 HTTP 狀態，避免 502/504 回傳 HTML 時
+            //   .json() 拋出「Unexpected end of JSON input」
+            if (!r1.ok && r1.status >= 500) {
+                hideStatus();
+                showCustomError(`伺服器忙碌（${r1.status}），請稍後再試`);
+                return;
+            }
+            const d1 = await r1.json().catch(() => ({}));
             if (d1.status !== 'success') {
                 hideStatus();
                 showCustomError(d1.message || '查詢失敗');
@@ -1109,7 +1116,11 @@
                     custom_withdrawal_rate: rate
                 })
             }, 90000);
-            const d2 = await r2.json();
+            if (!r2.ok && r2.status >= 500) {
+                showCustomError(`回測超時（${r2.status}），請稍後再試`);
+                return;
+            }
+            const d2 = await r2.json().catch(() => ({}));
             if (d2.status === 'success') {
                 backtestResult = d2.result;
                 updateResults(d2.result);
@@ -1166,26 +1177,38 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(params)
             });
-            const data = await res.json();
+            // ★ 修正：先檢查 HTTP 狀態，避免 502/504 回傳 HTML 時 .json() 拋出
+            //   「Unexpected end of JSON input」
+            if (!res.ok && res.status >= 500) {
+                showStatus('伺服器忙碌中，正在自動下載股價資料...');
+                // 直接走下載流程
+            } else {
+                const data = await res.json().catch(() => ({}));
 
-            if (data.status === 'success') {
-                backtestResult = data.result;
-                updateResults(data.result);
-                hideStatus();
-                return;
+                if (data.status === 'success') {
+                    backtestResult = data.result;
+                    updateResults(data.result);
+                    hideStatus();
+                    return;
+                }
             }
 
-            // 若回測失敗（缺少資料），自動取得資料後再回測
+            // 若回測失敗（缺少資料 / 伺服器忙碌），自動取得資料後再回測
             showStatus('未找到股價資料，正在自動下載...');
             const fetchRes = await fetch('/api/fetch_data', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ portfolio_type: currentStrategy })
             });
-            const fetchData = await fetchRes.json();
+            if (!fetchRes.ok) {
+                alert('✗ 取得資料失敗：伺服器回應 ' + fetchRes.status + '，請稍後再試');
+                hideStatus();
+                return;
+            }
+            const fetchData = await fetchRes.json().catch(() => ({}));
 
             if (fetchData.status !== 'success') {
-                alert('✗ 取得資料失敗: ' + fetchData.message);
+                alert('✗ 取得資料失敗: ' + (fetchData.message || '未知錯誤'));
                 hideStatus();
                 return;
             }
@@ -1197,13 +1220,18 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(params)
             });
-            const data2 = await res2.json();
+            if (!res2.ok && res2.status >= 500) {
+                alert('✗ 回測超時，請稍後再試（伺服器 ' + res2.status + '）');
+                hideStatus();
+                return;
+            }
+            const data2 = await res2.json().catch(() => ({}));
 
             if (data2.status === 'success') {
                 backtestResult = data2.result;
                 updateResults(data2.result);
             } else {
-                alert('✗ 回測錯誤: ' + data2.message);
+                alert('✗ 回測錯誤: ' + (data2.message || '未知錯誤'));
             }
         } catch (error) {
             alert('✗ 網路錯誤: ' + error.message);

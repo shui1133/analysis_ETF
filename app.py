@@ -107,7 +107,7 @@ def fetch_data():
 def fetch_custom():
     """爬取自訂台灣上市股票/ETF資料"""
     try:
-        data        = request.json
+        data        = request.get_json(force=True) or {}
         tickers_raw = data.get('tickers', [])
 
         if not tickers_raw or len(tickers_raw) < 2:
@@ -207,7 +207,7 @@ def restore_cache_to_disk():
 def run_backtest():
     """執行回測API（V3版本）"""
     try:
-        data = request.json
+        data = request.get_json(force=True) or {}
 
         portfolio_type        = data.get('portfolio_type', 'conservative')
         initial_capital       = int(data.get('initial_capital', 100)) * 10000
@@ -343,6 +343,118 @@ def download_csv(portfolio_type):
 def get_popular_stocks():
     """回傳熱門股票清單"""
     return jsonify({'status': 'success', 'stocks': POPULAR_STOCKS})
+
+
+# ─────────────────────────────────────────────────────────────────
+# 批次摘要 API（熱門股票頁 / 自選股頁使用）
+# 前端一次 POST 多個 ticker，後端批次回傳摘要，避免逐支請求
+# ─────────────────────────────────────────────────────────────────
+def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
+    """將 fetch_stock_analysis 結果轉為前端 hot_summary 所需格式"""
+    ohlcv = raw.get('ohlcv', [])
+    if not ohlcv:
+        return None
+    last = ohlcv[-1]
+    prev = ohlcv[-2] if len(ohlcv) >= 2 else last
+    change     = round(last['close'] - prev['close'], 2)
+    change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
+
+    indicators = raw.get('indicators', {})
+    def last_val(lst):
+        return next((v for v in reversed(lst or []) if v is not None), None)
+
+    # 近 12 個月配息殖利率
+    divs = raw.get('dividend_data', [])
+    annual_div = 0.0
+    if divs:
+        one_yr_ago = (pd.Timestamp.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
+        annual_div = sum(d.get('dividend', 0) for d in divs if d.get('date', '') >= one_yr_ago)
+    div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
+
+    info = raw.get('info', {})
+    return {
+        'ticker':      ticker,
+        'name':        raw.get('name', ticker),
+        'close':       last['close'],
+        'open':        last.get('open'),
+        'high':        last['high'],
+        'low':         last['low'],
+        'volume':      last.get('volume', 0),
+        'change':      change,
+        'change_pct':  change_pct,
+        'date':        last['date'],
+        'ma5':         last_val(indicators.get('ma5')),
+        'ma10':        last_val(indicators.get('ma10')),
+        'ma20':        last_val(indicators.get('ma20')),
+        'ma60':        last_val(indicators.get('ma60')),
+        'ma120':       last_val(indicators.get('ma120')),
+        'rsi':         last_val(indicators.get('rsi')),
+        'macd':        last_val(indicators.get('macd')),
+        'macd_signal': last_val(indicators.get('macd_signal')),
+        'macd_hist':   last_val(indicators.get('macd_hist')),
+        'k':           last_val(indicators.get('k')),
+        'd':           last_val(indicators.get('d')),
+        'div_yield':   div_yield,
+        'pe_ratio':    info.get('pe_ratio'),
+        'pb_ratio':    info.get('pb_ratio'),
+        'market_cap':  info.get('market_cap'),
+    }
+
+
+@app.route('/api/hot_summary', methods=['POST'])
+def hot_summary():
+    """
+    批次取得多支股票摘要（熱門股票頁 / 自選股一次請求）
+    輸入: { tickers: ['2330', '2317', ...] }
+    輸出: { status: 'success', data: { '2330': {...}, '2317': {...} } }
+    """
+    import time as _time
+    try:
+        body    = request.get_json(force=True) or {}
+        tickers = [str(t).strip().upper() for t in body.get('tickers', []) if str(t).strip()]
+        if not tickers:
+            return jsonify({'status': 'error', 'message': '請提供 tickers 清單'}), 400
+
+        # 單次批次上限，避免 Render 超時
+        MAX_BATCH = 20
+        tickers = tickers[:MAX_BATCH]
+
+        result  = {}
+        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+
+        for ticker in tickers:
+            # ── L1：記憶體快取（5 分鐘）────────────────────────
+            cache_entry = analysis_cache.get(ticker)
+            if cache_entry and (_time.time() - cache_entry.get('ts', 0)) < 300:
+                raw = cache_entry.get('data')
+                if raw:
+                    result[ticker] = _build_hot_summary(ticker, raw)
+                    continue
+
+            # ── L2：從後端抓取 ──────────────────────────────────
+            try:
+                raw = None
+                for _attempt in range(2):
+                    try:
+                        raw = fetcher.fetch_stock_analysis(ticker)
+                        if raw and raw.get('ohlcv'):
+                            break
+                    except Exception:
+                        pass
+                if raw and raw.get('ohlcv'):
+                    analysis_cache[ticker] = {'data': raw, 'ts': _time.time()}
+                    result[ticker] = _build_hot_summary(ticker, raw)
+                else:
+                    result[ticker] = None
+            except Exception as e:
+                print(f"  [hot_summary] {ticker} 失敗: {e}")
+                result[ticker] = None
+
+        return jsonify({'status': 'success', 'data': result})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/stock_analysis/<ticker>', methods=['GET'])
@@ -1579,10 +1691,20 @@ def efficient_frontier():
     輸出: 隨機模擬點、效率前緣、最小變異組合、最大夏普組合
     修復：超時保護 + 降低計算量 + 確保永遠回傳有效 JSON
     """
-    import signal as _signal
+    import signal as _signal, sys as _sys
 
     def _timeout_handler(signum, frame):
         raise TimeoutError('EF 計算超時')
+
+    # ── 超時保護（Unix/Render only；Windows 不支援 SIGALRM）───
+    _alarm_set = False
+    if _sys.platform != 'win32':
+        try:
+            _signal.signal(_signal.SIGALRM, _timeout_handler)
+            _signal.alarm(55)   # 55秒後強制中斷（gunicorn 逾時前的保護層）
+            _alarm_set = True
+        except Exception:
+            pass
 
     try:
         import yfinance as yf
@@ -1843,7 +1965,7 @@ def efficient_frontier():
             for i, tk in enumerate(tickers)
         ]
 
-        return jsonify({
+        resp = jsonify({
             'status':    'success',
             'tickers':   tickers,
             'n_sim':     n_sim,
@@ -1872,8 +1994,22 @@ def efficient_frontier():
             'mu':       [round(float(x), 6) for x in mu],
             'cov_diag': [round(float(np.sqrt(cov[i][i])), 6) for i in range(n)],
         })
+        if _alarm_set:
+            try: _signal.alarm(0)
+            except Exception: pass
+        return resp
+
+    except TimeoutError:
+        if _alarm_set:
+            try: _signal.alarm(0)
+            except Exception: pass
+        return jsonify({'status': 'error',
+                        'message': '計算超時（>55秒），請減少股票數量或縮短期間後重試'}), 504
 
     except Exception as e:
+        if _alarm_set:
+            try: _signal.alarm(0)
+            except Exception: pass
         import traceback; traceback.print_exc()
         return jsonify({'status':'error','message': str(e)}), 500
 

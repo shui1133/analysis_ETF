@@ -7280,6 +7280,14 @@ async function wlApiFetch(url, method='GET', body=null, retries=2) {
     try {
       const r = await fetch(url, opts);
       clearTimeout(tid);
+      // ★ 修正：非 JSON 回應（502/504 HTML 錯誤頁）直接視為失敗，不呼叫 .json()
+      if (!r.ok && r.status >= 500) {
+        if (attempt < retries) {
+          await new Promise(res => setTimeout(res, 1500));
+          continue;
+        }
+        return { status: 'error', message: `伺服器忙碌（HTTP ${r.status}）` };
+      }
       return await r.json();
     } catch(e) {
       clearTimeout(tid);
@@ -7369,27 +7377,22 @@ let _wlDragSrc   = null;   // 拖曳來源 index
 
 // ── 開啟自選股面板 ──────────────────────────────────────────────
 async function openWatchlistPanel() {
-  // ★ 防重入保護：若已在開啟流程中（_wlOpening），忽略此次呼叫
-  //   避免快速連續點擊時，第二次呼叫把 _wlAbort 設為 true，
-  //   中斷第一次流程，造成「按了沒反應」。
+  // 防重入保護：若已在開啟流程中，忽略此次呼叫
   if (_wlOpening) return;
   _wlOpening = true;
 
   const modal = document.getElementById('watchlistModal');
   if (!modal) { _wlOpening = false; return; }
 
-  // 中止任何舊的背景 async 流程（例如上次未關完的載入）
+  // 中止任何舊的背景 async 流程
   _wlAbort = true;
-  await new Promise(r => setTimeout(r, 0)); // 讓舊的 microtask 有機會退出
+  await new Promise(r => setTimeout(r, 50)); // 給舊流程足夠時間退出
 
   _wlAbort = false;
-  modal.classList.remove('hidden');        // 立即開啟（同步，不等任何 API）
+  modal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   _wlViewMode = 'trade';
   _wlSortKey  = null;
-
-  // 開啟後立即釋放旗標，讓下次點擊（如關閉後重開）可以正常進入
-  _wlOpening = false;
 
   try {
     setWlViewMode('trade');
@@ -7399,17 +7402,17 @@ async function openWatchlistPanel() {
     console.error('[自選股] 初始渲染錯誤:', e);
   }
 
-  // ── ① 立即用 localStorage 快取顯示內容（同步，面板馬上有東西）──
+  // ── ① 立即用 localStorage 快取顯示（同步，面板馬上有內容）──
   _updateWlCountBadge(_wlCodes.length);
   if (_wlCodes.length === 0) {
     _showWlEmpty(true);
   } else {
     _showWlEmpty(false);
-    renderWlTable();
+    renderWlTable();   // ★ 先渲染現有資料，讓用戶立即看到內容
+    updateWlSummary();
   }
 
-  // ── ② 背景非阻塞同步後端（不 await，不讓用戶等待）────────────
-  //   ★ 改為完全非阻塞：後端同步在背景跑，面板已經可以互動
+  // ── ② 背景非阻塞同步後端 ────────────────────────────────────
   _showWlSyncHint(true);
   (async () => {
     try {
@@ -7417,7 +7420,7 @@ async function openWatchlistPanel() {
         wlApiFetch('/api/watchlist'),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
       ]);
-      if (_wlAbort) return;   // 面板已被關閉，不再更新
+      if (_wlAbort) return;
       _showWlSyncHint(false);
       if (d && d.status === 'success') {
         const newCodes = d.codes || [];
@@ -7430,8 +7433,7 @@ async function openWatchlistPanel() {
           return;
         }
         _showWlEmpty(false);
-        if (changed) renderWlTable();   // 有變化才重繪
-        // 補抓新增的股票資料
+        if (changed) renderWlTable();
         const missing = _wlCodes.filter(c => _wlData[c] === undefined);
         if (missing.length > 0) {
           _showWlLoading(true);
@@ -7450,22 +7452,29 @@ async function openWatchlistPanel() {
     }
   })();
 
-  // ── ③ 立即補抓 localStorage 裡已有代碼但缺行情的資料 ──────────
-  if (_wlCodes.length === 0) return;
-  _showWlEmpty(false);
-  const missing = _wlCodes.filter(c => _wlData[c] === undefined);
-  if (missing.length === 0) {
-    renderWlTable();
-    updateWlSummary();
-    return;
-  }
-  _showWlLoading(true);
+  // ── ③ 立即補抓 localStorage 裡已有代碼但缺行情的資料 ──────
+  // ★ 修正：_wlOpening 移到 finally，確保整個載入流程完成後才釋放旗標
+  //   避免第二次點擊時 _wlAbort 中斷本次流程
   try {
-    await _loadWlStocks(missing);
-  } catch(e) {
-    console.error('[自選股] 載入股票資料錯誤:', e);
+    if (_wlCodes.length === 0) return;
+    _showWlEmpty(false);
+    const missing = _wlCodes.filter(c => _wlData[c] === undefined);
+    if (missing.length === 0) {
+      renderWlTable();
+      updateWlSummary();
+      return;
+    }
+    _showWlLoading(true);
+    try {
+      await _loadWlStocks(missing);
+    } catch(e) {
+      console.error('[自選股] 載入股票資料錯誤:', e);
+    } finally {
+      if (!_wlAbort) _showWlLoading(false);
+    }
   } finally {
-    if (!_wlAbort) _showWlLoading(false);
+    // ★ 修正：在這裡釋放，確保載入流程完整跑完後才允許再次點擊
+    _wlOpening = false;
   }
 }
 
@@ -7647,9 +7656,11 @@ async function _loadWlStocks(codes) {
       if (_wlData[code] !== undefined) return;
       try {
         const r = await fetch('/api/stock_analysis/' + code, { signal: AbortSignal.timeout(20000) });
-        const d = await r.json();
+        // ★ 修正：502/504 時 r.ok 為 false，不呼叫 .json() 避免崩潰
+        if (!r.ok) { _wlData[code] = null; return; }
+        const d = await r.json().catch(() => ({}));
         _wlData[code] = (d.status === 'success') ? d.data : null;
-        if (_wlData[code]) await hotCacheSave(code, _wlData[code]);   // 寫入 IDB
+        if (_wlData[code]) await hotCacheSave(code, _wlData[code]);
       } catch(e) { _wlData[code] = null; }
       const loaded2 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
       _updateWlProgress(loaded2, total, '已載入 ' + loaded2 + ' / ' + total + ' 支...');
