@@ -5685,7 +5685,7 @@ async function loadHotStocksSequential(onlyCodes) {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ tickers: missing.map(s => s.code) }),
-        signal:  AbortSignal.timeout(45000),
+        signal:  AbortSignal.timeout(28000),   // ★ 配合後端 25s 批次上限
       });
 
       if (r.ok) {
