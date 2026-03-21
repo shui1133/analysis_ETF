@@ -2117,11 +2117,16 @@ async function loadStock(ticker) {
   const tag = document.getElementById(`tag-${ticker}`);
   if (tag) tag.classList.add('active');
 
-  // ── ① 記憶體快取命中（5分鐘內）：直接渲染 ──────────────
-  // 注意：若快取資料是熱門面板的輕量摘要（_isSummary），必須跳過，
-  //        繼續向下取得完整資料（含 chart 陣列、配息、籌碼等）。
+  // 資料完整性驗證：必須有 latest.close 和 chart.closes 才算完整個股資料
+  function isValidFullData(d) {
+    return d && !d._isSummary &&
+           d.latest && typeof d.latest.close === 'number' &&
+           d.chart  && Array.isArray(d.chart.closes) && d.chart.closes.length > 0;
+  }
+
+  // ── ① 記憶體快取命中（5分鐘內）────────────────────────────
   const mem = _stockDataCache[ticker];
-  if (mem && (Date.now() - mem.ts < _STOCK_CACHE_TTL) && !mem.data._isSummary) {
+  if (mem && (Date.now() - mem.ts < _STOCK_CACHE_TTL) && isValidFullData(mem.data)) {
     currentData = mem.data;
     hide('welcomeSection'); hide('errorSection'); hide('loadingSection');
     show('analysisSection');
@@ -2131,10 +2136,8 @@ async function loadStock(ticker) {
   }
 
   // ── ② IndexedDB 快取命中（24h，每日 16:00 後失效）────────
-  // hotCacheLoad / hotCacheSave 定義於熱門股票區塊（共用 IDB + localStorage 索引）
-  // 若 IDB 存的是熱門面板輕量摘要（_isSummary），個股分析頁需完整資料，繼續往下取。
   const lsCached = await hotCacheLoad(ticker);
-  if (lsCached && !lsCached._isSummary) {
+  if (isValidFullData(lsCached)) {
     _stockDataCache[ticker] = { data: lsCached, ts: Date.now() };
     currentData = lsCached;
     hide('welcomeSection'); hide('errorSection'); hide('loadingSection');
@@ -2144,14 +2147,14 @@ async function loadStock(ticker) {
     return;
   }
 
-  // ── ③ GitHub 快取命中（後端讀取，每日 13:30 後由後端判斷是否過期）──
+  // ── ③ GitHub 快取命中 ─────────────────────────────────────
   show('loadingSection');
   hide('welcomeSection'); hide('analysisSection'); hide('errorSection');
   document.getElementById('loadingText').textContent = `正在取得 ${ticker} 資料...`;
   const ghCached = await ghStockCacheLoad(ticker);
-  if (ghCached) {
+  if (isValidFullData(ghCached)) {
     _stockDataCache[ticker] = { data: ghCached, ts: Date.now() };
-    await hotCacheSave(ticker, ghCached);   // 回填 IDB，下次不再查 GitHub
+    await hotCacheSave(ticker, ghCached);
     currentData = ghCached;
     hide('loadingSection'); show('analysisSection');
     renderAll(ghCached);
@@ -2159,8 +2162,7 @@ async function loadStock(ticker) {
     return;
   }
 
-  // ── ④ 呼叫後端 API（後端整合 yfinance / TWSE / MOPS）────────
-
+  // ── ④ 呼叫後端 API ────────────────────────────────────────
   try {
     const r = await fetch(`/api/stock_analysis/${ticker}`);
     const d = await r.json();
@@ -2257,7 +2259,8 @@ function renderHeader(data) {
 
 // ── 技術分析 ──────────────────────────────────────────────────
 function renderTechnical(data) {
-  const ind  = data.technical.latest;
+  if (!data || !data.technical || !data.latest) return;
+  const ind  = data.technical.latest || {};
   const tech = data.technical;
   const rec  = data.recommendation;
 
@@ -2509,6 +2512,7 @@ async function fetchMissingFundamentals(ticker, stockName, missingFields) {
 }
 
 function renderFundamental(data) {
+  if (!data || !data.fundamentals) return;
   const f = data.fundamentals;
   const ticker    = data.ticker;
   const stockName = getStockNameZh(ticker) || data.name || '';
@@ -2670,6 +2674,7 @@ function mCard(label, val, unit, color, raw=false) {
 
 // ── 籌碼面 ────────────────────────────────────────────────────
 function renderChip(data) {
+  if (!data) return;
   const chip  = data.chip;
   const tech  = data.technical;
   if (!chip || chip.note === '資料不足，無法估算籌碼' || !chip.foreign_dir) return;
@@ -2776,8 +2781,9 @@ function renderChip(data) {
 
 // ── 投資建議 ──────────────────────────────────────────────────
 function renderRecommendation(data) {
+  if (!data || !data.recommendation || !data.technical) return;
   const rec   = data.recommendation;
-  const ind   = data.technical.latest;
+  const ind   = data.technical.latest || {};
   const chip  = data.chip;
   const close = data.latest.close;
   const fmtScore = v => (v>=0?'+':'')+v;
@@ -5273,6 +5279,36 @@ setTimeout(async () => {
   await _pollCacheVersion();
   setInterval(_pollCacheVersion, 5 * 60 * 1000);
 }, 10000);
+
+// ── 清除格式不完整的舊快取（一次性，確保 IDB 沒有殘留壞資料）────
+// 當 IDB 存有既無 latest.close 也無 _isSummary 旗標的舊格式資料時，
+// loadStock 的 isValidFullData 會擋下，但無法自動清除；這裡在頁面啟動時掃描一次。
+(async function _cleanStaleCache() {
+  try {
+    const db = await _getIDB();
+    if (!db) return;
+    const stale = [];
+    await new Promise(resolve => {
+      const tx  = db.transaction('stockData', 'readonly');
+      const req = tx.objectStore('stockData').openCursor();
+      req.onsuccess = e => {
+        const cursor = e.target.result;
+        if (!cursor) { resolve(); return; }
+        const d = cursor.value?.data;
+        const bad = !d ||
+          (!d._isSummary && !(d.latest && typeof d.latest.close === 'number' && d.chart?.closes?.length));
+        if (bad) stale.push(cursor.value.code);
+        cursor.continue();
+      };
+      req.onerror = () => resolve();
+    });
+    if (stale.length > 0) {
+      const tx2 = db.transaction('stockData', 'readwrite');
+      stale.forEach(code => tx2.objectStore('stockData').delete(code));
+      console.log(`[Cache] 清除 ${stale.length} 筆格式不完整的舊快取:`, stale);
+    }
+  } catch(e) { /* 靜默 */ }
+})();
 
 // ── GitHub 行情快取（後端讀取）─────────────────────────────────────
 // 優先順序：記憶體 → localStorage → GitHub → yfinance API
