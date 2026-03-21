@@ -1,6 +1,22 @@
 """
-github_cache.py - 三層持久化快取模組 v2
+github_cache.py - 三層持久化快取模組 v3
 優先順序：本機硬碟 → GitHub Public Repo → yfinance
+
+════════════════════════════════════════════════════════════
+必要環境變數（本機：.env；Render：Dashboard → Environment）
+════════════════════════════════════════════════════════════
+
+  GH_CACHE_TOKEN = ghp_xxxxxxxxxxxxxxxxxxxxxxxx
+    ├─ 用途：GitHub API 寫入權限（PUT/存檔至 Repo）
+    ├─ 來源：GitHub → Settings → Developer settings
+    │        → Personal access tokens (classic)
+    │        → 勾選 repo（或 public_repo 若為公開 Repo）
+    ├─ 未設定時：程式仍可【讀取】GitHub Public Repo 資料，
+    │            但【不會】將更新推送回 GitHub
+    └─ 注意：請勿將實際 Token 值寫入程式碼或 HTML，
+             只能透過環境變數傳入
+
+════════════════════════════════════════════════════════════
 
 本機硬碟（L1）
   - 路徑：由 get_data_dir() 決定（與 app.py 共用 DATA_DIR）
@@ -19,8 +35,9 @@ TTL（快取有效期）
   - 基本面   : 3 天
 
 背景排程（APScheduler）
-  - 每日 13:30（台灣時間）自動更新 watchlist + POPULAR_STOCKS 查詢過的股票
-  - 由 start_scheduler(app, fetcher_factory) 啟動，app.py 在 __main__ 時呼叫
+  - 每日 16:00（台灣時間，盤後 30 分鐘）自動更新 TOP50 熱門股票 + ETF
+  - 同時儲存至本機 Storage 及同步推送至 GitHub Repo
+  - 由 start_scheduler(cache, fetcher_factory) 啟動，app.py 在 __main__ 時呼叫
 """
 
 from __future__ import annotations
@@ -50,6 +67,25 @@ TTL_PRICE       = 60 * 60 * 20        # 20 小時
 TTL_DIVIDEND    = 60 * 60 * 24 * 7    # 7 天
 TTL_FUNDAMENTAL = 60 * 60 * 24 * 3    # 3 天
 TTL_MAP         = {"price": TTL_PRICE, "dividend": TTL_DIVIDEND, "fundamental": TTL_FUNDAMENTAL}
+
+# ──────────────────────────────────────────────────────────────
+# TOP 50 熱門股票 + ETF（每日 16:00 自動更新）
+# 修改此清單即可調整每日排程更新範圍
+# ──────────────────────────────────────────────────────────────
+TOP50_STOCKS = [
+    # ── 半導體 / 科技 ──────────────────────────────────────────
+    '2330', '2454', '2303', '2308', '2382', '2357', '3711', '2379',
+    '3034', '2337', '6770', '3714', '2344', '2408', '2409',
+    # ── 電子代工 / 組裝 ────────────────────────────────────────
+    '2317', '4938', '2395', '2356', '2353',
+    # ── 金融 ──────────────────────────────────────────────────
+    '2881', '2882', '2891', '2886', '2887', '2884', '2885', '2890',
+    # ── 傳產 / 電信 ───────────────────────────────────────────
+    '2412', '1301', '1303', '2002', '1326',
+    # ── 熱門 ETF（前 15 大）────────────────────────────────────
+    '00878', '0056', '006208', '00919', '00929', '00713', '00631L',
+    '00679B', '00772B', '00720B', '0050', '00915', '00646', '00864B', '00905',
+]
 
 
 # ──────────────────────────────────────────────────────────────
@@ -189,8 +225,8 @@ def is_local_fresh(data_dir: str, ticker: str, data_type: str) -> bool:
     if elapsed >= ttl:
         return False
 
-    # 若今天已過 13:30 且上次更新在今天 13:30 之前 → 過期（強制當日盤後更新）
-    market_close_today = now.replace(hour=13, minute=30, second=0, microsecond=0)
+    # 若今天已過 16:00 且上次更新在今天 16:00 之前 → 過期（強制當日盤後更新）
+    market_close_today = now.replace(hour=16, minute=0, second=0, microsecond=0)
     if now >= market_close_today and updated_dt < market_close_today:
         return False
 
@@ -322,8 +358,8 @@ def _gh_meta_fresh(ticker: str, data_type: str) -> bool:
             print(f"  [GitHub-R] {ticker}/{data_type} 快取已過期（TTL {elapsed/3600:.1f}h）")
             return False
 
-        # 今日已過 13:30 且上次更新在今天 13:30 之前 → 強制視為過期
-        market_close_today = now.replace(hour=13, minute=30, second=0, microsecond=0)
+        # 今日已過 16:00 且上次更新在今天 16:00 之前 → 強制視為過期
+        market_close_today = now.replace(hour=16, minute=0, second=0, microsecond=0)
         if now >= market_close_today and updated_dt < market_close_today:
             print(f"  [GitHub-R] {ticker}/{data_type} 盤後強制過期（更新於 {ts_str[:16]}）")
             return False
@@ -699,16 +735,18 @@ def start_scheduler(cache: CacheManager, fetcher_factory, watchlist_reader=None,
         呼叫後回傳具有 fetch_price / fetch_dividend / fetch_fundamental 的物件
         例如：lambda: ETFDataFetcher(output_dir=DATA_DIR)
     watchlist_reader : callable | None
-        呼叫後回傳自選股代碼 list，例如：_wl_read
-        None 時不更新自選股
+        （已廢棄，保留向下相容，傳入無效果）
+        更新清單現由內建 TOP50_STOCKS 定義，不再讀取自選股
     popular_stocks : list | None
-        常駐更新的股票代碼清單，例如 POPULAR_STOCKS
+        額外補充的股票代碼清單，合併至 TOP50_STOCKS 一起更新
+        None 時僅更新 TOP50_STOCKS
 
     說明
     ----
-    排程邏輯：
-      - 每 60 秒醒來一次，檢查現在是否為「今日 13:30–13:35」且今日尚未執行
-      - 執行時合併 watchlist + popular_stocks，去重後逐一 force_refresh
+    排程邏輯（每日 16:00 台灣時間，盤後 30 分鐘）：
+      - 以 TOP50_STOCKS ∪ popular_stocks 為更新清單（去重）
+      - 逐支 force_refresh（忽略 TTL，強制重抓）
+      - 結果同時儲存至【本機 Storage】及【GitHub Repo】
     """
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -725,23 +763,27 @@ def start_scheduler(cache: CacheManager, fetcher_factory, watchlist_reader=None,
 
 
 def _collect_tickers(watchlist_reader, popular_stocks) -> list:
-    tickers = list(popular_stocks or [])
-    if watchlist_reader:
-        try:
-            wl = watchlist_reader() or []
-            for t in wl:
-                if t not in tickers:
-                    tickers.append(t)
-        except Exception as e:
-            print(f"  [Scheduler] watchlist_reader 失敗: {e}")
+    """合併 TOP50_STOCKS + popular_stocks（watchlist_reader 已廢棄，不再使用）"""
+    seen = set()
+    tickers = []
+    for t in TOP50_STOCKS:
+        if t not in seen:
+            seen.add(t)
+            tickers.append(t)
+    for t in (popular_stocks or []):
+        if t not in seen:
+            seen.add(t)
+            tickers.append(t)
     return tickers
 
 
 def _run_daily_refresh(cache: CacheManager, fetcher_factory, watchlist_reader, popular_stocks):
-    """實際執行每日更新的函式（被排程器呼叫）"""
+    """實際執行每日 16:00 更新的函式（被排程器呼叫）"""
     tickers = _collect_tickers(watchlist_reader, popular_stocks)
     print(f"\n{'='*55}")
-    print(f"  [Scheduler] 每日 13:30 自動更新，共 {len(tickers)} 支股票")
+    print(f"  [Scheduler] 每日 16:00 自動更新，共 {len(tickers)} 支股票")
+    print(f"  [Scheduler] 更新範圍：TOP50_STOCKS + 額外清單")
+    print(f"  [Scheduler] 儲存目標：本機 Storage ＋ GitHub Repo")
     print(f"{'='*55}")
     fetcher = fetcher_factory()
     for tk in tickers:
@@ -749,7 +791,7 @@ def _run_daily_refresh(cache: CacheManager, fetcher_factory, watchlist_reader, p
             cache.force_refresh(tk, fetcher, data_types=["price", "dividend", "fundamental"])
         except Exception as e:
             print(f"  [Scheduler] {tk} 更新失敗（跳過）: {e}")
-    print(f"  [Scheduler] ✅ 每日更新完成\n")
+    print(f"  [Scheduler] ✅ 每日 16:00 更新完成\n")
 
 
 def _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks):
@@ -761,7 +803,7 @@ def _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks)
         scheduler.add_job(
             func=_run_daily_refresh,
             trigger="cron",
-            hour=13, minute=30,
+            hour=16, minute=0,
             kwargs={
                 "cache": cache,
                 "fetcher_factory": fetcher_factory,
@@ -772,7 +814,9 @@ def _start_apscheduler(cache, fetcher_factory, watchlist_reader, popular_stocks)
             replace_existing=True,
         )
         scheduler.start()
-        print("  [Scheduler] ✅ APScheduler 已啟動，每日 13:30 (Asia/Taipei) 自動更新")
+        print("  [Scheduler] ✅ APScheduler 已啟動，每日 16:00 (Asia/Taipei) 自動更新")
+        print("  [Scheduler]    更新範圍：TOP50_STOCKS（50 支熱門股票 + ETF）")
+        print("  [Scheduler]    儲存目標：本機 Storage ＋ GitHub Repo")
     except Exception as e:
         print(f"  [Scheduler] APScheduler 啟動失敗: {e}")
 
@@ -786,8 +830,8 @@ def _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_st
             try:
                 now = datetime.now()
                 today = now.date()
-                # 13:30 ~ 13:35 視窗內且今日尚未執行
-                if (now.hour == 13 and 30 <= now.minute < 35
+                # 16:00 ~ 16:05 視窗內且今日尚未執行
+                if (now.hour == 16 and 0 <= now.minute < 5
                         and _last_run_date[0] != today):
                     _last_run_date[0] = today
                     _run_daily_refresh(cache, fetcher_factory, watchlist_reader, popular_stocks)
@@ -797,7 +841,7 @@ def _start_thread_scheduler(cache, fetcher_factory, watchlist_reader, popular_st
 
     t = threading.Thread(target=_loop, daemon=True, name="cache-scheduler")
     t.start()
-    print("  [Scheduler] ✅ threading 排程已啟動（每日 13:30–13:35 自動更新）")
+    print("  [Scheduler] ✅ threading 排程已啟動（每日 16:00–16:05 自動更新）")
 
 
 # ──────────────────────────────────────────────────────────────

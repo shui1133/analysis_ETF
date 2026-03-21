@@ -171,11 +171,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
       </button>
-      <button id="btnWatchlist"
-              onclick="openWatchlistPanel().catch(e=>console.error('[自選股] openWatchlistPanel 錯誤:',e))"
-              class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
-        <i class="fa-solid fa-star"></i>自選股
-      </button>
     </div>
 
     <!-- 熱門股票清單 -->
@@ -265,6 +260,13 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <div>更新 <span id="latestDate">--</span></div>
         </div>
         <div id="ratingBadge"></div>
+        <!-- 取得最新股價按鈕 -->
+        <button id="btnForceRefreshSingle"
+                onclick="forceRefreshCurrentStock()"
+                class="flex items-center gap-1.5 bg-sky-700 hover:bg-sky-600 text-white font-bold px-3 py-2 rounded-lg text-xs transition"
+                title="忽略快取，直接從 yfinance 取得最新股價">
+          <i class="fa-solid fa-bolt"></i>取得最新股價
+        </button>
       </div>
     </div>
 
@@ -2099,7 +2101,7 @@ function searchStock() {
 // 載入股票分析資料
 // ════════════════════════════════════════════════════════════════
 // ── 四層快取：記憶體(5分鐘) → IndexedDB/localStorage(24h) → GitHub → 後端 yfinance API ─
-// 個股、熱門股票、熱門 ETF、自選股 全部共用同一套快取策略
+// 個股、熱門股票、熱門 ETF 全部共用同一套快取策略
 // IndexedDB 為主要大容量快取，localStorage 只存時間戳索引（省空間）
 // 快取每日 16:00 後強制失效（配合台股收盤後排程更新）
 // GitHub 快取：透過後端 GET /api/stock_cache/<ticker> 讀取，寫入由後端自動處理
@@ -2169,7 +2171,7 @@ async function loadStock(ticker) {
       return;
     }
 
-    // 同時寫入記憶體快取與 IDB（讓熱門/自選股面板也能受益）
+    // 同時寫入記憶體快取與 IDB（讓熱門股票/ETF 面板也能受益）
     _stockDataCache[ticker] = { data: d.data, ts: Date.now() };
     await hotCacheSave(ticker, d.data);
 
@@ -5626,6 +5628,121 @@ async function reloadHotStocks() {
   loadHotStocksSequential();
 }
 
+// ── 強制從 yfinance 取得最新股價（熱門股票/ETF 整批）────────────
+async function forceRefreshHotStocks() {
+  const btn = document.getElementById('btnForceRefreshHot');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中...'; }
+
+  const codes = hotStockList
+    .map(s => s.code)
+    .filter(c => c && c !== '0000');   // 排除大盤指數
+
+  if (codes.length === 0) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i>取得最新股價'; }
+    return;
+  }
+
+  try {
+    // 每次最多批次 10 支（後端限制），分批送出
+    const CHUNK = 10;
+    let done = 0;
+    for (let i = 0; i < codes.length; i += CHUNK) {
+      const chunk = codes.slice(i, i + CHUNK);
+      if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中 ${Math.min(i + CHUNK, codes.length)}/${codes.length}...`;
+      try {
+        const r = await fetch('/api/force_refresh_price', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers: chunk }),
+          signal: AbortSignal.timeout(60000),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          // 清除已更新的本機 IDB 快取，讓下次重新渲染時使用最新資料
+          for (const code of chunk) {
+            if (d.results?.[code]?.status === 'success') {
+              delete hotStockData[code];
+              done++;
+            }
+          }
+        }
+      } catch (chunkErr) {
+        console.warn('[forceRefresh] chunk 失敗:', chunkErr);
+      }
+    }
+    // 清除快取並重新載入表格
+    await hotCacheClear();
+    hotStockData = {};
+    hotLoadAbort = false;
+    loadHotStocksSequential();
+    console.log(`[forceRefresh] 完成，成功更新 ${done}/${codes.length} 支`);
+  } catch (e) {
+    console.error('[forceRefreshHotStocks]', e);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i>取得最新股價'; }
+  }
+}
+
+// ── 強制從 yfinance 取得單支股票最新股價（表格列按鈕）────────────
+async function forceRefreshSingleHotStock(code) {
+  // 先在表格中顯示更新中狀態
+  delete hotStockData[code];
+  renderHotTable();
+  try {
+    const r = await fetch('/api/force_refresh_price', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: code }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const d = await r.json();
+    if (d.results?.[code]?.status === 'success') {
+      // 強制從後端重新取得完整資料
+      const r2 = await fetch('/api/stock_analysis/' + code);
+      const d2 = await r2.json();
+      const result = (d2.status === 'success') ? d2.data : null;
+      hotStockData[code] = result;
+      if (result) await hotCacheSave(code, result);
+    } else {
+      hotStockData[code] = null;
+    }
+  } catch (e) {
+    hotStockData[code] = null;
+  }
+  renderHotTable();
+  updateHotSummary();
+}
+
+// ── 強制從 yfinance 取得個股最新股價（個股標題列按鈕）───────────
+async function forceRefreshCurrentStock() {
+  if (!currentData) return;
+  const ticker = currentData.ticker;
+  const btn = document.getElementById('btnForceRefreshSingle');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中...'; }
+
+  try {
+    const r = await fetch('/api/force_refresh_price', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const d = await r.json();
+    if (d.results?.[ticker]?.status === 'success') {
+      // 清除記憶體快取，重新載入個股完整資料
+      await hotCacheClear();
+      await loadStock(ticker);
+    } else {
+      alert(`取得 ${ticker} 最新股價失敗：${d.results?.[ticker]?.message || '未知錯誤'}`);
+    }
+  } catch (e) {
+    alert(`取得最新股價時發生錯誤：${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i>取得最新股價'; }
+  }
+}
+
+
 async function reloadSingleHotStock(code) {
   // 清除失敗快取，顯示載入中
   delete hotStockData[code];
@@ -6102,7 +6219,11 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       '<td class="py-2 px-3"><div class="flex flex-wrap gap-0.5">' + signalHtml + '</div></td>';
   }
 
-  const actionCol = '<td class="py-2 px-3 text-center"><button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button></td>';
+  const actionCol = '<td class="py-2 px-3 text-center">' +
+    '<div class="flex items-center gap-1 justify-center">' +
+    '<button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>' +
+    '<button onclick="event.stopPropagation();forceRefreshSingleHotStock(\'' + row.code + '\')" class="text-sky-400 hover:text-sky-300 text-xs border border-sky-700/50 rounded px-2 py-0.5 hover:bg-sky-900/30 transition flex items-center gap-0.5" title="從 yfinance 取得最新股價"><i class="fa-solid fa-bolt text-xs"></i>最新</button>' +
+    '</div></td>';
   return '<tr class="' + trClass + '"' + indexTrAttr + ' onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
 }
 
@@ -6186,9 +6307,7 @@ function updateHotSummary() {
 // ESC 關閉
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (!document.getElementById('watchlistModal').classList.contains('hidden'))
-      closeWatchlistPanel();
-    else if (!document.getElementById('hotStockModal').classList.contains('hidden'))
+    if (!document.getElementById('hotStockModal').classList.contains('hidden'))
       closeHotStockPanel();
   }
 });
@@ -6797,13 +6916,13 @@ async function _autoLoadFinAICache(ticker) {
 // 結果永久儲存於 GitHub；下次查詢時自動從 GitHub 載入，不再扣費
 
 function _getFinAIPeriodKey() {
-  // 台灣時間 (UTC+8)，13:30 為分界
+  // 台灣時間 (UTC+8)，16:00 為當日/昨日分界（對齊每日排程更新時間）
   const now = new Date();
   const tw = new Date(now.getTime() + 8 * 3600 * 1000); // UTC → UTC+8
-  const h = tw.getUTCHours(), m = tw.getUTCMinutes();
-  // 若尚未到今日 13:30，period 仍屬昨日
+  const h = tw.getUTCHours();
+  // 若尚未到今日 16:00，period 仍屬昨日
   let d = new Date(tw);
-  if (h < 13 || (h === 13 && m < 30)) {
+  if (h < 16) {
     d.setUTCDate(d.getUTCDate() - 1);
   }
   const yyyy = d.getUTCFullYear();
@@ -6889,19 +7008,19 @@ async function generateFinAI() {
 
   const ticker    = currentData.ticker;
   const periodKey = _getFinAIPeriodKey();
-
-  // ── STEP 1：先向後端查詢 GitHub 快取 ─────────────────────────
   const btn = document.getElementById('fin-ai-btn');
+
+  // ── STEP 1：先查本機 Storage → GitHub 快取，有就直接顯示 ──────
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>檢查快取...'; }
 
   let checkResult;
   try {
     checkResult = await _checkFinAIQuota(ticker);
   } catch (e) {
-    checkResult = { status: 'not_found', used: false, period_key: periodKey };
+    checkResult = { status: 'not_found', period_key: periodKey };
   }
 
-  // ── STEP 2：若 GitHub 已有快取，直接顯示（但按鈕仍可重新產生）──
+  // ── STEP 2：有快取 → 直接顯示，不呼叫 Claude（節省 API 費用）──
   if (checkResult.status === 'cached' && checkResult.data?.report_text) {
     _showFinAIReport(
       checkResult.data.report_text,
@@ -6916,9 +7035,7 @@ async function generateFinAI() {
     return;
   }
 
-  // ── STEP 3：無快取，直接進入產生流程（移除配額限制）────────
-
-  // ── STEP 4：呼叫 Claude API（透過後端 /api/ai_report POST）──
+  // ── STEP 3：無快取 → 呼叫 Claude API 產生新報告 ─────────────
   _finAILoading = true;
   document.getElementById('fin-ai-placeholder').classList.add('hidden');
   document.getElementById('fin-ai-result').classList.add('hidden');
@@ -6930,7 +7047,6 @@ async function generateFinAI() {
     const stockName = getStockNameZh(ticker) || ticker;
     const source    = _finData.source || 'yfinance';
 
-    // 整理財報摘要給 Claude
     const summaryLines = ratios.map(r => {
       const yr = (r.period || '').slice(0, 4);
       return [
@@ -6951,30 +7067,9 @@ async function generateFinAI() {
     const latest = currentData.latest || {};
     const fund   = currentData.fundamentals || {};
 
-    const prompt = `你是一位專業的台灣股票財務分析師，請根據以下財務資料，為【${stockName}（${ticker}）】撰寫一份完整的「財務健診報告」。
+    const prompt = `你是一位專業的台灣股票財務分析師，請根據以下財務資料，為【${stockName}（${ticker}）】撰寫一份完整的「財務健診報告」。\n\n## 財務資料摘要（資料來源：${source}）\n${summaryLines || '（資料不足）'}\n\n## 目前股價資訊\n- 股價：${latest.close || '--'} 元（${latest.date || '--'}）\n- 本益比：${fund.pe_ratio != null ? fund.pe_ratio + 'x' : 'N/A'}\n- 股價淨值比：${fund.pb_ratio != null ? fund.pb_ratio + 'x' : 'N/A'}\n- 近12月殖利率：${fund.div_yield != null ? fund.div_yield + '%' : 'N/A'}\n\n## 請依以下架構撰寫（每節 3-5 句，繁體中文，不要用 Markdown，用純文字段落）：\n\n1. 【營收成長分析】近年營收趨勢、成長率、是否穩定擴張\n2. 【獲利能力分析】毛利率、營益率、淨利率的變化與水準\n3. 【ROE 與股東報酬】ROE 趨勢、與產業均值的比較、盈利品質\n4. 【財務結構評估】負債比率、流動比率、財務穩健性\n5. 【現金流量品質】營業現金流、自由現金流、資本支出效率\n6. 【綜合評價】整體財務健康狀況、主要優勢與潛在風險\n7. 【投資參考】基於財務數據的中長期投資觀點（非買賣建議）\n\n注意：若某年度資料不完整（顯示 N/A 或空白），請跳過該年份，不要推測。最後加上「以上分析僅供參考，不構成投資建議」。`;
 
-## 財務資料摘要（資料來源：${source}）
-${summaryLines || '（資料不足）'}
-
-## 目前股價資訊
-- 股價：${latest.close || '--'} 元（${latest.date || '--'}）
-- 本益比：${fund.pe_ratio != null ? fund.pe_ratio + 'x' : 'N/A'}
-- 股價淨值比：${fund.pb_ratio != null ? fund.pb_ratio + 'x' : 'N/A'}
-- 近12月殖利率：${fund.div_yield != null ? fund.div_yield + '%' : 'N/A'}
-
-## 請依以下架構撰寫（每節 3-5 句，繁體中文，不要用 Markdown，用純文字段落）：
-
-1. 【營收成長分析】近年營收趨勢、成長率、是否穩定擴張
-2. 【獲利能力分析】毛利率、營益率、淨利率的變化與水準
-3. 【ROE 與股東報酬】ROE 趨勢、與產業均值的比較、盈利品質
-4. 【財務結構評估】負債比率、流動比率、財務穩健性
-5. 【現金流量品質】營業現金流、自由現金流、資本支出效率
-6. 【綜合評價】整體財務健康狀況、主要優勢與潛在風險
-7. 【投資參考】基於財務數據的中長期投資觀點（非買賣建議）
-
-注意：若某年度資料不完整（顯示 N/A 或空白），請跳過該年份，不要推測。最後加上「以上分析僅供參考，不構成投資建議」。`;
-
-    // 呼叫後端 /api/ai_report（POST）— 後端負責呼叫 Claude + 存 GitHub
+    // 後端負責呼叫 Claude + 同時存本機 Storage + GitHub
     const response = await fetch(`/api/ai_report/${ticker}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -6991,7 +7086,6 @@ ${summaryLines || '（資料不足）'}
     }
 
     const result = await response.json();
-
     let aiText = '';
     if (result.status === 'cached' || result.status === 'generated') {
       aiText = result.data?.report_text || '';
@@ -7011,7 +7105,6 @@ ${summaryLines || '（資料不足）'}
       `<i class="fa-solid fa-circle-exclamation text-red-400 text-2xl mb-2 block"></i>
        <span class="text-red-400">AI 分析失敗：${e.message}</span>`;
     document.getElementById('fin-ai-placeholder').classList.remove('hidden');
-    // 修復：_updateQuotaBadge 曾未定義，此處直接隱藏配額徽章
     (function(){ const b = document.getElementById('fin-ai-quota-badge'); if(b) b.classList.add('hidden'); })();
     if (btn) {
       btn.disabled = false;
@@ -7021,6 +7114,7 @@ ${summaryLines || '（資料不足）'}
     _finAILoading = false;
   }
 }
+
 
 // ── _updateQuotaBadge（補充定義，防止其他地方呼叫時報錯）────────
 function _updateQuotaBadge(show, isCached) {
@@ -7128,941 +7222,25 @@ function _updateQuotaBadge(show, isCached) {
       <!-- Footer -->
       <div class="px-6 py-3 border-t border-slate-700 shrink-0 flex items-center justify-between text-xs text-slate-500">
         <span><i class="fa-solid fa-circle-info mr-1"></i>資料來源：Yahoo Finance。點擊股票代號可直接查詢完整分析。</span>
-        <button onclick="reloadHotStocks()"
-                class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-lg transition text-xs">
-          <i class="fa-solid fa-rotate-right"></i>重新載入
-        </button>
-</div>
-</div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════
-     自選股 Modal
-═══════════════════════════════════════════════════════════ -->
-<div id="watchlistModal" class="fixed inset-0 z-[60] hidden" style="background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);">
-  <div class="flex items-start justify-center min-h-screen p-4 pt-6">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-screen-xl shadow-2xl flex flex-col" style="max-height:90vh;">
-      <!-- Modal Header -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
-        <div class="flex items-center gap-3">
-          <i class="fa-solid fa-star text-violet-400 text-xl"></i>
-          <h2 class="text-lg font-black text-white">自選股總覽</h2>
-          <span class="text-slate-500 text-xs" id="wl-count-badge">共 0 支</span>
-        </div>
-        <div class="flex items-center gap-3">
-          <!-- 新增自選股輸入 -->
-          <div class="flex items-center gap-2">
-            <div class="relative">
-              <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
-              <input id="wlAddInput" type="text" placeholder="代碼或中文名稱"
-                     class="bg-slate-800 border border-slate-600 text-white rounded-lg pl-7 pr-3 py-1.5 text-xs outline-none focus:border-violet-500 w-36"
-                     maxlength="10"
-                     onkeydown="if(event.key==='Enter')addWatchlistStock()">
-            </div>
-            <button onclick="addWatchlistStock()"
-                    class="bg-violet-600 hover:bg-violet-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1">
-              <i class="fa-solid fa-plus"></i>加入
-            </button>
-            <button onclick="addCurrentToWatchlist()"
-                    class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1"
-                    id="wlAddCurrentBtn" title="加入目前查詢的股票">
-              <i class="fa-solid fa-bookmark"></i>加入當前個股
-            </button>
-          </div>
-          <button onclick="closeWatchlistPanel()"
-                  class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg p-2 transition">
-            <i class="fa-solid fa-xmark text-lg"></i>
+        <div class="flex items-center gap-2">
+          <button onclick="forceRefreshHotStocks()"
+                  id="btnForceRefreshHot"
+                  class="flex items-center gap-1.5 bg-sky-700 hover:bg-sky-600 text-white font-bold px-4 py-2 rounded-lg transition text-xs"
+                  title="忽略快取，直接從 yfinance 取得所有股票最新股價">
+            <i class="fa-solid fa-bolt"></i>取得最新股價
           </button>
-        </div>
-      </div>
-
-      <!-- 檢視模式切換（與熱門總覽相同） -->
-      <div class="px-6 py-2 border-b border-slate-700 shrink-0 flex gap-2">
-        <button id="wlViewBtn-trade" onclick="setWlViewMode('trade')"
-                class="tab-btn active text-xs py-1.5 px-3">
-          <i class="fa-solid fa-receipt mr-1"></i>成交資料
-        </button>
-        <button id="wlViewBtn-risedrop" onclick="setWlViewMode('risedrop')"
-                class="tab-btn text-xs py-1.5 px-3">
-          <i class="fa-solid fa-chart-bar mr-1"></i>漲跌成交統計
-        </button>
-        <button id="wlViewBtn-ma" onclick="setWlViewMode('ma')"
-                class="tab-btn text-xs py-1.5 px-3">
-          <i class="fa-solid fa-wave-square mr-1"></i>移動平均線
-        </button>
-        <button id="wlViewBtn-invest" onclick="setWlViewMode('invest')"
-                class="tab-btn text-xs py-1.5 px-3">
-          <i class="fa-solid fa-lightbulb mr-1"></i>投資分析
-        </button>
-      </div>
-
-      <!-- 錯誤提示 -->
-      <div id="wlAddError" class="hidden px-6 py-2 bg-red-950/50 border-b border-red-800/50 text-red-400 text-xs">
-        <i class="fa-solid fa-circle-exclamation mr-1"></i><span id="wlAddErrorMsg"></span>
-      </div>
-
-      <!-- 進度列 -->
-      <div id="wlProgress" class="px-6 py-3 border-b border-slate-700 shrink-0 hidden">
-        <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-          <span id="wlProgressText">載入中...</span>
-          <span id="wlProgressCount">0 / 0</span>
-        </div>
-        <div class="w-full bg-slate-800 rounded-full h-2">
-          <div id="wlProgressBar" class="bg-violet-500 h-2 rounded-full transition-all" style="width:0%"></div>
-        </div>
-      </div>
-
-      <!-- 統計摘要列 -->
-      <div id="wlSummaryRow" class="hidden px-6 py-3 border-b border-slate-700 bg-slate-800/40 shrink-0">
-        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-center text-xs">
-          <div><div class="text-slate-500 mb-0.5">已載入</div><div class="font-black text-white" id="wls-loaded">0</div></div>
-          <div><div class="text-slate-500 mb-0.5">上漲</div><div class="font-black up" id="wls-up">0</div></div>
-          <div><div class="text-slate-500 mb-0.5">下跌</div><div class="font-black down" id="wls-down">0</div></div>
-          <div><div class="text-slate-500 mb-0.5">持平</div><div class="font-black flat" id="wls-flat">0</div></div>
-          <div><div class="text-slate-500 mb-0.5">多頭排列</div><div class="font-black text-emerald-400" id="wls-bull">0</div></div>
-          <div><div class="text-slate-500 mb-0.5">空頭排列</div><div class="font-black text-red-400" id="wls-bear">0</div></div>
-          <div><div class="text-slate-500 mb-0.5">最高漲幅</div><div class="font-black up" id="wls-topgain">--</div></div>
-        </div>
-      </div>
-
-      <!-- 空狀態（無自選股時） -->
-      <div id="wlEmptyState" class="flex-1 flex flex-col items-center justify-center py-16 text-slate-500">
-        <i class="fa-solid fa-star text-5xl mb-4 text-slate-700"></i>
-        <div class="text-base font-bold mb-2">尚無自選股</div>
-        <div class="text-sm text-slate-600 mb-4">在上方輸入股票代碼或中文名稱加入，<br>或點擊「加入當前個股」</div>
-      </div>
-
-      <!-- 表格區域 -->
-      <div id="wlTableWrap" class="overflow-auto flex-1 px-2 hidden">
-        <table class="w-full text-xs" style="min-width:900px;">
-          <thead id="wlTableHead" class="sticky top-0 bg-slate-900 z-10"></thead>
-          <tbody id="wlTableBody" class="divide-y divide-slate-800/60"></tbody>
-        </table>
-      </div>
-
-      <!-- Footer -->
-      <div class="px-6 py-3 border-t border-slate-700 shrink-0 flex items-center justify-between text-xs text-slate-500">
-        <span><i class="fa-solid fa-circle-info mr-1"></i>自選股儲存於本機瀏覽器，重新整理後仍保留。點擊代號可查詢完整分析。</span>
-        <div class="flex gap-2">
-          <button onclick="reloadWatchlist()"
-                  class="flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white font-bold px-4 py-2 rounded-lg transition text-xs">
+          <button onclick="reloadHotStocks()"
+                  class="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-lg transition text-xs">
             <i class="fa-solid fa-rotate-right"></i>重新載入
           </button>
-          <button onclick="clearAllWatchlist()"
-                  class="flex items-center gap-1.5 bg-slate-700 hover:bg-red-800 text-slate-300 hover:text-white font-bold px-4 py-2 rounded-lg transition text-xs">
-            <i class="fa-solid fa-trash"></i>清空自選股
-          </button>
         </div>
-      </div>
-    </div>
-  </div>
+</div>
+</div>
 </div>
 
+
+
 <script>
-// ════════════════════════════════════════════════════════════════
-// 自選股模組（純 localStorage 模式，無需後端）
-// 拖曳排序：HTML5 drag & drop
-// ════════════════════════════════════════════════════════════════
-
-// ── 後端 API 封裝 ────────────────────────────────────────────────
-async function wlApiFetch(url, method='GET', body=null, retries=2) {
-  // 根據方法決定 timeout：GET 允許較長（冷啟動），POST 用較短
-  const timeoutMs = method === 'GET' ? 20000 : 12000;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), timeoutMs);
-    const opts = {
-      method,
-      headers: {'Content-Type':'application/json'},
-      signal: ctrl.signal
-    };
-    if (body) opts.body = JSON.stringify(body);
-    try {
-      const r = await fetch(url, opts);
-      clearTimeout(tid);
-      // ★ 修正：非 JSON 回應（502/504 HTML 錯誤頁）直接視為失敗，不呼叫 .json()
-      if (!r.ok && r.status >= 500) {
-        if (attempt < retries) {
-          await new Promise(res => setTimeout(res, 1500));
-          continue;
-        }
-        return { status: 'error', message: `伺服器忙碌（HTTP ${r.status}）` };
-      }
-      return await r.json();
-    } catch(e) {
-      clearTimeout(tid);
-      const isTimeout = e.name === 'AbortError' || e.name === 'TimeoutError';
-      if (isTimeout && attempt < retries) {
-        console.warn(`[自選股 API] 第 ${attempt + 1} 次 timeout，${1500}ms 後重試…`);
-        await new Promise(res => setTimeout(res, 1500));
-        continue;
-      }
-      console.error('[自選股 API]', e);
-      return { status: 'error', message: String(e) };
-    }
-  }
-}
-
-// ── 本地模擬後端 API（純 localStorage）──────────────────────────
-function _wlLocalSimulate(url, method, body) {
-  const codes = _lsLoad();
-  if (url.includes('/api/watchlist/add')) {
-    const code = (body && body.code) ? String(body.code).trim().toUpperCase() : '';
-    if (!code) return { status: 'error', message: '無效代碼' };
-    if (codes.includes(code)) return { status: 'already_exists', codes, count: codes.length };
-    codes.push(code);
-    _lsSave(codes);
-    return { status: 'success', codes, count: codes.length };
-  }
-  if (url.includes('/api/watchlist/remove')) {
-    const code = (body && body.code) ? String(body.code).trim().toUpperCase() : '';
-    const newCodes = codes.filter(c => c !== code);
-    _lsSave(newCodes);
-    return { status: 'success', codes: newCodes, count: newCodes.length };
-  }
-  if (method === 'POST' && url.includes('/api/watchlist')) {
-    const newCodes = (body && Array.isArray(body.codes)) ? body.codes : codes;
-    _lsSave(newCodes);
-    return { status: 'success', codes: newCodes, count: newCodes.length };
-  }
-  // GET /api/watchlist
-  return { status: 'success', codes, count: codes.length };
-}
-
-// ── localStorage 備援（後端不可用時保底）────────────────────────
-const WL_LS_KEY = 'watchlist_v2_backup';
-function _lsLoad() {
-  try { return JSON.parse(localStorage.getItem(WL_LS_KEY) || '[]'); } catch(e) { return []; }
-}
-function _lsSave(codes) {
-  try { localStorage.setItem(WL_LS_KEY, JSON.stringify(codes)); } catch(e) {}
-}
-
-// ── 讀取自選股清單（後端優先，失敗用 localStorage）────────────
-let _wlCodes = [];   // 唯一的 source of truth，依加入順序
-
-async function wlLoad() {
-  const d = await wlApiFetch('/api/watchlist');
-  if (d.status === 'success') {
-    _wlCodes = d.codes || [];
-    _lsSave(_wlCodes);   // 同步備援
-  } else {
-    console.warn('[自選股] 後端不可用，使用 localStorage 備援');
-    _wlCodes = _lsLoad();
-  }
-  return _wlCodes;
-}
-
-// ── 儲存完整清單到後端 ──────────────────────────────────────────
-async function wlSave(codes) {
-  // 去重保持順序
-  const unique = [...new Set(codes)];
-  _wlCodes = unique;
-  _lsSave(unique);  // 先更新本地備援
-  const d = await wlApiFetch('/api/watchlist', 'POST', { codes: unique });
-  if (d.status !== 'success') {
-    console.warn('[自選股] 後端儲存失敗，資料僅在本機保留');
-  }
-  return unique;
-}
-
-// ── 自選股面板狀態 ──────────────────────────────────────────────
-let _wlData      = {};
-let _wlViewMode  = 'trade';
-let _wlSortKey   = null;
-let _wlSortAsc   = true;
-let _wlAbort     = false;
-let _wlOpening   = false;  // ★ 防重入旗標：避免快速連續點擊造成 _wlAbort 狀態汙染
-let _wlDragSrc   = null;   // 拖曳來源 index
-
-// ── 開啟自選股面板 ──────────────────────────────────────────────
-async function openWatchlistPanel() {
-  // 防重入保護：若已在開啟流程中，忽略此次呼叫
-  if (_wlOpening) return;
-  _wlOpening = true;
-
-  const modal = document.getElementById('watchlistModal');
-  if (!modal) { _wlOpening = false; return; }
-
-  // 中止任何舊的背景 async 流程
-  _wlAbort = true;
-  await new Promise(r => setTimeout(r, 50)); // 給舊流程足夠時間退出
-
-  _wlAbort = false;
-  modal.classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-  _wlViewMode = 'trade';
-  _wlSortKey  = null;
-
-  try {
-    setWlViewMode('trade');
-    renderWlTableHeader();
-    _updateAddCurrentBtn();
-  } catch(e) {
-    console.error('[自選股] 初始渲染錯誤:', e);
-  }
-
-  // ── ① 立即用 localStorage 快取顯示（同步，面板馬上有內容）──
-  _updateWlCountBadge(_wlCodes.length);
-  if (_wlCodes.length === 0) {
-    _showWlEmpty(true);
-  } else {
-    _showWlEmpty(false);
-    renderWlTable();   // ★ 先渲染現有資料，讓用戶立即看到內容
-    updateWlSummary();
-  }
-
-  // ── ② 背景非阻塞同步後端 ────────────────────────────────────
-  _showWlSyncHint(true);
-  (async () => {
-    try {
-      const d = await Promise.race([
-        wlApiFetch('/api/watchlist'),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
-      ]);
-      if (_wlAbort) return;
-      _showWlSyncHint(false);
-      if (d && d.status === 'success') {
-        const newCodes = d.codes || [];
-        const changed = JSON.stringify(newCodes) !== JSON.stringify(_wlCodes);
-        _wlCodes = newCodes;
-        _lsSave(_wlCodes);
-        _updateWlCountBadge(_wlCodes.length);
-        if (_wlCodes.length === 0) {
-          _showWlEmpty(true);
-          return;
-        }
-        _showWlEmpty(false);
-        if (changed) renderWlTable();
-        const missing = _wlCodes.filter(c => _wlData[c] === undefined);
-        if (missing.length > 0) {
-          _showWlLoading(true);
-          try { await _loadWlStocks(missing); } catch(e) { console.error('[自選股]', e); }
-          finally { if (!_wlAbort) _showWlLoading(false); }
-        } else {
-          renderWlTable();
-          updateWlSummary();
-        }
-      }
-    } catch(e) {
-      if (!_wlAbort) {
-        _showWlSyncHint(false);
-        console.warn('[自選股] 後端同步失敗，使用 localStorage:', e.message);
-      }
-    }
-  })();
-
-  // ── ③ 立即補抓 localStorage 裡已有代碼但缺行情的資料 ──────
-  // ★ 修正：_wlOpening 移到 finally，確保整個載入流程完成後才釋放旗標
-  //   避免第二次點擊時 _wlAbort 中斷本次流程
-  try {
-    if (_wlCodes.length === 0) return;
-    _showWlEmpty(false);
-    const missing = _wlCodes.filter(c => _wlData[c] === undefined);
-    if (missing.length === 0) {
-      renderWlTable();
-      updateWlSummary();
-      return;
-    }
-    _showWlLoading(true);
-    try {
-      await _loadWlStocks(missing);
-    } catch(e) {
-      console.error('[自選股] 載入股票資料錯誤:', e);
-    } finally {
-      if (!_wlAbort) _showWlLoading(false);
-    }
-  } finally {
-    // ★ 修正：在這裡釋放，確保載入流程完整跑完後才允許再次點擊
-    _wlOpening = false;
-  }
-}
-
-function closeWatchlistPanel() {
-  _wlOpening = false; // ★ 釋放防重入旗標，讓下次點擊可以正常進入
-  _wlAbort = true;    // 中止背景 async IIFE
-  const modal = document.getElementById('watchlistModal');
-  if (modal) modal.classList.add('hidden');
-  document.body.style.overflow = '';
-}
-
-// ── 新增自選股 ──────────────────────────────────────────────────
-async function addWatchlistStock() {
-  let val = document.getElementById('wlAddInput').value.trim();
-  if (!val) return;
-  _hideWlError();
-
-  // 中文名稱轉代碼
-  if (!/^[0-9A-Za-z]+$/.test(val)) {
-    let found = null;
-    for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
-      if (name === val) { found = code; break; }
-    }
-    if (!found) {
-      for (const [code, name] of Object.entries(STOCK_NAMES_ZH)) {
-        if (name === val) { found = code; break; }
-      }
-    }
-    if (!found) {
-      for (const [code, name] of Object.entries(STOCK_DICT_CSV)) {
-        if (name.includes(val)) { found = code; break; }
-      }
-    }
-    if (found) { val = found; }
-    else { _showWlError(`找不到「${val}」，請改用股票代碼`); return; }
-  }
-
-  const code = val.toUpperCase();
-  if (_wlCodes.includes(code)) {
-    _showWlError(`${code} 已在自選股清單中`);
-    return;
-  }
-
-  const d = await wlApiFetch('/api/watchlist/add', 'POST', { code });
-  if (d.status === 'already_exists') {
-    _showWlError(`${code} 已在自選股清單中`); return;
-  }
-  if (d.status !== 'success') {
-    // 後端失敗，直接本地操作
-    _wlCodes.push(code);
-    _lsSave(_wlCodes);
-  } else {
-    _wlCodes = d.codes || [..._wlCodes, code];
-    _lsSave(_wlCodes);
-  }
-
-  document.getElementById('wlAddInput').value = '';
-  _updateWlCountBadge(_wlCodes.length);
-  _updateAddCurrentBtn();
-  _showWlEmpty(false);
-  _updateBtnBadge();
-  await _loadWlStocks([code]);
-}
-
-// 加入目前查詢的個股
-async function addCurrentToWatchlist() {
-  if (!currentData || !currentData.ticker) return;
-  const code = currentData.ticker;
-  if (_wlCodes.includes(code)) {
-    _showWlError(`${code} 已在自選股清單中`);
-    setTimeout(_hideWlError, 2000);
-    return;
-  }
-  const d = await wlApiFetch('/api/watchlist/add', 'POST', { code });
-  if (d.status === 'success' || d.status === 'already_exists') {
-    _wlCodes = d.codes || [..._wlCodes, code];
-  } else {
-    _wlCodes.push(code);
-  }
-  _lsSave(_wlCodes);
-  _updateWlCountBadge(_wlCodes.length);
-  _updateAddCurrentBtn();
-  _updateBtnBadge();
-  if (currentData && _wlData[code] === undefined) {
-    _wlData[code] = currentData;
-  }
-  _showWlEmpty(false);
-  renderWlTable();
-  updateWlSummary();
-}
-
-// 從自選股移除
-async function removeWatchlistStock(code) {
-  const d = await wlApiFetch('/api/watchlist/remove', 'POST', { code });
-  if (d.status === 'success') {
-    _wlCodes = d.codes;
-  } else {
-    _wlCodes = _wlCodes.filter(c => c !== code);
-  }
-  _lsSave(_wlCodes);
-  delete _wlData[code];
-  _updateWlCountBadge(_wlCodes.length);
-  _updateAddCurrentBtn();
-  _updateBtnBadge();
-  if (_wlCodes.length === 0) { _showWlEmpty(true); return; }
-  renderWlTable();
-  updateWlSummary();
-}
-
-// 清空全部
-async function clearAllWatchlist() {
-  if (!confirm('確定清空所有自選股？')) return;
-  await wlSave([]);
-  _wlData = {};
-  _updateWlCountBadge(0);
-  _updateBtnBadge();
-  _showWlEmpty(true);
-}
-
-// 重新載入
-async function reloadWatchlist() {
-  if (_wlCodes.length === 0) { _showWlEmpty(true); return; }
-  _wlCodes.forEach(c => { delete _wlData[c]; });
-  _showWlEmpty(false);
-  await _loadWlStocks(_wlCodes);
-}
-
-// ── 批次載入股票資料 ────────────────────────────────────────────
-async function _loadWlStocks(codes) {
-  // _wlAbort 由 openWatchlistPanel / closeWatchlistPanel 統一管理，此處不重置
-  const total = _wlCodes.length;
-  document.getElementById('wlProgress').classList.remove('hidden');
-  document.getElementById('wlSummaryRow').classList.add('hidden');
-
-  // ── ① 先從 IndexedDB 快取填充（24h，每日 16:00 後失效）──────
-  // ★ 修正根因：自選股需要完整資料（chart.closes 必須有內容）
-  //   若快取是熱門面板的輕量摘要（_isSummary），chart.closes=[]
-  //   導致 calcHotRow 計算漲跌日/均線排列全為 0，欄位無法正確顯示
-  //   → 必須過濾掉 _isSummary，強制重新向後端取完整資料
-  let lsHits = 0;
-  for (const code of codes) {
-    if (_wlData[code] !== undefined) continue;
-    const lsCached = await hotCacheLoad(code);   // 共用 IDB + localStorage 索引
-    if (lsCached && !lsCached._isSummary) {      // ★ 跳過輕量摘要，只用完整資料
-      _wlData[code] = lsCached;
-      lsHits++;
-    }
-  }
-  if (lsHits > 0) renderWlTable();
-
-  // ── ② GitHub 快取層（IDB 未命中的補查）──────────────────────
-  // ★ 修正：同樣過濾 _isSummary，確保 GitHub 快取也是完整格式
-  const afterLS = codes.filter(c => _wlData[c] === undefined);
-  if (afterLS.length > 0 && !_wlAbort) {
-    const ghResults = await Promise.all(afterLS.map(async code => {
-      if (_wlAbort) return null;
-      const ghData = await ghStockCacheLoad(code);
-      if (!ghData || ghData._isSummary) return null;  // ★ 跳過輕量摘要
-      return { code, data: ghData };
-    }));
-    let ghHits = 0;
-    for (const r of ghResults) {
-      if (r && r.data) {
-        _wlData[r.code] = r.data;
-        await hotCacheSave(r.code, r.data);   // 回填 IDB
-        ghHits++;
-      }
-    }
-    if (ghHits > 0) renderWlTable();
-  }
-
-  // ── ③ 批次摘要 API（對快取未命中的一次請求，優先於逐支呼叫）──
-  // ★ 新增：自選股也改用 /api/hot_summary 批次 API 取得資料
-  //   若批次成功，回傳的 summary 透過 _summaryToDataFormat 轉換後存入 _wlData
-  //   保留完整格式標記（不帶 _isSummary），讓 calcHotRow 正確計算所有欄位
-  let stillMissing = codes.filter(c => _wlData[c] === undefined);
-  _updateWlProgress(
-    _wlCodes.filter(c => _wlData[c] !== undefined).length, total,
-    lsHits > 0 ? '快取命中 ' + lsHits + ' 支，載入剩餘 ' + stillMissing.length + ' 支...' : '載入中...'
-  );
-  renderWlTable();
-
-  if (stillMissing.length > 0 && !_wlAbort) {
-    try {
-      _updateWlProgress(
-        _wlCodes.filter(c => _wlData[c] !== undefined).length, total,
-        '批次請求 ' + stillMissing.length + ' 支資料...'
-      );
-      const r = await fetch('/api/hot_summary', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ tickers: stillMissing }),
-        signal:  AbortSignal.timeout(28000),
-      });
-      if (r.ok && !_wlAbort) {
-        const d = await r.json().catch(() => ({}));
-        if (d.status === 'success') {
-          let batchHits = 0;
-          for (const [code, summary] of Object.entries(d.data || {})) {
-            if (_wlAbort) break;
-            if (!summary) { _wlData[code] = null; continue; }
-            // ★ 將輕量摘要轉換為前端完整格式，但不標記 _isSummary
-            //   避免下次開啟面板時被①步驟過濾掉
-            const converted = _summaryToDataFormat(code, summary);
-            delete converted._isSummary;  // ★ 自選股用途：移除摘要標記，視為完整資料快取
-            _wlData[code] = converted;
-            await hotCacheSave(code, converted);
-            batchHits++;
-          }
-          stillMissing = codes.filter(c => _wlData[c] === undefined);
-          if (batchHits > 0) {
-            const loaded3 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
-            _updateWlProgress(loaded3, total, '批次載入 ' + batchHits + ' 支完成，剩餘 ' + stillMissing.length + ' 支...');
-            renderWlTable();
-          }
-        }
-      }
-    } catch(e) {
-      if (!_wlAbort) console.warn('[自選股] 批次 API 失敗，降級逐支請求:', e.message);
-    }
-  }
-
-  // ── ④ 對仍缺資料的股票逐支呼叫後端完整分析 API ──────────
-  // （批次 API 失敗或部分股票未命中時的保底）
-  const BATCH = 5;
-  for (let i = 0; i < stillMissing.length; i += BATCH) {
-    if (_wlAbort) break;
-    const batch = stillMissing.slice(i, i + BATCH);
-    await Promise.all(batch.map(async code => {
-      if (_wlData[code] !== undefined) return;
-      try {
-        const r = await fetch('/api/stock_analysis/' + code, { signal: AbortSignal.timeout(20000) });
-        // ★ 修正：502/504 時 r.ok 為 false，不呼叫 .json() 避免崩潰
-        if (!r.ok) { _wlData[code] = null; return; }
-        const d = await r.json().catch(() => ({}));
-        _wlData[code] = (d.status === 'success') ? d.data : null;
-        // ★ 完整分析資料存入 IDB 時確保無 _isSummary 標記
-        if (_wlData[code]) {
-          delete _wlData[code]._isSummary;
-          await hotCacheSave(code, _wlData[code]);
-        }
-      } catch(e) { _wlData[code] = null; }
-      const loaded2 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
-      _updateWlProgress(loaded2, total, '已載入 ' + loaded2 + ' / ' + total + ' 支...');
-      renderWlTable();
-    }));
-  }
-  const finalLoaded = _wlCodes.filter(c => _wlData[c] !== undefined).length;
-  _updateWlProgress(finalLoaded, total, '載入完成，共 ' + total + ' 支');
-  document.getElementById('wlProgress').classList.add('hidden');
-  document.getElementById('wlSummaryRow').classList.remove('hidden');
-  updateWlSummary();
-}
-
-// ── 渲染表格標頭 ────────────────────────────────────────────────
-function renderWlTableHeader() {
-  const thead = document.getElementById('wlTableHead');
-  if (!thead) return;
-  const dragHint = `<th class="py-3 px-2 text-slate-600 text-center w-6" title="拖曳排序"><i class="fa-solid fa-grip-vertical"></i></th>`;
-  let base = dragHint + `
-    <th class="py-3 px-3 text-left cursor-pointer hover:text-white" onclick="sortWlTable('code')">代號 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
-    <th class="py-3 px-3 text-left" style="min-width:80px">股票名稱</th>
-    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('close')">成交價 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
-    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('chgpct')">漲跌幅% <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
-    <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('volume')">成交量(張) <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
-  let extra = '';
-  if (_wlViewMode === 'trade') {
-    extra = `<th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('chg')">漲跌 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>
-      <th class="py-3 px-3 text-right">最高</th><th class="py-3 px-3 text-right">最低</th>
-      <th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortWlTable('matrend')">均線排列 <i class="fa-solid fa-sort text-slate-600 ml-1"></i></th>`;
-  } else if (_wlViewMode === 'risedrop') {
-    extra = `<th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('updays')">上漲日(近60日)</th>
-      <th class="py-3 px-3 text-right">下跌日</th>
-      <th class="py-3 px-3 text-right">上漲量%</th>
-      <th class="py-3 px-3 text-right">下跌量%</th>`;
-  } else if (_wlViewMode === 'ma') {
-    extra = `<th class="py-3 px-3 text-right">MA5</th>
-      <th class="py-3 px-3 text-right">MA20</th>
-      <th class="py-3 px-3 text-right">MA60</th>
-      <th class="py-3 px-3 text-center">均線排列</th>`;
-  } else if (_wlViewMode === 'invest') {
-    extra = `<th class="py-3 px-3 text-center cursor-pointer hover:text-white" onclick="sortWlTable('rating_score')">評級</th>
-      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('target_price')">目標價</th>
-      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('pe_ratio')">本益比</th>
-      <th class="py-3 px-3 text-right cursor-pointer hover:text-white" onclick="sortWlTable('div_yield')">殖利率%</th>
-      <th class="py-3 px-3 text-center">趨勢</th>
-      <th class="py-3 px-3 text-left" style="min-width:220px">主要訊號</th>`;
-  }
-  thead.innerHTML = `<tr class="text-slate-400 border-b border-slate-700">${base}${extra}<th class="py-3 px-3 text-center">操作</th></tr>`;
-}
-
-function setWlViewMode(mode) {
-  _wlViewMode = mode;
-  ['trade','risedrop','ma','invest'].forEach(m => {
-    const btn = document.getElementById('wlViewBtn-' + m);
-    if (btn) btn.classList.toggle('active', m === mode);
-  });
-  renderWlTableHeader();
-  renderWlTable();
-}
-
-function sortWlTable(key) {
-  if (_wlSortKey === key) _wlSortAsc = !_wlSortAsc;
-  else { _wlSortKey = key; _wlSortAsc = false; }
-  renderWlTable();
-}
-
-// ── HTML5 拖曳排序 ──────────────────────────────────────────────
-function _wlOnDragStart(e, idx) {
-  _wlDragSrc = idx;
-  e.currentTarget.style.opacity = '0.4';
-  e.dataTransfer.effectAllowed = 'move';
-}
-function _wlOnDragEnd(e) {
-  e.currentTarget.style.opacity = '1';
-  // 清除 over 樣式
-  document.querySelectorAll('.wl-drag-over').forEach(el => el.classList.remove('wl-drag-over'));
-}
-function _wlOnDragOver(e, idx) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  document.querySelectorAll('.wl-drag-over').forEach(el => el.classList.remove('wl-drag-over'));
-  e.currentTarget.classList.add('wl-drag-over');
-}
-async function _wlOnDrop(e, toIdx) {
-  e.preventDefault();
-  e.currentTarget.classList.remove('wl-drag-over');
-  if (_wlDragSrc === null || _wlDragSrc === toIdx) return;
-  // 若目前有排序，拖曳前先清除排序（回到加入順序）
-  _wlSortKey = null;
-  // 依當前顯示順序操作（若有排序，先依排序後的順序重排 _wlCodes）
-  const newCodes = [..._wlCodes];
-  const [moved] = newCodes.splice(_wlDragSrc, 1);
-  newCodes.splice(toIdx, 0, moved);
-  await wlSave(newCodes);
-  _updateWlCountBadge(_wlCodes.length);
-  renderWlTable();
-}
-
-// ── 渲染表格 ────────────────────────────────────────────────────
-function renderWlTable() {
-  const tbody = document.getElementById('wlTableBody');
-  const wrap  = document.getElementById('wlTableWrap');
-  if (!tbody || !wrap) return;
-  if (_wlCodes.length === 0) { _showWlEmpty(true); return; }
-  _showWlEmpty(false);
-  wrap.classList.remove('hidden');
-
-  let rows = _wlCodes.map((code, idx) => {
-    const d = _wlData[code];
-    if (d === undefined) return { code, name: getStockNameZh(code)||code, loading: true, _idx: idx };
-    const row = calcHotRow(code, d);
-    if (!row) return { code, name: getStockNameZh(code)||code, error: true, _idx: idx };
-    row._idx = idx;
-    return row;
-  });
-
-  // 欄位排序（排序後拖曳仍依原始 _idx 操作）
-  if (_wlSortKey) {
-    rows.sort((a, b) => {
-      if (a.loading || a.error) return 1;
-      if (b.loading || b.error) return -1;
-      const av = a[_wlSortKey], bv = b[_wlSortKey];
-      if (av == null && bv == null) return 0;
-      if (av == null) return 1; if (bv == null) return -1;
-      if (typeof av === 'number' && typeof bv === 'number')
-        return _wlSortAsc ? av - bv : bv - av;
-      return _wlSortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-    });
-  }
-
-  tbody.innerHTML = rows.map((row, displayIdx) => {
-    const actualIdx = row._idx ?? displayIdx;  // 拖曳用實際 index
-    const name = STOCK_NAMES_ZH[row.code] || (STOCK_DICT_CSV[row.code] !== '台灣標竿' && STOCK_DICT_CSV[row.code]) || row.name || row.code;
-    const trClass = 'border-b border-slate-800/50 hover:bg-slate-800/30';
-    const dragHandleCol = `<td class="py-2 px-2 text-slate-600 cursor-grab active:cursor-grabbing text-center wl-drag-handle"
-      draggable="true"
-      ondragstart="_wlOnDragStart(event,${actualIdx})"
-      ondragend="_wlOnDragEnd(event)"
-      ondragover="_wlOnDragOver(event,${actualIdx})"
-      ondrop="_wlOnDrop(event,${actualIdx})"
-      title="拖曳排序"><i class="fa-solid fa-grip-vertical"></i></td>`;
-    const opBtn = `<td class="py-2 px-3 text-center">
-      <div class="flex gap-1 justify-center">
-        <button onclick="event.stopPropagation();loadStock('${row.code}');closeWatchlistPanel()"
-          class="text-blue-400 hover:text-blue-300 text-xs border border-blue-800/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>
-        <button onclick="event.stopPropagation();removeWatchlistStock('${row.code}')"
-          class="text-red-400 hover:text-red-300 text-xs border border-red-800/50 rounded px-2 py-0.5 hover:bg-red-900/30 transition"><i class="fa-solid fa-xmark"></i></button>
-      </div></td>`;
-
-    if (row.loading) {
-      return `<tr class="${trClass} text-slate-500" ondragover="_wlOnDragOver(event,${actualIdx})" ondrop="_wlOnDrop(event,${actualIdx})">
-        ${dragHandleCol}
-        <td class="py-2 px-3 font-black text-blue-400">${row.code}</td>
-        <td class="py-2 px-3">${name}</td>
-        <td colspan="4" class="py-2 px-3 text-center"><i class="fa-solid fa-circle-notch fa-spin text-amber-400 mr-2"></i>載入中...</td>
-        ${opBtn}</tr>`;
-    }
-    if (row.error) {
-      return `<tr class="${trClass} text-slate-500" ondragover="_wlOnDragOver(event,${actualIdx})" ondrop="_wlOnDrop(event,${actualIdx})">
-        ${dragHandleCol}
-        <td class="py-2 px-3 font-black text-red-400">${row.code}</td>
-        <td class="py-2 px-3">${name}</td>
-        <td colspan="4" class="py-2 px-3 text-center text-red-400"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>
-        ${opBtn}</tr>`;
-    }
-
-    const chgCls  = row.chgpct > 0 ? 'up' : row.chgpct < 0 ? 'down' : 'flat';
-    const chgSign = row.chgpct > 0 ? '+' : '';
-    const baseCols = `
-      <td class="py-2 px-3"><span class="font-black text-blue-400 cursor-pointer hover:underline" onclick="loadStock('${row.code}');closeWatchlistPanel()">${row.code}</span></td>
-      <td class="py-2 px-3"><span class="font-bold text-white">${name}</span></td>
-      <td class="py-2 px-3 text-right mono"><span class="font-bold ${chgCls}">${row.close.toFixed(2)}</span></td>
-      <td class="py-2 px-3 text-right mono"><span class="font-bold ${chgCls}">${chgSign}${row.chgpct.toFixed(2)}%</span></td>
-      <td class="py-2 px-3 text-right mono">${row.volume != null ? row.volume.toLocaleString() : '--'}</td>`;
-
-    let extraCols = '';
-    if (_wlViewMode === 'trade') {
-      const chg = row.chg != null ? (row.chg >= 0 ? '+' : '') + row.chg.toFixed(2) : '--';
-      extraCols = `<td class="py-2 px-3 text-right mono ${chgCls}">${chg}</td>
-        <td class="py-2 px-3 text-right mono">${row.high!=null?row.high.toFixed(2):'--'}</td>
-        <td class="py-2 px-3 text-right mono">${row.low!=null?row.low.toFixed(2):'--'}</td>
-        <td class="py-2 px-3 text-center">${row.matrend?`<span class="signal-tag" style="background:${row.matrend_color||'#1e293b'};color:#fff;">${row.matrend}</span>`:'--'}</td>`;
-    } else if (_wlViewMode === 'risedrop') {
-      extraCols = `<td class="py-2 px-3 text-right">${row.updays??'--'}</td>
-        <td class="py-2 px-3 text-right">${row.downdays??'--'}</td>
-        <td class="py-2 px-3 text-right">${row.upvolpct!=null?row.upvolpct.toFixed(1)+'%':'--'}</td>
-        <td class="py-2 px-3 text-right">${row.downvolpct!=null?row.downvolpct.toFixed(1)+'%':'--'}</td>`;
-    } else if (_wlViewMode === 'ma') {
-      const mf = v => v != null ? v.toFixed(2) : '--';
-      const mc = (c,v) => c!=null&&v!=null?(c>v?'text-emerald-400':c<v?'text-red-400':''):'';
-      extraCols = `<td class="py-2 px-3 text-right mono ${mc(row.close,row.ma5)}">${mf(row.ma5)}</td>
-        <td class="py-2 px-3 text-right mono ${mc(row.close,row.ma20)}">${mf(row.ma20)}</td>
-        <td class="py-2 px-3 text-right mono ${mc(row.close,row.ma60)}">${mf(row.ma60)}</td>
-        <td class="py-2 px-3 text-center">${row.matrend?`<span class="signal-tag" style="background:${row.matrend_color||'#1e293b'};color:#fff;">${row.matrend}</span>`:'--'}</td>`;
-    } else if (_wlViewMode === 'invest') {
-      const ratingBadge = row.rating
-        ? `<span class="signal-tag font-black" style="background:${row.rating_bg||'#1e293b'};color:${row.rating_color||'#fff'};">${row.rating_icon||''} ${row.rating}</span>` : '--';
-      const signals = (row.reasons_buy||[]).concat(row.reasons_sell||[]).slice(0,3)
-        .map(s=>`<span class="signal-tag bg-slate-700/80 text-slate-300">${s}</span>`).join('');
-      extraCols = `<td class="py-2 px-3 text-center">${ratingBadge}</td>
-        <td class="py-2 px-3 text-right mono">${row.target_price!=null?row.target_price.toFixed(1):'--'}</td>
-        <td class="py-2 px-3 text-right">${row.pe_ratio!=null?row.pe_ratio.toFixed(1)+'x':'--'}</td>
-        <td class="py-2 px-3 text-right">${row.div_yield!=null?row.div_yield.toFixed(2)+'%':'--'}</td>
-        <td class="py-2 px-3 text-center">${row.trend_label?`<span class="signal-tag" style="background:#1e293b;color:${row.trend_color||'#94a3b8'};">${row.trend_label}</span>`:'--'}</td>
-        <td class="py-2 px-3">${signals}</td>`;
-    }
-
-    return `<tr class="${trClass}" ondragover="_wlOnDragOver(event,${actualIdx})" ondrop="_wlOnDrop(event,${actualIdx})">
-      ${dragHandleCol}${baseCols}${extraCols}${opBtn}</tr>`;
-  }).join('');
-}
-
-// ── 統計摘要 ────────────────────────────────────────────────────
-function updateWlSummary() {
-  const rows = _wlCodes.map(c => calcHotRow(c, _wlData[c])).filter(Boolean);
-  const up   = rows.filter(r => r.chgpct > 0).length;
-  const down = rows.filter(r => r.chgpct < 0).length;
-  const flat = rows.filter(r => r.chgpct === 0).length;
-  const bull = rows.filter(r => r.matrend === 1 || r.matrend === 2).length;
-  const bear = rows.filter(r => r.matrend === -1 || r.matrend === -2).length;
-  const sorted = [...rows].sort((a,b)=>b.chgpct-a.chgpct);
-  const topGain = sorted[0] ? (sorted[0].chgpct >= 0 ? '+' : '') + sorted[0].chgpct.toFixed(2) + '%' : '--';
-  const set = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  set('wls-loaded', rows.length); set('wls-up', up); set('wls-down', down);
-  set('wls-flat', flat); set('wls-bull', bull); set('wls-bear', bear); set('wls-topgain', topGain);
-}
-
-// ── 工具函式 ────────────────────────────────────────────────────
-function _showWlEmpty(show) {
-  const emptyEl = document.getElementById('wlEmptyState');
-  const tableEl = document.getElementById('wlTableWrap');
-  if (!emptyEl || !tableEl) return;   // ★ DOM guard
-  emptyEl.classList.toggle('hidden', !show);
-  tableEl.classList.toggle('hidden', show);
-  if (show) {
-    const prog = document.getElementById('wlProgress');
-    const summ = document.getElementById('wlSummaryRow');
-    if (prog) prog.classList.add('hidden');
-    if (summ) summ.classList.add('hidden');
-  }
-}
-function _showWlLoading(show) {
-  const el = document.getElementById('wlProgress');
-  if (!el) return;
-  if (show) {
-    el.classList.remove('hidden');
-    document.getElementById('wlProgressText').textContent = '同步自選股清單...';
-    document.getElementById('wlProgressCount').textContent = '';
-    document.getElementById('wlProgressBar').style.width = '30%';
-  } else {
-    el.classList.add('hidden');   // 修正：false 時確實隱藏
-  }
-}
-// 同步提示：輕量文字提示（不蓋掉快取內容）
-function _showWlSyncHint(show) {
-  let hint = document.getElementById('wlSyncHint');
-  if (!hint) {
-    hint = document.createElement('div');
-    hint.id = 'wlSyncHint';
-    hint.style.cssText = 'font-size:12px;color:#6b7280;text-align:center;padding:4px 0;';
-    const wrap = document.getElementById('wlTableWrap');
-    if (wrap) wrap.parentNode.insertBefore(hint, wrap);
-  }
-  hint.style.display = show ? 'block' : 'none';
-  if (show) hint.textContent = '⟳ 正在與伺服器同步…';
-}
-function _updateWlCountBadge(n) {
-  const el = document.getElementById('wl-count-badge');
-  if (el) el.textContent = '共 ' + n + ' 支';
-}
-function _updateWlProgress(loaded, total, text) {
-  const pct = total > 0 ? Math.round(loaded / total * 100) : 0;
-  const bar = document.getElementById('wlProgressBar');
-  const txt = document.getElementById('wlProgressText');
-  const cnt = document.getElementById('wlProgressCount');
-  if (bar) bar.style.width = pct + '%';
-  if (txt) txt.textContent = text;
-  if (cnt) cnt.textContent = loaded + ' / ' + total;
-}
-function _showWlError(msg) {
-  document.getElementById('wlAddError').classList.remove('hidden');
-  document.getElementById('wlAddErrorMsg').textContent = msg;
-}
-function _hideWlError() {
-  document.getElementById('wlAddError').classList.add('hidden');
-}
-function _updateAddCurrentBtn() {
-  const btn = document.getElementById('wlAddCurrentBtn');
-  if (!btn) return;
-  if (!currentData || !currentData.ticker) {
-    btn.classList.add('opacity-40'); btn.disabled = true; return;
-  }
-  const already = _wlCodes.includes(currentData.ticker);
-  btn.classList.toggle('opacity-40', already);
-  btn.disabled = already;
-  btn.title = already ? `${currentData.ticker} 已在自選股` : `加入 ${currentData.ticker}`;
-}
-function _updateBtnBadge() {
-  const btnEl = document.getElementById('btnWatchlist');
-  if (!btnEl) return;
-  if (_wlCodes.length > 0) {
-    btnEl.innerHTML = `<i class="fa-solid fa-star"></i>自選股 <span class="bg-white/20 text-white text-xs font-black px-1.5 py-0.5 rounded-full">${_wlCodes.length}</span>`;
-  } else {
-    btnEl.innerHTML = `<i class="fa-solid fa-star"></i>自選股`;
-  }
-}
-
-// ── 拖曳 CSS（動態注入）────────────────────────────────────────
-(function injectDragStyle() {
-  const s = document.createElement('style');
-  s.textContent = `.wl-drag-over { outline: 2px dashed #7c3aed !important; background: rgba(124,58,237,0.1) !important; }
-  .wl-drag-handle:hover { color: #7c3aed; }`;
-  document.head.appendChild(s);
-})();
-
-// ── 頁面初始化：localStorage 優先立即顯示，API 在背景靜默同步 ──
-document.addEventListener('DOMContentLoaded', () => {
-  // ① 立即從 localStorage 載入 → 按鈕馬上可用，不等 API
-  _wlCodes = _lsLoad();
-  _updateBtnBadge();
-
-  // ★ 綁定自選股按鈕（addEventListener 比 onclick 優先，不衝突）
-  const _wlBtn = document.getElementById('btnWatchlist');
-  if (_wlBtn) {
-    // onclick 已直接呼叫 openWatchlistPanel，此處不重複綁定避免觸發兩次
-    // 保留 addEventListener 僅供程式化觸發需求
-  }
-
-  // ② 監聽個股載入，更新「加入當前個股」按鈕
-  const stockArea = document.getElementById('stockArea');
-  if (stockArea) {
-    new MutationObserver(() => {
-      _updateAddCurrentBtn();
-      _updateBtnBadge();
-    }).observe(stockArea, { attributes: true, attributeFilter: ['class'] });
-  }
-
-  // ③ 背景靜默同步後端（不 await，不阻塞任何互動）
-  wlApiFetch('/api/watchlist').then(d => {
-    if (d.status === 'success') {
-      _wlCodes = d.codes || [];
-      _lsSave(_wlCodes);
-      _updateBtnBadge();
-    }
-    // 後端不可用時保留 localStorage 資料，不做任何覆蓋
-  }).catch(() => {});
-});
 </script>
 </body>
 </html>

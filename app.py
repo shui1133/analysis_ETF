@@ -3,6 +3,25 @@ Flask Web應用主程式 V4
 台灣ETF/股票投資分析系統
 新增：股票分析頁 API（OHLCV、技術指標、投資建議）
 調整：蒙地卡羅/情境分析資料仍由後端計算，由新頁面 analysis.html 呈現
+
+════════════════════════════════════════════════════════════
+必要環境變數（本機：.env；Render：Dashboard → Environment）
+════════════════════════════════════════════════════════════
+
+  GH_CACHE_TOKEN = ghp_xxxxxxxxxxxxxxxxxxxxxxxx
+    ├─ 用途：GitHub API 寫入（每日 16:00 自動 push 快取至 Repo）
+    ├─ 來源：GitHub → Settings → Developer settings
+    │        → Personal access tokens (classic)
+    │        → 勾選 repo scope（或 public_repo 若為公開 Repo）
+    ├─ 未設定時：程式仍可【讀取】GitHub Public Repo，
+    │            但每日排程不會將資料 push 回 GitHub
+    └─ 安全注意：Token 僅可透過環境變數傳入，不得寫入程式碼或 HTML
+
+  ANTHROPIC_API_KEY = sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
+    ├─ 用途：AI 財務健診報告（呼叫 Claude API）
+    └─ 未設定時：/api/ai_report POST 端點會回傳 500 錯誤
+
+════════════════════════════════════════════════════════════
 """
 
 from flask import Flask, render_template, request, jsonify, send_file
@@ -14,6 +33,7 @@ import platform
 import numpy as np
 from data_fetcher import ETFDataFetcher, get_data_dir, POPULAR_STOCKS, calc_technical_indicators
 from backtest import PortfolioBacktestV3
+from github_cache import CacheManager, start_scheduler
 import io
 import requests as _req
 
@@ -46,6 +66,9 @@ app.json = NumpyJSONProvider(app)
 DATA_DIR = get_data_dir()
 print(f"資料目錄: {DATA_DIR}")
 os.makedirs(DATA_DIR, exist_ok=True)
+
+# 三層快取管理器（本機 Storage → GitHub → yfinance）
+cache_mgr = CacheManager(data_dir=DATA_DIR)
 
 # 全域快取
 cached_results    = {}
@@ -343,6 +366,84 @@ def download_csv(portfolio_type):
 def get_popular_stocks():
     """回傳熱門股票清單"""
     return jsonify({'status': 'success', 'stocks': POPULAR_STOCKS})
+
+
+# ─────────────────────────────────────────────────────────────────
+# 強制從 yfinance 取得最新股價（熱門股票/ETF/個股共用）
+# POST /api/force_refresh_price
+# 輸入: { "tickers": ["2330", "00878"] }  或  { "ticker": "2330" }
+# 說明: 忽略所有快取，直接向 yfinance 重抓，並同步存本機 + GitHub
+# ─────────────────────────────────────────────────────────────────
+@app.route('/api/force_refresh_price', methods=['POST'])
+def force_refresh_price():
+    """強制從 yfinance 取得最新股價並更新快取"""
+    import time as _time
+    try:
+        body = request.get_json(force=True) or {}
+        # 支援單支（ticker）或批次（tickers）
+        if 'ticker' in body:
+            tickers = [str(body['ticker']).strip().upper()]
+        else:
+            tickers = [str(t).strip().upper() for t in body.get('tickers', []) if str(t).strip()]
+        if not tickers:
+            return jsonify({'status': 'error', 'message': '請提供 ticker 或 tickers'}), 400
+
+        MAX_BATCH = 10
+        tickers = tickers[:MAX_BATCH]
+
+        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+        results = {}
+        for tk in tickers:
+            t0 = _time.time()
+            try:
+                # 清除記憶體快取，強制重新向 yfinance 抓取
+                if tk in analysis_cache:
+                    del analysis_cache[tk]
+
+                raw = fetcher.fetch_stock_analysis(tk)
+                if not raw or not raw.get('ohlcv'):
+                    results[tk] = {'status': 'error', 'message': '無法取得資料'}
+                    continue
+
+                ohlcv = raw['ohlcv']
+                # 轉換為 price list 格式存快取
+                price_list = [
+                    {'date': r['date'], 'open': r.get('open'), 'high': r.get('high'),
+                     'low': r.get('low'), 'close': r['close'], 'volume': r.get('volume', 0)}
+                    for r in ohlcv
+                ]
+                from github_cache import local_save_price, gh_save_price
+                local_save_price(DATA_DIR, tk, price_list)
+                gh_save_price(tk, price_list)
+
+                # 更新記憶體快取（analysis_cache）
+                last = ohlcv[-1]
+                prev = ohlcv[-2] if len(ohlcv) >= 2 else last
+                change = round(last['close'] - prev['close'], 2)
+                change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
+
+                results[tk] = {
+                    'status':  'success',
+                    'date':    last['date'],
+                    'close':   last['close'],
+                    'change':  change,
+                    'change_pct': change_pct,
+                    'rows':    len(ohlcv),
+                    'elapsed_ms': round((_time.time() - t0) * 1000),
+                }
+            except Exception as e:
+                results[tk] = {'status': 'error', 'message': str(e)}
+
+        all_ok = all(v.get('status') == 'success' for v in results.values())
+        return jsonify({
+            'status':  'success' if all_ok else 'partial',
+            'results': results,
+            'updated_at': pd.Timestamp.now().isoformat(),
+        })
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -2441,11 +2542,11 @@ import time as _time
 # ═══════════════════════════════════════════════════════════════
 
 def _get_period_key() -> str:
-    """台灣時間 period key，13:30 為當日/昨日分界"""
+    """台灣時間 period key，16:00 為當日/昨日分界"""
     from datetime import datetime, timezone, timedelta
     tz_tw = timezone(timedelta(hours=8))
     now = datetime.now(tz_tw)
-    if now.hour < 13 or (now.hour == 13 and now.minute < 30):
+    if now.hour < 16:
         now = now - timedelta(days=1)
     return now.strftime('%Y%m%d')
 
@@ -2470,35 +2571,55 @@ def stock_cache(ticker: str):
 
 @app.route('/api/ai_report/<ticker>', methods=['GET', 'POST'])
 def ai_report(ticker: str):
-    """原版路由片段未貼入 app.py 導致 404"""
+    """
+    AI 財務健診報告
+    GET  → 查詢快取（本機 Storage 優先，再查 GitHub），不呼叫 Claude
+    POST → 重新呼叫 Claude API 產生新報告，結果同時存本機 Storage + GitHub
+    """
     from github_cache import _gh_raw_get, _gh_writer
     import requests as _req2
     import json as _json
     ticker = ticker.strip().upper()
     period_key = _get_period_key()
+    local_path = os.path.join(DATA_DIR, f"ai_report_{ticker}_{period_key}.json")
     gh_path = f"ai_reports/{ticker}/{period_key}.json"
 
     if request.method == 'GET':
+        # ── L1：本機 Storage（最快，零網路延遲）───────────────
+        if os.path.exists(local_path):
+            try:
+                with open(local_path, 'r', encoding='utf-8') as f:
+                    data = _json.load(f)
+                if data.get('report_text'):
+                    print(f"  [ai_report] {ticker} GET 本機快取命中")
+                    return jsonify({'status': 'cached', 'source': 'local',
+                                    'period_key': period_key, 'data': data})
+            except Exception:
+                pass
+        # ── L2：GitHub Public Repo ────────────────────────────
         try:
             content = _gh_raw_get(gh_path)
             if content:
-                return jsonify({'status': 'cached', 'period_key': period_key,
-                                'data': _json.loads(content)})
+                data = _json.loads(content)
+                if data.get('report_text'):
+                    # 回填本機，下次直接從本機讀
+                    try:
+                        with open(local_path, 'w', encoding='utf-8') as f:
+                            _json.dump(data, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+                    print(f"  [ai_report] {ticker} GET GitHub 命中，已回填本機")
+                    return jsonify({'status': 'cached', 'source': 'github',
+                                    'period_key': period_key, 'data': data})
         except Exception:
             pass
         return jsonify({'status': 'not_found', 'period_key': period_key, 'data': None})
 
+    # ── POST：呼叫 Claude API 產生新報告 ─────────────────────
     api_key = os.environ.get('ANTHROPIC_API_KEY', '')
     if not api_key:
         return jsonify({'error': '伺服器未設定 ANTHROPIC_API_KEY 環境變數'}), 500
     try:
-        try:
-            content = _gh_raw_get(gh_path)
-            if content:
-                return jsonify({'status': 'cached', 'period_key': period_key,
-                                'data': _json.loads(content)})
-        except Exception:
-            pass
         payload = request.get_json(force=True)
         resp = _req2.post(
             'https://api.anthropic.com/v1/messages',
@@ -2519,6 +2640,14 @@ def ai_report(ticker: str):
         report_data = {'ticker': ticker, 'period_key': period_key,
                        'report_text': report_text,
                        'generated_at': datetime.now(tz_tw).isoformat()}
+        # ── 存本機 Storage ────────────────────────────────────
+        try:
+            with open(local_path, 'w', encoding='utf-8') as f:
+                _json.dump(report_data, f, ensure_ascii=False, indent=2)
+            print(f"  [ai_report] {ticker} 已存本機 Storage")
+        except Exception as e:
+            print(f'  [ai_report] 本機存檔失敗（非致命）: {e}')
+        # ── 同步 GitHub Repo ──────────────────────────────────
         try:
             _gh_writer.put(gh_path, _json.dumps(report_data, ensure_ascii=False, indent=2),
                            f'ai_report: {ticker} {period_key}')
@@ -2916,16 +3045,16 @@ def _fetch_mops_finreport(ticker: str, headers: dict) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 自選股 API（後端持久化儲存）
-# 儲存位置：DATA_DIR/watchlist.json（＋ GitHub Cache 備份）
-# 格式：{ "codes": ["2330", "00878", ...] }   依加入順序排列
+# ═══════════════════════════════════════════════════════════════
+# 自選股 API（已移除）
+# 自選股功能已從前端移除（btnWatchlist 按鈕已刪除）
+# 以下 watchlist helper 保留供 GitHub 備援讀取使用，不對外暴露路由
 # ═══════════════════════════════════════════════════════════════
 
 WL_FILE = os.path.join(DATA_DIR, 'watchlist.json')
 
 def _wl_read() -> list:
-    """讀取自選股代碼清單（含 GitHub Cache 備援）"""
-    # 1. 先從本地磁碟讀
+    """讀取自選股代碼清單（供內部使用）"""
     if os.path.exists(WL_FILE):
         try:
             with open(WL_FILE, 'r', encoding='utf-8') as f:
@@ -2933,98 +3062,7 @@ def _wl_read() -> list:
                 return data.get('codes', [])
         except Exception:
             pass
-    # 2. 本地沒有，從 GitHub Cache 還原
-    try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if gh.enabled:
-            content, _ = gh._get('watchlist/watchlist.json')
-            if content:
-                data = json.loads(content)
-                codes = data.get('codes', [])
-                # 回寫本地
-                _wl_write(codes)
-                print(f"  [自選股] GitHub 備援還原 {len(codes)} 支")
-                return codes
-    except Exception as e:
-        print(f"  [自選股] GitHub 還原失敗（非致命）: {e}")
     return []
-
-def _wl_write(codes: list):
-    """寫入自選股代碼清單（本地 + GitHub Cache 備份）"""
-    # 去重保持順序
-    seen = set()
-    unique = [c for c in codes if not (c in seen or seen.add(c))]
-    payload = {'codes': unique, 'updated_at': pd.Timestamp.now().isoformat()}
-    # 寫本地
-    try:
-        with open(WL_FILE, 'w', encoding='utf-8') as f:
-            json.dump(payload, f, ensure_ascii=False)
-    except Exception as e:
-        print(f"  [自選股] 本地寫入失敗: {e}")
-    # 同步 GitHub Cache（非同步不阻塞，失敗 silent）
-    try:
-        from github_cache import GitHubCache
-        gh = GitHubCache()
-        if gh.enabled:
-            gh._put('watchlist/watchlist.json',
-                    json.dumps(payload, ensure_ascii=False),
-                    f'watchlist: {len(unique)} stocks')
-    except Exception as e:
-        print(f"  [自選股] GitHub 備份失敗（非致命）: {e}")
-
-
-@app.route('/api/watchlist', methods=['GET'])
-def watchlist_get():
-    """取得自選股清單"""
-    return jsonify({'status': 'success', 'codes': _wl_read()})
-
-
-@app.route('/api/watchlist', methods=['POST'])
-def watchlist_save():
-    """儲存完整自選股清單（前端每次操作後整批送出）"""
-    try:
-        data = request.get_json(force=True)
-        codes = data.get('codes', [])
-        if not isinstance(codes, list):
-            return jsonify({'status': 'error', 'message': 'codes 必須為陣列'}), 400
-        # 驗證代碼格式
-        codes = [str(c).strip().upper() for c in codes if str(c).strip()]
-        _wl_write(codes)
-        return jsonify({'status': 'success', 'codes': codes, 'count': len(codes)})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
-@app.route('/api/watchlist/add', methods=['POST'])
-def watchlist_add():
-    """加入單支股票到自選股"""
-    try:
-        data = request.get_json(force=True)
-        code = str(data.get('code', '')).strip().upper()
-        if not code:
-            return jsonify({'status': 'error', 'message': '請提供股票代碼'}), 400
-        codes = _wl_read()
-        if code in codes:
-            return jsonify({'status': 'already_exists', 'codes': codes, 'count': len(codes)})
-        codes.append(code)
-        _wl_write(codes)
-        return jsonify({'status': 'success', 'codes': codes, 'count': len(codes)})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
-@app.route('/api/watchlist/remove', methods=['POST'])
-def watchlist_remove():
-    """從自選股移除單支股票"""
-    try:
-        data = request.get_json(force=True)
-        code = str(data.get('code', '')).strip().upper()
-        codes = [c for c in _wl_read() if c != code]
-        _wl_write(codes)
-        return jsonify({'status': 'success', 'codes': codes, 'count': len(codes)})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 if __name__ == '__main__':
@@ -3034,5 +3072,16 @@ if __name__ == '__main__':
     print(f"執行環境: {'Render (Production)' if os.environ.get('RENDER') else 'Local Development'}")
     print(f"Port: {port}")
     print("=" * 60)
+
+    # ── 啟動每日 16:00 自動更新排程 ──────────────────────────
+    # 更新範圍：TOP50_STOCKS（定義於 github_cache.py）
+    # 儲存目標：本機 Storage ＋ GitHub Repo（需 GH_CACHE_TOKEN）
+    start_scheduler(
+        cache=cache_mgr,
+        fetcher_factory=lambda: ETFDataFetcher(output_dir=DATA_DIR),
+        popular_stocks=[s['code'] for s in POPULAR_STOCKS] if isinstance(POPULAR_STOCKS[0], dict)
+                       else list(POPULAR_STOCKS),
+    )
+
     host = '0.0.0.0' if os.environ.get('RENDER') else '127.0.0.1'
     app.run(debug=False, host=host, port=port)
