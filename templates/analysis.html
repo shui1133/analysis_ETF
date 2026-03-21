@@ -7610,11 +7610,15 @@ async function _loadWlStocks(codes) {
   document.getElementById('wlSummaryRow').classList.add('hidden');
 
   // ── ① 先從 IndexedDB 快取填充（24h，每日 16:00 後失效）──────
+  // ★ 修正根因：自選股需要完整資料（chart.closes 必須有內容）
+  //   若快取是熱門面板的輕量摘要（_isSummary），chart.closes=[]
+  //   導致 calcHotRow 計算漲跌日/均線排列全為 0，欄位無法正確顯示
+  //   → 必須過濾掉 _isSummary，強制重新向後端取完整資料
   let lsHits = 0;
   for (const code of codes) {
     if (_wlData[code] !== undefined) continue;
     const lsCached = await hotCacheLoad(code);   // 共用 IDB + localStorage 索引
-    if (lsCached) {
+    if (lsCached && !lsCached._isSummary) {      // ★ 跳過輕量摘要，只用完整資料
       _wlData[code] = lsCached;
       lsHits++;
     }
@@ -7622,12 +7626,14 @@ async function _loadWlStocks(codes) {
   if (lsHits > 0) renderWlTable();
 
   // ── ② GitHub 快取層（IDB 未命中的補查）──────────────────────
+  // ★ 修正：同樣過濾 _isSummary，確保 GitHub 快取也是完整格式
   const afterLS = codes.filter(c => _wlData[c] === undefined);
   if (afterLS.length > 0 && !_wlAbort) {
     const ghResults = await Promise.all(afterLS.map(async code => {
       if (_wlAbort) return null;
       const ghData = await ghStockCacheLoad(code);
-      return ghData ? { code, data: ghData } : null;
+      if (!ghData || ghData._isSummary) return null;  // ★ 跳過輕量摘要
+      return { code, data: ghData };
     }));
     let ghHits = 0;
     for (const r of ghResults) {
@@ -7640,14 +7646,59 @@ async function _loadWlStocks(codes) {
     if (ghHits > 0) renderWlTable();
   }
 
-  const stillMissing = codes.filter(c => _wlData[c] === undefined);
+  // ── ③ 批次摘要 API（對快取未命中的一次請求，優先於逐支呼叫）──
+  // ★ 新增：自選股也改用 /api/hot_summary 批次 API 取得資料
+  //   若批次成功，回傳的 summary 透過 _summaryToDataFormat 轉換後存入 _wlData
+  //   保留完整格式標記（不帶 _isSummary），讓 calcHotRow 正確計算所有欄位
+  let stillMissing = codes.filter(c => _wlData[c] === undefined);
   _updateWlProgress(
     _wlCodes.filter(c => _wlData[c] !== undefined).length, total,
     lsHits > 0 ? '快取命中 ' + lsHits + ' 支，載入剩餘 ' + stillMissing.length + ' 支...' : '載入中...'
   );
   renderWlTable();
 
-  // ── ③ 對仍缺資料的股票呼叫後端 yfinance API ──────────────
+  if (stillMissing.length > 0 && !_wlAbort) {
+    try {
+      _updateWlProgress(
+        _wlCodes.filter(c => _wlData[c] !== undefined).length, total,
+        '批次請求 ' + stillMissing.length + ' 支資料...'
+      );
+      const r = await fetch('/api/hot_summary', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ tickers: stillMissing }),
+        signal:  AbortSignal.timeout(28000),
+      });
+      if (r.ok && !_wlAbort) {
+        const d = await r.json().catch(() => ({}));
+        if (d.status === 'success') {
+          let batchHits = 0;
+          for (const [code, summary] of Object.entries(d.data || {})) {
+            if (_wlAbort) break;
+            if (!summary) { _wlData[code] = null; continue; }
+            // ★ 將輕量摘要轉換為前端完整格式，但不標記 _isSummary
+            //   避免下次開啟面板時被①步驟過濾掉
+            const converted = _summaryToDataFormat(code, summary);
+            delete converted._isSummary;  // ★ 自選股用途：移除摘要標記，視為完整資料快取
+            _wlData[code] = converted;
+            await hotCacheSave(code, converted);
+            batchHits++;
+          }
+          stillMissing = codes.filter(c => _wlData[c] === undefined);
+          if (batchHits > 0) {
+            const loaded3 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
+            _updateWlProgress(loaded3, total, '批次載入 ' + batchHits + ' 支完成，剩餘 ' + stillMissing.length + ' 支...');
+            renderWlTable();
+          }
+        }
+      }
+    } catch(e) {
+      if (!_wlAbort) console.warn('[自選股] 批次 API 失敗，降級逐支請求:', e.message);
+    }
+  }
+
+  // ── ④ 對仍缺資料的股票逐支呼叫後端完整分析 API ──────────
+  // （批次 API 失敗或部分股票未命中時的保底）
   const BATCH = 5;
   for (let i = 0; i < stillMissing.length; i += BATCH) {
     if (_wlAbort) break;
@@ -7660,7 +7711,11 @@ async function _loadWlStocks(codes) {
         if (!r.ok) { _wlData[code] = null; return; }
         const d = await r.json().catch(() => ({}));
         _wlData[code] = (d.status === 'success') ? d.data : null;
-        if (_wlData[code]) await hotCacheSave(code, _wlData[code]);
+        // ★ 完整分析資料存入 IDB 時確保無 _isSummary 標記
+        if (_wlData[code]) {
+          delete _wlData[code]._isSummary;
+          await hotCacheSave(code, _wlData[code]);
+        }
       } catch(e) { _wlData[code] = null; }
       const loaded2 = _wlCodes.filter(c => _wlData[c] !== undefined).length;
       _updateWlProgress(loaded2, total, '已載入 ' + loaded2 + ' / ' + total + ' 支...');
