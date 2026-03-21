@@ -5274,11 +5274,15 @@ async function _pollCacheVersion() {
     _lastCacheVersion = v;
   } catch(e) { /* 網路問題靜默忽略 */ }
 }
-// 頁面載入後 10 秒開始第一次輪詢，之後每 5 分鐘一次
-setTimeout(async () => {
+// 頁面載入後立即送 warmup ping，喚醒後端；之後每 5 分鐘輪詢快取版本
+(async () => {
+  // 立即 warmup：讓 Render Starter 在使用者按下按鈕前就完成預熱
+  try {
+    await fetch('/api/cache_version', { signal: AbortSignal.timeout(10000) });
+  } catch(e) { /* 靜默，僅做預熱用途 */ }
   await _pollCacheVersion();
   setInterval(_pollCacheVersion, 5 * 60 * 1000);
-}, 10000);
+})();
 
 // ── 清除格式不完整的舊快取（一次性，確保 IDB 沒有殘留壞資料）────
 // 當 IDB 存有既無 latest.close 也無 _isSummary 旗標的舊格式資料時，
@@ -5837,48 +5841,73 @@ async function loadHotStocksSequential(onlyCodes) {
     // 先顯示骨架屏（有畫面比空白好）
     _renderHotSkeleton(missing);
 
-    try {
-      updateHotProgress(countLoaded(), total, '批次請求 ' + missing.length + ' 支摘要...');
-      const r = await fetch('/api/hot_summary', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ tickers: missing.map(s => s.code) }),
-        signal:  AbortSignal.timeout(28000),   // ★ 配合後端 25s 批次上限
-      });
+    // ── 批次請求，最多重試 2 次（Starter 方案偶有短暫高負載）──────
+    const HOT_SUMMARY_MAX_RETRY = 2;
+    const HOT_SUMMARY_TIMEOUT   = 55000;  // 55s（Render Starter 不休眠，55s 足夠）
+    let batchSuccess = false;
 
-      if (r.ok) {
-        const d = await r.json();
-        if (d.status === 'success') {
-          let batchHits = 0;
-          for (const [code, summary] of Object.entries(d.data || {})) {
-            if (hotLoadAbort) break;
-            if (!summary) { hotStockData[code] = null; continue; }
-            // 轉換為前端 calcHotRow 相容格式
-            // summary 已含所有 calcHotRow 需要的欄位，包裝成 data 結構
-            hotStockData[code] = _summaryToDataFormat(code, summary);
-            await hotCacheSave(code, hotStockData[code]);
-            batchHits++;
+    for (let attempt = 1; attempt <= HOT_SUMMARY_MAX_RETRY && !hotLoadAbort; attempt++) {
+      try {
+        const retryLabel = attempt > 1 ? `（第 ${attempt} 次重試）` : '';
+        updateHotProgress(countLoaded(), total,
+          '批次請求 ' + missing.length + ' 支摘要...' + retryLabel);
+
+        const r = await fetch('/api/hot_summary', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ tickers: missing.map(s => s.code) }),
+          signal:  AbortSignal.timeout(HOT_SUMMARY_TIMEOUT),
+        });
+
+        if (r.ok) {
+          const d = await r.json();
+          if (d.status === 'success') {
+            let batchHits = 0;
+            for (const [code, summary] of Object.entries(d.data || {})) {
+              if (hotLoadAbort) break;
+              if (!summary) { hotStockData[code] = null; continue; }
+              hotStockData[code] = _summaryToDataFormat(code, summary);
+              await hotCacheSave(code, hotStockData[code]);
+              batchHits++;
+            }
+            loaded = countLoaded();
+            updateHotProgress(loaded, total,
+              '載入完成，共 ' + loaded + ' 支'
+              + (_cacheHits > 0 ? '（IDB 快取 ' + _cacheHits + ' 支）' : '')
+              + (batchHits > 0  ? '（批次 '    + batchHits  + ' 支）'  : ''));
+            renderHotTable();
+            document.getElementById('hotSummaryRow').classList.remove('hidden');
+            updateHotSummary();
+            batchSuccess = true;
+            break;   // 批次成功，跳出重試迴圈
           }
-          loaded = countLoaded();
-          updateHotProgress(loaded, total,
-            '載入完成，共 ' + loaded + ' 支'
-            + (_cacheHits > 0 ? '（IDB 快取 ' + _cacheHits + ' 支）' : '')
-            + (batchHits > 0  ? '（批次 '    + batchHits  + ' 支）'  : ''));
-          renderHotTable();
-          document.getElementById('hotSummaryRow').classList.remove('hidden');
-          updateHotSummary();
-          return;   // 批次成功，直接結束
+        }
+        // 非 ok 或 status != success
+        console.warn(`[hot_summary] 第 ${attempt} 次批次 API 回傳異常`);
+        if (attempt < HOT_SUMMARY_MAX_RETRY) {
+          updateHotProgress(countLoaded(), total,
+            `⚠️ 第 ${attempt} 次請求異常，1s 後重試...`);
+          await new Promise(res => setTimeout(res, 1000));
+        }
+      } catch(e) {
+        const isTimeout = e.name === 'TimeoutError' || (e.message || '').includes('timeout');
+        console.warn(`[hot_summary] 第 ${attempt} 次批次請求失敗:`, e.message);
+        if (attempt < HOT_SUMMARY_MAX_RETRY) {
+          const waitSec = attempt;
+          updateHotProgress(countLoaded(), total,
+            `⚠️ ${isTimeout ? '請求逾時' : '網路異常'}，${waitSec}s 後重試...`);
+          await new Promise(res => setTimeout(res, waitSec * 1000));
+        } else {
+          updateHotProgress(countLoaded(), total,
+            isTimeout ? '⚠️ 伺服器回應逾時，改為逐支載入...' : '⚠️ 網路異常，改為逐支載入...');
         }
       }
-      // 非 ok 或 status != success → 降級
-      console.warn('[hot_summary] 批次 API 回傳異常，降級逐支請求');
-      updateHotProgress(countLoaded(), total, '⚠️ 伺服器啟動中，改為逐支載入...');
-    } catch(e) {
-      const isTimeout = e.name === 'TimeoutError' || e.message.includes('timeout');
-      const msg = isTimeout ? '⚠️ 伺服器回應逾時（冷啟動中），改為逐支載入...' : '⚠️ 網路異常，改為逐支載入...';
-      console.warn('[hot_summary] 批次請求失敗，降級逐支請求:', e.message);
-      updateHotProgress(countLoaded(), total, msg);
     }
+
+    if (batchSuccess) return;   // 批次成功，直接結束
+
+    // 批次全部失敗 → 降級
+    console.warn('[hot_summary] 批次請求全部失敗，降級逐支請求');
 
     // ── ③ 降級：逐支 GitHub 快取 + yfinance（原有邏輯）──────────
     const stillMissing = targetList.filter(s => hotStockData[s.code] === undefined);
