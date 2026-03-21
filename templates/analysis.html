@@ -5329,7 +5329,7 @@ async function ghStockCacheLoad(ticker) {
 
 // 快取命中率統計（顯示於進度文字）
 let _cacheHits = 0;
-let hotPageSize      = 20;
+let hotPageSize      = 10;
 let hotLoadAbort     = false;
 let hotChartRiseDrop = null;
 let hotChartMA       = null;
@@ -7187,9 +7187,9 @@ function _updateQuotaBadge(show, isCached) {
             <select id="hotPageSize" onchange="changeHotPageSize()"
                     class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-500">
               <option value="5">5筆</option>
-              <option value="10">10筆</option>
+              <option value="10" selected>10筆</option>
               <option value="15">15筆</option>
-              <option value="20" selected>20筆</option>
+              <option value="20">20筆</option>
               <option value="30">30筆</option>
               <option value="40">40筆</option>
               <option value="50">50筆</option>
