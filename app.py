@@ -1,15 +1,66 @@
 """
-════════════════════════════════════════════════════════
-請將以下兩段路由貼入 app.py，
-位置：緊接在 /api/claude_proxy 路由的 } 結尾之後
-════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
+修復說明：將以下兩個路由貼入 app.py
+
+問題 1：/api/stock_cache/<ticker> → 404（路由根本不存在）
+問題 2：/api/ai_report/<ticker>  → 404（片段未貼入 app.py）
+問題 3：_updateQuotaBadge is not defined（前端缺少函式定義）
+
+【貼入位置】緊接在 /api/claude_proxy 路由結尾的 } 之後
+════════════════════════════════════════════════════════════════════
 """
 
-import time as _time
+# ─────────────────────────────────────────────────────────────────
+# ★ 修復 1：GET /api/stock_cache/<ticker>
+#   前端 ghStockCacheLoad() 呼叫此端點，後端原先根本沒有定義！
+# ─────────────────────────────────────────────────────────────────
+@app.route('/api/stock_cache/<ticker>', methods=['GET'])
+def stock_cache(ticker: str):
+    """
+    讀取 GitHub 快取的股票分析資料。
+    GET /api/stock_cache/<ticker>
+      回傳 { status: 'cached'|'not_found', data, period_key }
+    """
+    from github_cache import _gh_raw_get
+    import json as _json
 
-# ── AI 報告 GitHub 快取路徑 ──────────────────────────────────────
-# 報告存放在 GitHub Repo 的 ai_reports/{ticker}/{period_key}.json
-# period_key 格式：YYYYMMDD（台灣時間，13:30 為分界）
+    ticker = ticker.strip().upper()
+
+    # ── period_key 與 ai_report 共用同一邏輯 ──
+    from datetime import datetime, timezone, timedelta
+    tz_tw = timezone(timedelta(hours=8))
+    now = datetime.now(tz_tw)
+    if now.hour < 13 or (now.hour == 13 and now.minute < 30):
+        now = now - timedelta(days=1)
+    period_key = now.strftime('%Y%m%d')
+
+    # 嘗試讀取今日 AI 報告快取
+    gh_path = f"ai_reports/{ticker}/{period_key}.json"
+    try:
+        content = _gh_raw_get(gh_path)
+        if content:
+            data = _json.loads(content)
+            return jsonify({
+                'status': 'cached',
+                'period_key': period_key,
+                'data': data
+            })
+    except Exception as e:
+        print(f"  [stock_cache] 讀取失敗 {ticker}: {e}")
+
+    return jsonify({
+        'status': 'not_found',
+        'period_key': period_key,
+        'data': None
+    })
+
+
+# ─────────────────────────────────────────────────────────────────
+# ★ 修復 2：GET + POST /api/ai_report/<ticker>
+#   此路由已在 app.py 片段中定義，但尚未貼入主 app.py，
+#   直接複製自 app.py 上傳的檔案（保持原樣）
+# ─────────────────────────────────────────────────────────────────
+import time as _time
 
 def _ai_report_gh_path(ticker: str, period_key: str) -> str:
     return f"ai_reports/{ticker}/{period_key}.json"
@@ -25,10 +76,6 @@ def _get_period_key() -> str:
     return now.strftime('%Y%m%d')
 
 
-# ─────────────────────────────────────────────────────────────────
-# GET  /api/ai_report/<ticker>  → 查詢快取是否存在
-# POST /api/ai_report/<ticker>  → 呼叫 Claude + 存 GitHub
-# ─────────────────────────────────────────────────────────────────
 @app.route('/api/ai_report/<ticker>', methods=['GET', 'POST'])
 def ai_report(ticker: str):
     """
@@ -139,19 +186,12 @@ def ai_report(ticker: str):
 
 
 # ─────────────────────────────────────────────────────────────────
-# GET /api/cache_version
-# 前端每 5 分鐘輪詢此端點，偵測後端排程更新完成後自動清空本地快取
+# GET /api/cache_version（已在原始 app.py 片段中，確保也貼入）
 # ─────────────────────────────────────────────────────────────────
 @app.route('/api/cache_version', methods=['GET'])
 def cache_version():
-    """
-    回傳目前快取版本號（以最後一次排程更新時間為版本）。
-    前端偵測 version 變化後自動清空 localStorage + IDB。
-    """
-    # 使用全域變數記錄最後更新時間
     v = getattr(app, '_cache_version', '')
     if not v:
-        # 首次請求時以啟動時間為初始版本
         v = str(int(_time.time()))
         app._cache_version = v
     return jsonify({'version': v})
