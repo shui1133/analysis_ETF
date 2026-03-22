@@ -703,19 +703,19 @@ def hot_summary():
         if not tickers:
             return jsonify({'status': 'error', 'message': '請提供 tickers 清單'}), 400
 
-        # 快取命中時 15 支無壓力；冷啟動時並發 3 執行緒也可在 25 秒內完成
-        MAX_BATCH = 15
+        # ★ 修正：Render Starter 30s 硬限，批次縮至 8 支確保安全
+        MAX_BATCH = 8
         tickers = tickers[:MAX_BATCH]
 
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
         result  = {}
 
-        # 並發 3 執行緒（避免 yfinance rate-limit），25 秒硬上限
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        # ★ 修正：workers 提升至 4、總 timeout 縮至 20s（留 10s 給 Render 緩衝）
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(_fetch_one_hot, tk, fetcher): tk for tk in tickers}
-            for fut in as_completed(futures, timeout=25):
+            for fut in as_completed(futures, timeout=20):
                 try:
-                    tk, summary = fut.result(timeout=5)
+                    tk, summary = fut.result(timeout=8)
                     result[tk] = summary
                 except Exception as e:
                     tk = futures[fut]
