@@ -58,7 +58,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 .ind-card{background:#162032;border:1px solid #1e3a5f;border-radius:12px;padding:12px 16px;}
 
 /* 分析 Tab */
-.tab-btn{padding:8px 16px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;border:none;background:transparent;color:#64748b;}
+.tab-btn{padding:8px 16px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;border:none;background:transparent;color:#cbd5e1;}
 .tab-btn.active{background:#1e40af;color:#fff;}
 .tab-btn:hover:not(.active){color:#93c5fd;}
 
@@ -281,6 +281,12 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('chip')" id="tab-chip">
         <i class="fa-solid fa-users mr-1"></i>籌碼面
       </button>
+      <button class="tab-btn" onclick="switchTab('maanalysis')" id="tab-maanalysis">
+        <i class="fa-solid fa-wave-square mr-1"></i>移動平均線分析
+      </button>
+      <button class="tab-btn" onclick="switchTab('granville')" id="tab-granville">
+        <i class="fa-solid fa-scroll mr-1"></i>葛蘭碧八大法則
+      </button>
       <button class="tab-btn" onclick="switchTab('tradeoverview')" id="tab-tradeoverview">
         <i class="fa-solid fa-table-list mr-1"></i>交易概況
       </button>
@@ -298,12 +304,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       </button>
       <button class="tab-btn" onclick="switchTab('recommendation')" id="tab-recommendation">
         <i class="fa-solid fa-lightbulb mr-1"></i>投資建議
-      </button>
-      <button class="tab-btn" onclick="switchTab('maanalysis')" id="tab-maanalysis">
-        <i class="fa-solid fa-wave-square mr-1"></i>移動平均線分析
-      </button>
-      <button class="tab-btn" onclick="switchTab('granville')" id="tab-granville">
-        <i class="fa-solid fa-scroll mr-1"></i>葛蘭碧八大法則
       </button>
     </div>
 
@@ -7225,17 +7225,19 @@ function renderMAAnalysisTab(data) {
           {
             label:'黃金交叉', data: maGoldenPts, type:'line',
             borderColor:'rgba(251,191,36,0)', borderWidth:0, fill:false, showLine:false, spanGaps:false,
-            pointRadius:    maGoldenPts.map(v => v!=null ? 11 : 0),
+            pointRadius:    maGoldenPts.map(v => v!=null ? 14 : 0),
+            pointHoverRadius: maGoldenPts.map(v => v!=null ? 16 : 0),
             pointStyle:     'star',
-            pointBackgroundColor: '#fbbf24', pointBorderColor: '#fbbf24',
+            pointBackgroundColor: '#fbbf24', pointBorderColor: '#fbbf24', pointBorderWidth: 2,
           },
           // ✕ 死亡交叉
           {
             label:'死亡交叉', data: maDeathPts, type:'line',
             borderColor:'rgba(244,63,94,0)', borderWidth:0, fill:false, showLine:false, spanGaps:false,
-            pointRadius:    maDeathPts.map(v => v!=null ? 11 : 0),
+            pointRadius:    maDeathPts.map(v => v!=null ? 14 : 0),
+            pointHoverRadius: maDeathPts.map(v => v!=null ? 16 : 0),
             pointStyle:     'crossRot',
-            pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth:2.5,
+            pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth:3,
           },
           // ● 超買（正乖離>6%，賣出參考）
           {
@@ -7265,13 +7267,13 @@ function renderMAAnalysisTab(data) {
                 return chart.data.datasets.map((ds, i) => {
                   const label = ds.label || '';
                   // 黃金交叉：金色方塊＋文字
-                  if (label === '黃金交叉') return { text:'⭐ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:1, datasetIndex:i, hidden:false };
+                  if (label === '黃金交叉') return { text:'⭐ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#94a3b8' };
                   // 死亡交叉：紅色方塊＋文字
-                  if (label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:1, datasetIndex:i, hidden:false };
+                  if (label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#94a3b8' };
                   // 超買賣出參考：橘色方塊
-                  if (label === '超買賣出參考') return { text:'▼ 超買賣出', fillStyle:'rgba(239,68,68,0.85)', strokeStyle:'#ef4444', lineWidth:1, datasetIndex:i, hidden:false };
+                  if (label === '超買賣出參考') return { text:'▼ 超買賣出', fillStyle:'rgba(239,68,68,0.85)', strokeStyle:'#ef4444', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#94a3b8' };
                   // 超賣買入參考：綠色方塊
-                  if (label === '超賣買入參考') return { text:'▲ 超賣買入', fillStyle:'rgba(16,185,129,0.85)', strokeStyle:'#10b981', lineWidth:1, datasetIndex:i, hidden:false };
+                  if (label === '超賣買入參考') return { text:'▲ 超賣買入', fillStyle:'rgba(16,185,129,0.85)', strokeStyle:'#10b981', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#94a3b8' };
                   // 一般均線：色線
                   return {
                     text: label,
@@ -7281,6 +7283,7 @@ function renderMAAnalysisTab(data) {
                     lineDash: ds.borderDash || [],
                     datasetIndex: i,
                     hidden: false,
+                    fontColor: '#94a3b8',
                   };
                 });
               }
@@ -7302,8 +7305,17 @@ function renderMAAnalysisTab(data) {
           }
         },
         scales: {
-          x: { ticks:{ color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
-          y: { ticks:{ color:'#64748b', font:{size:9} }, grid:{color:'#1e293b'} }
+          x: { ticks:{ color:'#94a3b8', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
+          y: {
+            ticks:{ color:'#94a3b8', font:{size:9} },
+            grid:{color:'#1e293b'},
+            afterDataLimits(scale) {
+              const range = scale.max - scale.min;
+              const pad = range * 0.08;
+              scale.min = scale.min - pad;
+              scale.max = scale.max + pad;
+            }
+          }
         },
         interaction:{ mode:'index', intersect:false }
       }
@@ -7541,16 +7553,18 @@ function _drawGranCandleChart(data, period) {
         {
           type:'line', label:'黃金交叉', data: crossGoldenData,
           borderColor:'rgba(251,191,36,0)', borderWidth:0,
-          pointRadius: crossGoldenData.map(v => v != null ? 10 : 0),
-          pointStyle:'star', pointBackgroundColor:'#fbbf24', pointBorderColor:'#fbbf24',
+          pointRadius: crossGoldenData.map(v => v != null ? 14 : 0),
+          pointHoverRadius: crossGoldenData.map(v => v != null ? 16 : 0),
+          pointStyle:'star', pointBackgroundColor:'#fbbf24', pointBorderColor:'#fbbf24', pointBorderWidth:2,
           fill:false, showLine:false, spanGaps:false, order:0,
         },
         // ⑧ 死亡交叉（✕）
         {
           type:'line', label:'死亡交叉', data: crossDeathData,
           borderColor:'rgba(244,63,94,0)', borderWidth:0,
-          pointRadius: crossDeathData.map(v => v != null ? 10 : 0),
-          pointStyle:'crossRot', pointBackgroundColor:'#f43f5e', pointBorderColor:'#f43f5e', pointBorderWidth:2.5,
+          pointRadius: crossDeathData.map(v => v != null ? 14 : 0),
+          pointHoverRadius: crossDeathData.map(v => v != null ? 16 : 0),
+          pointStyle:'crossRot', pointBackgroundColor:'#f43f5e', pointBorderColor:'#f43f5e', pointBorderWidth:3,
           fill:false, showLine:false, spanGaps:false, order:0,
         },
       ]
@@ -7572,14 +7586,14 @@ function _drawGranCandleChart(data, period) {
                   if (gl) {
                     // 葛蘭碧規則：顯示規則短標籤，買入綠色/賣出紅色
                     return { text: ds.label, fillStyle: gl.color, strokeStyle: gl.color,
-                             lineWidth:0, datasetIndex:i, hidden:false };
+                             lineWidth:0, datasetIndex:i, hidden:false, fontColor:'#cbd5e1' };
                   }
-                  if (ds.label === '黃金交叉') return { text:'⭐黃金', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:0, datasetIndex:i, hidden:false };
-                  if (ds.label === '死亡交叉') return { text:'✕死亡', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:0, datasetIndex:i, hidden:false };
+                  if (ds.label === '黃金交叉') return { text:'⭐黃金', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:0, datasetIndex:i, hidden:false, fontColor:'#cbd5e1' };
+                  if (ds.label === '死亡交叉') return { text:'✕死亡', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:0, datasetIndex:i, hidden:false, fontColor:'#cbd5e1' };
                   // MA 線：色條
                   return { text: ds.label, fillStyle:'transparent',
                            strokeStyle: ds.borderColor||'#94a3b8', lineWidth:2,
-                           datasetIndex:i, hidden:false };
+                           datasetIndex:i, hidden:false, fontColor:'#cbd5e1' };
                 });
             }
           }
@@ -7608,8 +7622,17 @@ function _drawGranCandleChart(data, period) {
         }
       },
       scales: {
-        x: { ticks:{ color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
-        y: { ticks:{ color:'#64748b', font:{size:9} }, grid:{color:'#1e293b'} }
+        x: { ticks:{ color:'#94a3b8', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
+        y: {
+          ticks:{ color:'#94a3b8', font:{size:9} },
+          grid:{color:'#1e293b'},
+          afterDataLimits(scale) {
+            const range = scale.max - scale.min;
+            const pad = range * 0.08;
+            scale.min = scale.min - pad;
+            scale.max = scale.max + pad;
+          }
+        }
       }
     }
   });
