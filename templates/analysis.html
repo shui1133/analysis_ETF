@@ -2549,33 +2549,48 @@ function renderTechSignalDetail(data) {
   const cross520  = maAn.cross_5_20  || {};
   const cross2060 = maAn.cross_20_60 || {};
   const crossItems = [
-    {label:'MA5/MA20', data: cross520},
-    {label:'MA20/MA60', data: cross2060},
+    {label:'MA5/MA20',  key:'5_20',  data: cross520},
+    {label:'MA20/MA60', key:'20_60', data: cross2060},
   ].filter(c => c.data.cross_type && c.data.cross_type !== 'none');
   if (crossItems.length > 0) {
     const confColor = {high:'#10b981',medium:'#f59e0b',low:'#94a3b8'};
     const confLabel = {high:'高',medium:'中',low:'低'};
     const crossHtml = crossItems.map(c => {
-      const isDeath = c.data.cross_type === 'death';
-      const cc = isDeath ? '#ef4444' : '#f59e0b';
-      const days = c.data.est_days;
-      const conf = c.data.confidence || 'low';
+      const isDeath  = c.data.cross_type === 'death';
+      const cc       = isDeath ? '#ef4444' : '#22c55e';
+      const days     = c.data.est_days;
+      const calDays  = c.data.est_calendar_days || '?';
+      const conf     = c.data.confidence || 'low';
       const gapTrend = {'narrowing':'縮小中','widening':'擴大中','stable':'穩定','unknown':''}[c.data.gap_trend||'']||'';
-      return `<div class="flex items-start gap-2 mb-2">
-        <span style="color:${cc};font-size:13px;margin-top:2px">
-          <i class="fa-solid fa-${isDeath?'skull-crossbones':'star'}"></i>
-        </span>
-        <div class="flex-1">
-          <span class="font-bold text-xs" style="color:${cc}">${c.label} ${isDeath?'死亡交叉':'黃金交叉'}</span>
-          <span class="ml-1 text-xs px-1.5 py-0.5 rounded" style="background:${confColor[conf]}22;color:${confColor[conf]}">信心：${confLabel[conf]||conf}</span>
-          <div class="text-slate-400 text-xs mt-0.5">預估 ${days} 個交易日（${c.data.est_calendar_days||'?'} 自然日）後出現${gapTrend?' ・差距'+gapTrend:''}</div>
-          <div class="text-slate-500 text-xs">${c.data.details||''}</div>
-        </div>
-      </div>`;
+      // 緊急程度顏色（≤5天紅、≤10天橘、≤20天黃）
+      const urgency  = days!=null && days<=5  ? '#dc2626'
+                     : days!=null && days<=10 ? '#f97316'
+                     : days!=null && days<=20 ? '#f59e0b' : '#94a3b8';
+      const crossLabel = isDeath ? 'DC（死亡交叉）' : 'GC（黃金交叉）';
+      const daysStr    = days!=null
+        ? `約 <strong style="color:${urgency};font-size:14px">${days}</strong> 個交易日`
+          + `（<strong style="color:${urgency}">${calDays}</strong> 自然日）後`
+        : '時間不明';
+      const urgWarn = days!=null && days<=10
+        ? `<div style="margin-top:5px;font-size:11px;font-weight:bold;color:${urgency}">⚠ 距 ${crossLabel} 僅剩 ${days} 個交易日，請密切注意</div>`
+        : '';
+      return `<div style="background:${isDeath?'rgba(127,29,29,.35)':'rgba(20,83,45,.25)'};border:1px solid ${cc}55;border-radius:10px;padding:10px 13px;margin-bottom:8px;">
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+    <i class="fa-solid fa-${isDeath?'skull-crossbones':'star'}" style="color:${cc}"></i>
+    <span style="font-weight:bold;font-size:13px;color:${cc}">${c.label} ${crossLabel}</span>
+    <span style="font-size:11px;padding:1px 7px;border-radius:4px;background:${confColor[conf]}22;color:${confColor[conf]}">信心：${confLabel[conf]||conf}</span>
+  </div>
+  <div style="color:#f1f5f9;font-size:13px;margin-bottom:3px;">預估 ${daysStr} 出現 <span style="color:${cc};font-weight:bold">${crossLabel}</span></div>
+  <div style="color:#64748b;font-size:11px;">${gapTrend?'均線差距 '+gapTrend+' ・':''}<span style="color:#475569">${c.data.details||''}</span></div>
+  ${urgWarn}
+</div>`;
     }).join('');
     const hasDeathCross = crossItems.some(c=>c.data.cross_type==='death');
-    const crossSt = hasDeathCross ? 'sell' : 'buy';
-    cards.push(makeCard('fa-solid fa-arrows-rotate','均線交叉預測',`${crossItems.length} 組預測`,crossSt,crossHtml,''));
+    const crossSt  = hasDeathCross ? 'sell' : 'buy';
+    const allDays  = crossItems.filter(c=>c.data.est_days!=null).map(c=>c.data.est_days);
+    const minDays  = allDays.length ? Math.min(...allDays) : null;
+    const titleStr = minDays!=null ? `最快 ${minDays} 交易日後交叉` : `${crossItems.length} 組預測`;
+    cards.push(makeCard('fa-solid fa-arrows-rotate','均線交叉預測',titleStr,crossSt,crossHtml,''));
   }
 
   if (tech.support&&tech.resist) {
@@ -3013,12 +3028,23 @@ function renderRecommendation(data) {
   let deathLines = [], goldenLines = [];
   allCross.forEach(c => {
     if (!c.d.cross_type || c.d.cross_type==='none') return;
-    const days = c.d.est_days;
-    const conf = {high:'高',medium:'中',low:'低'}[c.d.confidence]||c.d.confidence||'';
+    const days    = c.d.est_days;
+    const calDays = c.d.est_calendar_days || '?';
+    const conf    = {high:'高',medium:'中',low:'低'}[c.d.confidence]||c.d.confidence||'';
+    // 緊急程度顏色
+    const urgency = days!=null && days<=5  ? '#dc2626'
+                  : days!=null && days<=10 ? '#f97316'
+                  : days!=null && days<=20 ? '#f59e0b' : '#fbbf24';
+    // ★ 修正：強化顯示預估天數，≤10天加警戒標示
+    const daysPart = days!=null
+      ? `預估 <strong style="color:${urgency};font-size:15px">${days}</strong> 個交易日（<strong style="color:${urgency}">${calDays}</strong> 自然日）後`
+      : '預估時間不明，';
+    const urgWarn  = days!=null && days<=10
+      ? ` <span style="background:${urgency};color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:bold">⚠ 緊急</span>` : '';
     if (c.d.cross_type==='death') {
-      deathLines.push(`${c.key} 預估 <strong>${days}</strong> 個交易日後（${c.d.est_calendar_days||'?'} 自然日）出現死亡交叉，信心度：${conf}。${c.d.details||''}`);
+      deathLines.push(`${c.key} ${daysPart} 出現<strong>死亡交叉</strong>，信心度：${conf}${urgWarn}。${c.d.details||''}`);
     } else if (c.d.cross_type==='golden') {
-      goldenLines.push(`${c.key} 預估 <strong>${days}</strong> 個交易日後（${c.d.est_calendar_days||'?'} 自然日）出現黃金交叉，信心度：${conf}。${c.d.details||''}`);
+      goldenLines.push(`${c.key} ${daysPart} 出現<strong>黃金交叉</strong>，信心度：${conf}。${c.d.details||''}`);
     }
   });
   if (deathLines.length && deathAlert) {
@@ -3612,21 +3638,28 @@ function drawCandleChartPeriod(data, period) {
 
   // ── 死亡/黃金交叉預測線（在最後一根K棒之後標記）──────────
   // 使用 afterDraw plugin 手繪垂直虛線與標籤
+  // ★ 修正：標籤加入交易日 + 自然日，≤10天加 ⚠ 警示
   const crossPredictions = [];
   if (cross520.cross_type !== 'none' && cross520.est_days) {
+    const d5 = cross520.est_days, c5 = cross520.est_calendar_days||'?';
+    const isDeath5 = cross520.cross_type === 'death';
+    const warn5    = d5 <= 10 ? '⚠ ' : '';
     crossPredictions.push({
-      days: cross520.est_days,
-      type: cross520.cross_type,
-      label: `MA5/20 ${cross520.cross_type === 'death' ? '死亡' : '黃金'}交叉 ~${cross520.est_days}日`,
-      color: cross520.cross_type === 'death' ? '#ef4444' : '#10b981',
+      days:  d5,
+      type:  cross520.cross_type,
+      label: `${warn5}MA5/20 ${isDeath5?'DC':'GC'}（${d5}交易日 / ${c5}自然日後）`,
+      color: isDeath5 ? '#ef4444' : '#10b981',
     });
   }
   if (cross2060.cross_type !== 'none' && cross2060.est_days) {
+    const d20 = cross2060.est_days, c20 = cross2060.est_calendar_days||'?';
+    const isDeath20 = cross2060.cross_type === 'death';
+    const warn20    = d20 <= 10 ? '⚠ ' : '';
     crossPredictions.push({
-      days: cross2060.est_days,
-      type: cross2060.cross_type,
-      label: `MA20/60 ${cross2060.cross_type === 'death' ? '死亡' : '黃金'}交叉 ~${cross2060.est_days}日`,
-      color: cross2060.cross_type === 'death' ? '#f97316' : '#34d399',
+      days:  d20,
+      type:  cross2060.cross_type,
+      label: `${warn20}MA20/60 ${isDeath20?'DC':'GC'}（${d20}交易日 / ${c20}自然日後）`,
+      color: isDeath20 ? '#f97316' : '#34d399',
     });
   }
 
@@ -6649,10 +6682,15 @@ function _summaryToDataFormat(code, s) {
       reasons_buy:  s.reasons_buy  || [],
       reasons_sell: s.reasons_sell || [],
     },
-    // calcHotRow 需要 chart.closes/opens/volumes 來計算 60 日統計
-    // 輕量摘要已預先計算好，注入為虛擬陣列供 calcHotRow 使用
+    // ★ 修正：直接使用後端傳來的完整 chart 陣列（含 volumes），
+    // 解決成交量圖空白問題（原本 closes/volumes 為空陣列）
     chart: {
-      closes:  [], opens: [], volumes: [],
+      dates:   (s.chart && s.chart.dates)   || [],
+      opens:   (s.chart && s.chart.opens)   || [],
+      highs:   (s.chart && s.chart.highs)   || [],
+      lows:    (s.chart && s.chart.lows)    || [],
+      closes:  (s.chart && s.chart.closes)  || [],
+      volumes: (s.chart && s.chart.volumes) || [],
       _precomputed: {   // 預計算結果，calcHotRow 優先讀取
         updays:      s.updays,
         downdays:    s.downdays,

@@ -641,6 +641,16 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         'target_type':  rec.get('target_type', 'none'),
         'reasons_buy':  rec.get('reasons_buy', []),
         'reasons_sell': rec.get('reasons_sell', []),
+        # ★ 修正：加入近 1260 日完整 chart 陣列，供個股頁成交量圖使用
+        # _summaryToDataFormat 的 chart.volumes 目前為空陣列導致圖表空白
+        'chart': {
+            'dates':   [r['date']           for r in ohlcv[-1260:]],
+            'opens':   [r.get('open', r['close']) for r in ohlcv[-1260:]],
+            'highs':   [r.get('high', r['close']) for r in ohlcv[-1260:]],
+            'lows':    [r.get('low',  r['close']) for r in ohlcv[-1260:]],
+            'closes':  [r['close']          for r in ohlcv[-1260:]],
+            'volumes': [_to_lots(r.get('volume', 0)) for r in ohlcv[-1260:]],
+        },
     }
 
 
@@ -838,10 +848,16 @@ def get_stock_analysis(ticker):
         return _get_twii_analysis()
 
     # 快取（5分鐘）
+    # 注意：只有 data_out 格式（含 chart.volumes）才可直接回傳；
+    # _fetch_one_hot 存入的是 raw 格式（無 chart），需繼續往下組裝。
     import time
     cache_entry = analysis_cache.get(ticker)
     if cache_entry and (time.time() - cache_entry.get('ts', 0)) < 300:
-        return jsonify({'status': 'success', 'data': cache_entry['data']})
+        cached_data = cache_entry['data']
+        # data_out 格式必定含 'chart' 鍵且 volumes 非空陣列
+        if isinstance(cached_data, dict) and cached_data.get('chart', {}).get('volumes'):
+            return jsonify({'status': 'success', 'data': cached_data})
+        # raw 格式（無 chart.volumes）→ 繼續往下重新組裝完整 data_out
 
     try:
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
