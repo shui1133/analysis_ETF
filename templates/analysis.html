@@ -429,6 +429,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               <i class="fa-solid fa-microscope mr-1 text-blue-400"></i>各指標詳細解讀
             </h4>
             <div id="techDetailCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+            <!-- ▼ 強化均線分析區塊（葛蘭碧 + 交叉預測） -->
+            <div id="maEnhancedSection" class="hidden mt-3 space-y-3">
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">均線強化分析</div>
+              <div id="maEnhancedCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+            </div>
           </div>
           <div id="techSummaryBox" class="rounded-xl p-4 border"></div>
         </div>
@@ -563,6 +568,22 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
     <!-- ═══ Tab: 投資建議 ════════════════════════════════════════ -->
     <div id="panel-recommendation" class="hidden space-y-4">
+      <!-- ▼ 死亡交叉警示橫幅（由 renderRecommendation 控制顯示） -->
+      <div id="deathCrossAlert" class="hidden rounded-xl p-4 border border-red-700 bg-red-950/60 flex items-start gap-3">
+        <i class="fa-solid fa-triangle-exclamation text-red-400 text-xl mt-0.5 shrink-0"></i>
+        <div class="flex-1">
+          <div class="font-bold text-red-300 text-sm mb-1">⚠ 死亡交叉預警</div>
+          <div id="deathCrossAlertText" class="text-xs text-red-200 leading-relaxed"></div>
+        </div>
+      </div>
+      <!-- ▼ 黃金交叉提示橫幅 -->
+      <div id="goldenCrossAlert" class="hidden rounded-xl p-4 border border-emerald-700 bg-emerald-950/60 flex items-start gap-3">
+        <i class="fa-solid fa-star text-yellow-400 text-xl mt-0.5 shrink-0"></i>
+        <div class="flex-1">
+          <div class="font-bold text-emerald-300 text-sm mb-1">⭐ 黃金交叉預警</div>
+          <div id="goldenCrossAlertText" class="text-xs text-emerald-200 leading-relaxed"></div>
+        </div>
+      </div>
       <div class="card p-6">
         <h3 class="font-bold text-white text-lg mb-5"><i class="fa-solid fa-lightbulb mr-2 text-yellow-400"></i>綜合投資評級</h3>
         <div class="flex flex-wrap gap-6 items-center mb-5">
@@ -574,7 +595,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <div class="ind-card text-center">
               <div class="text-xs text-slate-500 mb-1">技術面分數</div>
               <div class="text-2xl font-black" id="rec-tech-score">--</div>
-              <div class="text-xs text-slate-500 mt-1">（-8 ~ +8）</div>
+              <div class="text-xs text-slate-500 mt-1">（理論 -16~+16）</div>
             </div>
             <div class="ind-card text-center">
               <div class="text-xs text-slate-500 mb-1">基本面分數</div>
@@ -584,7 +605,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <div class="ind-card text-center">
               <div class="text-xs text-slate-500 mb-1">綜合總分</div>
               <div class="text-2xl font-black" id="rec-total-score">--</div>
-              <div class="text-xs text-slate-500 mt-1">（-10 ~ +12）</div>
+              <div class="text-xs text-slate-500 mt-1">（理論 -20~+20）</div>
             </div>
           </div>
           <div class="ind-card text-center px-5">
@@ -2306,11 +2327,28 @@ function renderTechnical(data) {
   trendEl.style.color = tech.trend.color;
   trendEl.style.border = `1px solid ${tech.trend.color}55`;
 
-  // 技術訊號標籤
+  // ▼ 均線排列 badge（強化版）
+  const maArr = (tech.ma_analysis||{}).array || {};
+  const arrBadge = document.getElementById('trend-array-badge');
+  if (arrBadge && maArr.label) {
+    arrBadge.textContent = maArr.label;
+    const arrColorMap = {
+      '多頭排列':'#10b981','偏多排列':'#22c55e','短多整理':'#6ee7b7',
+      '空頭排列':'#ef4444','偏空排列':'#f97316','短空整理':'#fca5a5','均線糾結':'#94a3b8'
+    };
+    const ac = arrColorMap[maArr.label]||'#94a3b8';
+    arrBadge.style.background = ac+'22'; arrBadge.style.color = ac; arrBadge.style.border = `1px solid ${ac}55`;
+    arrBadge.classList.remove('hidden');
+    arrBadge.title = maArr.detail || '';
+  }
+
+  // 技術訊號標籤（補強關鍵字：葛蘭碧/排列/乖離/交叉）
   const signalsEl = document.getElementById('techSignals');
   signalsEl.innerHTML = tech.trend.signals.map(s => {
-    const isBuy  = s.includes('多') || s.includes('站上') || s.includes('超賣') || s.includes('黃金');
-    const isSell = s.includes('空') || s.includes('跌破') || s.includes('超買') || s.includes('死亡');
+    const isBuy  = s.includes('多') || s.includes('站上') || s.includes('超賣') || s.includes('黃金') ||
+                   s.includes('葛蘭碧') || s.includes('起漲') || s.includes('加碼') || s.includes('反彈') || s.includes('排列') && s.includes('多');
+    const isSell = s.includes('空') || s.includes('跌破') || s.includes('超買') || s.includes('死亡') ||
+                   s.includes('轉空') || s.includes('回吐') || s.includes('賣出') || s.includes('排列') && s.includes('空');
     const cls    = isBuy ? 'signal-buy' : isSell ? 'signal-sell' : 'signal-neutral';
     return `<span class="signal-tag ${cls}">${s}</span>`;
   }).join('');
@@ -2410,6 +2448,83 @@ function renderTechSignalDetail(data) {
     else kdDesc=`K值（${kVal.toFixed(1)}）中性區間，${kVal>dVal?'K>D偏多，趨勢向上。':'K<D偏弱，趨勢向下。'}`;
     cards.push(makeCard('fa-solid fa-crosshairs','KD（9日）',`K: ${kVal.toFixed(1)} / D: ${dVal.toFixed(1)}`,kdSt,kdDesc,'超買≥80 ／ 超賣≤20；K穿越D向上為買訊'));
   }
+  // ▼ 乖離率警戒等級卡片（強化版 bias_warning）
+  const maAn = tech.ma_analysis || {};
+  const biasWarn = maAn.bias_warn || {};
+  const biasVal  = maAn.bias_ma20;
+  if (biasVal != null) {
+    const bw = biasWarn;
+    const biasLevel = bw.level || 'normal';
+    const biasText  = bw.text  || `乖離率 ${biasVal>0?'+':''}${biasVal.toFixed(1)}%`;
+    const biasSt    = biasLevel.includes('overbought') ? 'sell' : biasLevel.includes('oversold') ? 'buy' : 'neutral';
+    const bColor    = {'extreme_overbought':'#b91c1c','overbought':'#ef4444','oversold':'#16a34a','extreme_oversold':'#15803d','normal':'#3b82f6'}[biasLevel]||'#94a3b8';
+    const biasDesc  = biasLevel==='extreme_overbought' ? `MA20 乖離率 ${biasVal>0?'+':''}${biasVal.toFixed(1)}%，<strong style="color:#ef4444">極度超買</strong>，持有者普遍大幅獲利，短線回調風險高，可考慮逢高減碼。`
+      : biasLevel==='overbought'       ? `MA20 乖離率 ${biasVal>0?'+':''}${biasVal.toFixed(1)}%，<strong style="color:#f97316">超買警示</strong>，股價偏離均線過大，注意短線壓回，不宜追高。`
+      : biasLevel==='extreme_oversold' ? `MA20 乖離率 ${biasVal.toFixed(1)}%，<strong style="color:#10b981">極度超賣</strong>，股價大幅低於成本，技術性強彈機率高，可關注底部訊號。`
+      : biasLevel==='oversold'         ? `MA20 乖離率 ${biasVal.toFixed(1)}%，<strong style="color:#22c55e">超賣機會</strong>，短線下跌過快，有反彈需求，可分批試買。`
+      : `MA20 乖離率 ${biasVal>0?'+':''}${biasVal.toFixed(1)}%，股價距離均線在合理範圍內，無明顯超買或超賣。`;
+    cards.push(makeCard('fa-solid fa-percent','MA20 乖離率',biasText,biasSt,biasDesc,'乖離率 > +5% 超買，< -5% 超賣（以 MA20 為基準）'));
+  }
+
+  // ▼ 葛蘭碧八大法則卡片
+  const granList = (maAn.granville || []).slice(0,4);
+  if (granList.length > 0) {
+    const signalNames = {1:'起漲買進',2:'續漲加碼',3:'超賣反彈',4:'末跌買進',5:'趨勢轉空賣出',6:'超買回吐',7:'反彈賣出',8:'空頭賣出'};
+    const strengthMap = {strong:'強訊號',moderate:'中訊號',weak:'弱訊號'};
+    const strengthColor = {strong:'#22c55e',moderate:'#f59e0b',weak:'#94a3b8'};
+    const granHtml = granList.map(g => {
+      const sc = strengthColor[g.strength]||'#94a3b8';
+      const st = strengthMap[g.strength]||g.strength;
+      const isBuy = g.signal==='buy';
+      return `<div class="flex items-start gap-2 mb-2">
+        <span style="color:${isBuy?'#10b981':'#ef4444'};font-size:13px;margin-top:2px">
+          <i class="fa-solid fa-${isBuy?'circle-up':'circle-down'}"></i>
+        </span>
+        <div class="flex-1">
+          <span class="font-bold text-white text-xs">法則${g.rule}「${g.name}」</span>
+          <span class="ml-1 text-xs px-1.5 py-0.5 rounded" style="background:${sc}22;color:${sc}">${st}</span>
+          <div class="text-slate-400 text-xs mt-0.5">${g.description}</div>
+        </div>
+      </div>`;
+    }).join('');
+    const anyBuy = granList.some(g=>g.signal==='buy'), anySell = granList.some(g=>g.signal==='sell');
+    const granSt = anyBuy && !anySell ? 'buy' : anySell && !anyBuy ? 'sell' : 'neutral';
+    cards.push(makeCard('fa-solid fa-scroll','葛蘭碧法則',`觸發 ${granList.length} 則`,granSt,granHtml,''));
+  }
+
+  // ▼ 死亡/黃金交叉預測卡片
+  const cross520  = maAn.cross_5_20  || {};
+  const cross2060 = maAn.cross_20_60 || {};
+  const crossItems = [
+    {label:'MA5/MA20', data: cross520},
+    {label:'MA20/MA60', data: cross2060},
+  ].filter(c => c.data.cross_type && c.data.cross_type !== 'none');
+  if (crossItems.length > 0) {
+    const confColor = {high:'#10b981',medium:'#f59e0b',low:'#94a3b8'};
+    const confLabel = {high:'高',medium:'中',low:'低'};
+    const crossHtml = crossItems.map(c => {
+      const isDeath = c.data.cross_type === 'death';
+      const cc = isDeath ? '#ef4444' : '#f59e0b';
+      const days = c.data.est_days;
+      const conf = c.data.confidence || 'low';
+      const gapTrend = {'narrowing':'縮小中','widening':'擴大中','stable':'穩定','unknown':''}[c.data.gap_trend||'']||'';
+      return `<div class="flex items-start gap-2 mb-2">
+        <span style="color:${cc};font-size:13px;margin-top:2px">
+          <i class="fa-solid fa-${isDeath?'skull-crossbones':'star'}"></i>
+        </span>
+        <div class="flex-1">
+          <span class="font-bold text-xs" style="color:${cc}">${c.label} ${isDeath?'死亡交叉':'黃金交叉'}</span>
+          <span class="ml-1 text-xs px-1.5 py-0.5 rounded" style="background:${confColor[conf]}22;color:${confColor[conf]}">信心：${confLabel[conf]||conf}</span>
+          <div class="text-slate-400 text-xs mt-0.5">預估 ${days} 個交易日（${c.data.est_calendar_days||'?'} 自然日）後出現${gapTrend?' ・差距'+gapTrend:''}</div>
+          <div class="text-slate-500 text-xs">${c.data.details||''}</div>
+        </div>
+      </div>`;
+    }).join('');
+    const hasDeathCross = crossItems.some(c=>c.data.cross_type==='death');
+    const crossSt = hasDeathCross ? 'sell' : 'buy';
+    cards.push(makeCard('fa-solid fa-arrows-rotate','均線交叉預測',`${crossItems.length} 組預測`,crossSt,crossHtml,''));
+  }
+
   if (tech.support&&tech.resist) {
     const pos = rec.price_position;
     if (pos != null) {
@@ -2830,13 +2945,45 @@ function renderRecommendation(data) {
     if (targetDesc) targetDesc.textContent='資料不足';
   }
 
+  // ▼ 死亡/黃金交叉警示橫幅
+  const maAna = (data.technical||{}).ma_analysis || rec.ma_analysis || {};
+  const c520  = maAna.cross_5_20  || {};
+  const c2060 = maAna.cross_20_60 || {};
+  const deathAlert  = document.getElementById('deathCrossAlert');
+  const goldenAlert = document.getElementById('goldenCrossAlert');
+  if (deathAlert) deathAlert.classList.add('hidden');
+  if (goldenAlert) goldenAlert.classList.add('hidden');
+  const allCross = [
+    {key:'MA5/MA20',  d: c520},
+    {key:'MA20/MA60', d: c2060},
+  ];
+  let deathLines = [], goldenLines = [];
+  allCross.forEach(c => {
+    if (!c.d.cross_type || c.d.cross_type==='none') return;
+    const days = c.d.est_days;
+    const conf = {high:'高',medium:'中',low:'低'}[c.d.confidence]||c.d.confidence||'';
+    if (c.d.cross_type==='death') {
+      deathLines.push(`${c.key} 預估 <strong>${days}</strong> 個交易日後（${c.d.est_calendar_days||'?'} 自然日）出現死亡交叉，信心度：${conf}。${c.d.details||''}`);
+    } else if (c.d.cross_type==='golden') {
+      goldenLines.push(`${c.key} 預估 <strong>${days}</strong> 個交易日後（${c.d.est_calendar_days||'?'} 自然日）出現黃金交叉，信心度：${conf}。${c.d.details||''}`);
+    }
+  });
+  if (deathLines.length && deathAlert) {
+    document.getElementById('deathCrossAlertText').innerHTML = deathLines.join('<br>');
+    deathAlert.classList.remove('hidden');
+  }
+  if (goldenLines.length && goldenAlert) {
+    document.getElementById('goldenCrossAlertText').innerHTML = goldenLines.join('<br>');
+    goldenAlert.classList.remove('hidden');
+  }
+
   // 評分說明條
   const totalScore = rec.total_score;
-  const barPct = Math.round((totalScore-(-10))/(12-(-10))*100);
-  const barColor = totalScore>=6?'#10b981':totalScore>=3?'#22d3ee':totalScore>=0?'#3b82f6':totalScore>=-3?'#f59e0b':'#ef4444';
-  const ratingDescs = {'強力買進':'多項指標高度一致偏多，為最強力買入訊號。建議在支撐位分批建倉，設定停損保護獲利。','買進':'技術面或基本面具明確優勢，整體偏多。建議在回撤至支撐位時逢低分批買進。','持有':'多空訊號相對平衡。已持有者續持觀望，未持有者等待更明確訊號。','減碼':'出現偏空訊號，趨勢開始轉弱。建議逐步減少持股，等待更佳時機。','賣出':'多項指標指向弱勢，整體偏空。建議儘早出脫，嚴格執行停損。'};
+  const barPct = Math.round((totalScore - (-20)) / 40 * 100);
+  const barColor = totalScore>=12?'#10b981':totalScore>=6?'#22d3ee':totalScore>=0?'#3b82f6':totalScore>=-6?'#f59e0b':'#ef4444';
+  const ratingDescs = {'強力買進':'技術面與基本面高度一致偏多（總分≥12），含均線多頭排列、葛蘭碧強訊號、交叉確認等多重共振，為最強力買入訊號。建議在支撐位分批建倉，設定停損保護獲利。','買進':'技術面具明確優勢（總分≥6），均線趨勢向上，動能指標配合，整體偏多。建議在回撤至支撐位時逢低分批買進。','持有':'多空訊號相對平衡（0≤總分<6）。已持有者續持觀望，未持有者等待更明確訊號。','減碼':'出現偏空訊號（-6≤總分<0），均線或葛蘭碧出現賣出訊號，趨勢開始轉弱。建議逐步減少持股，等待更佳時機。','賣出':'技術面多項指標指向弱勢（總分<-6），含空頭排列、交叉預警或葛蘭碧賣出訊號，整體偏空。建議儘早出脫，嚴格執行停損。'};
   const scoreBarEl = document.getElementById('recScoreBar');
-  if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}，-8~+8）＋基本面（${fmtScore(rec.fund_score)}，-1~+4）＝ 總分（${fmtScore(totalScore)}）</div>`;
+  if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}，不設上下限）＋基本面（${fmtScore(rec.fund_score)}，-1~+4）＝ 總分（${fmtScore(totalScore)}） ｜ 門檻：強力買進≥12 / 買進≥6 / 持有≥0 / 減碼≥-6 / 賣出<-6</div>`;
 
   // 評分維度分解
   const dimEl = document.getElementById('recScoreDimensions');
@@ -2853,8 +3000,20 @@ function renderRecommendation(data) {
   if(macd!=null&&macdSig!=null) techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）');
   if(rsi!=null) techItems.push(rsi>70?'RSI超買（-1）':rsi<30?'RSI超賣（+1）':'RSI中性（0）');
   if(k!=null&&d!=null) techItems.push(k<20?'KD超賣（+1）':k>80?'KD超買（-1）':'KD中性（0）');
-  // 支撐/壓力位置（對應後端 pos_pct）
   if(rec.price_position!=null) techItems.push(rec.price_position<=20?'接近支撐（+1）':rec.price_position>=80?'接近壓力（-1）':'位置中性（0）');
+  // ▼ 強化版：均線排列 + 葛蘭碧 + 交叉預測
+  const _maAna = (data.technical||{}).ma_analysis || {};
+  if(_maAna.array&&_maAna.array.label) techItems.push(`均線${_maAna.array.label}（${_maAna.array.score>0?'+'+_maAna.array.score:_maAna.array.score}）`);
+  const _gran = _maAna.granville||[];
+  const _gBuy=_gran.filter(g=>g.signal==='buy'&&g.strength==='strong').length;
+  const _gSell=_gran.filter(g=>g.signal==='sell'&&g.strength==='strong').length;
+  if(_gBuy) techItems.push(`葛蘭碧強力買訊 ×${_gBuy}（+${_gBuy*2}）`);
+  if(_gSell) techItems.push(`葛蘭碧強力賣訊 ×${_gSell}（-${_gSell*2}）`);
+  const _c520=_maAna.cross_5_20||{}, _c2060=_maAna.cross_20_60||{};
+  if(_c520.cross_type==='death') techItems.push(`MA5/20 死亡交叉預警 ${_c520.est_days}日（${_c520.est_days<=10?'-2':'-1'}）`);
+  if(_c520.cross_type==='golden') techItems.push(`MA5/20 黃金交叉預警 ${_c520.est_days}日（${_c520.est_days<=10?'+2':'+1'}）`);
+  if(_c2060.cross_type==='death') techItems.push(`MA20/60 死亡交叉預警 ${_c2060.est_days}日（${_c2060.est_days<=10?'-2':'-1'}）`);
+  if(_c2060.cross_type==='golden') techItems.push(`MA20/60 黃金交叉預警 ${_c2060.est_days}日（${_c2060.est_days<=10?'+2':'+1'}）`);
   const f=data.fundamentals||{};
   const fundItems=[];
   if(f.pe_ratio) fundItems.push(f.pe_ratio<15?`P/E ${f.pe_ratio.toFixed(1)}x 低估（+1）`:f.pe_ratio>30?`P/E ${f.pe_ratio.toFixed(1)}x 高估（-1）`:`P/E ${f.pe_ratio.toFixed(1)}x 中性`);
@@ -2863,7 +3022,7 @@ function renderRecommendation(data) {
   if(f.div_yield) fundItems.push(f.div_yield>=5?`殖利率 ${f.div_yield}% 高股息（+1）`:f.div_yield>=3?`殖利率 ${f.div_yield}% 穩定`:`殖利率 ${f.div_yield}% 偏低`);
   const chipDir=chip&&chip.foreign_dir; const chipBull=chipDir&&chipDir.includes('買'); const chipBear=chipDir&&chipDir.includes('賣');
   if (dimEl) dimEl.innerHTML=[
-    dimCard('fa-solid fa-chart-area','技術面',rec.tech_score,8,'評分涵蓋：'+techItems.join('、'),rec.tech_score>=0?'#10b981':'#ef4444'),
+    dimCard('fa-solid fa-chart-area','技術面',rec.tech_score,16,'評分涵蓋：'+techItems.join('、'),rec.tech_score>=0?'#10b981':'#ef4444'),
     dimCard('fa-solid fa-building-columns','基本面',rec.fund_score,4,fundItems.length?'評分涵蓋：'+fundItems.join('、'):'基本面資料不足',rec.fund_score>=0?'#f59e0b':'#ef4444'),
     dimCard('fa-solid fa-users','籌碼面（參考）',chipBull?1:chipBear?-1:0,1,chip?`外資「${chip.foreign_dir}」，投信「${chip.trust_dir}」，相對量 ${chip.vol_ratio}x，近20日上漲 ${chip.up_days_20} 日`:'籌碼資料不足',chipBull?'#14b8a6':chipBear?'#ef4444':'#64748b'),
     dimCard('fa-solid fa-ruler-horizontal','位置風險',

@@ -38,6 +38,17 @@ import io
 import requests as _req
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# ── 強化版移動平均線分析模組 (V2) ──────────────────────────────────────────
+from ma_analysis_enhanced import (
+    analyze_ma,
+    calc_granville_signals,
+    estimate_cross_days,
+    calc_bias,
+    bias_warning,
+    enhanced_calc_trend,
+    enhanced_generate_recommendation,
+)
+
 # ── 載入 .env（本機開發用；Render 環境直接讀系統環境變數）──
 try:
     from dotenv import load_dotenv
@@ -566,7 +577,12 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
     latest_ind = {'ma5': ma5, 'ma20': ma20, 'ma60': ma60,
                   'macd': macd, 'macd_signal': macd_signal, 'rsi': rsi,
                   'k': k, 'd': d}
-    trend = _calc_trend(last['close'], latest_ind)
+    # ── 均線序列 dict（供葛蘭碧/交叉預測使用）─────────────────
+    ma_series_dict = {
+        'ma20': indicators.get('ma20', []),
+        'ma60': indicators.get('ma60', []),
+    }
+    trend = _calc_trend(last['close'], latest_ind, ohlcv=ohlcv, ma_series_dict=ma_series_dict)
 
     # ── 法人籌碼估算 ───────────────────────────────────────────
     chip = _estimate_chip(ohlcv, trend)
@@ -899,7 +915,12 @@ def get_stock_analysis(ticker):
         resist   = round(max(r['high'] for r in recent60), 2)
 
         # ── 趨勢判斷 ─────────────────────────────────────────
-        trend = _calc_trend(last['close'], latest_ind)
+        # 均線序列 dict（供葛蘭碧/交叉預測使用）
+        ma_series_dict = {
+            'ma20': indicators.get('ma20', []),
+            'ma60': indicators.get('ma60', []),
+        }
+        trend = _calc_trend(last['close'], latest_ind, ohlcv=ohlcv, ma_series_dict=ma_series_dict)
 
         # ── 法人籌碼估算（根據成交量及趨勢模擬）──────────────
         chip = _estimate_chip(ohlcv, trend)
@@ -963,6 +984,15 @@ def get_stock_analysis(ticker):
                 'support':  support,
                 'resist':   resist,
                 'trend':    trend,
+                # 強化版均線分析（均線排列、乖離率、葛蘭碧、交叉預測）
+                'ma_analysis': {
+                    'array':        trend.get('ma_array', {}),
+                    'bias_ma20':    trend.get('bias_ma20'),
+                    'bias_warn':    trend.get('bias_warn_ma20', {}),
+                    'granville':    trend.get('granville', []),
+                    'cross_5_20':   trend.get('cross_5_20', {}),
+                    'cross_20_60':  trend.get('cross_20_60', {}),
+                },
             },
             # 籌碼面
             'chip': chip,
@@ -1512,79 +1542,13 @@ def _fetch_twse_fundamentals(ticker: str) -> dict:
     return result
 
 
-def _calc_trend(close, ind):
-    """根據均線關係判斷趨勢"""
-    ma5  = ind.get('ma5')
-    ma20 = ind.get('ma20')
-    ma60 = ind.get('ma60')
-    macd = ind.get('macd')
-    rsi  = ind.get('rsi')
-
-    score = 0
-    signals = []
-
-    # 均線多頭排列
-    if ma5 and ma20 and ma5 > ma20:
-        score += 2
-        signals.append('MA5>MA20（短線偏多）')
-    elif ma5 and ma20 and ma5 < ma20:
-        score -= 2
-        signals.append('MA5<MA20（短線偏空）')
-
-    if ma20 and ma60 and ma20 > ma60:
-        score += 2
-        signals.append('MA20>MA60（中線偏多）')
-    elif ma20 and ma60 and ma20 < ma60:
-        score -= 2
-        signals.append('MA20<MA60（中線偏空）')
-
-    # 價格與均線關係
-    if ma20 and close > ma20:
-        score += 1
-        signals.append('價格站上MA20')
-    elif ma20 and close < ma20:
-        score -= 1
-        signals.append('價格跌破MA20')
-
-    # MACD 多空
-    if macd and macd > 0:
-        score += 1
-        signals.append('MACD>0（多方）')
-    elif macd and macd < 0:
-        score -= 1
-        signals.append('MACD<0（空方）')
-
-    # RSI 超買超賣
-    rsi_note = ''
-    if rsi:
-        if rsi > 70:
-            score -= 1
-            rsi_note = f'RSI={rsi:.1f}（超買警示）'
-            signals.append(rsi_note)
-        elif rsi < 30:
-            score += 1
-            rsi_note = f'RSI={rsi:.1f}（超賣反彈機會）'
-            signals.append(rsi_note)
-        else:
-            signals.append(f'RSI={rsi:.1f}（中性）')
-
-    if score >= 4:
-        label = '強勢上漲'
-        color = '#10b981'
-    elif score >= 1:
-        label = '偏多整理'
-        color = '#6ee7b7'
-    elif score <= -4:
-        label = '弱勢下跌'
-        color = '#ef4444'
-    elif score <= -1:
-        label = '偏空整理'
-        color = '#fca5a5'
-    else:
-        label = '盤整'
-        color = '#94a3b8'
-
-    return {'label': label, 'color': color, 'score': score, 'signals': signals}
+def _calc_trend(close, ind, ohlcv=None, ma_series_dict=None):
+    """
+    強化版趨勢判斷 — 整合均線排列、乖離率、葛蘭碧法則、交叉預測。
+    直接呼叫 ma_analysis_enhanced.enhanced_calc_trend()。
+    回傳格式向下相容原版，並擴充 ma_array/bias/granville/cross 欄位。
+    """
+    return enhanced_calc_trend(close, ind, ohlcv=ohlcv, ma_series_dict=ma_series_dict)
 
 
 def _estimate_chip(ohlcv, trend):
@@ -1644,225 +1608,31 @@ def _estimate_chip(ohlcv, trend):
 
 def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, support, resist):
     """
-    綜合評估產生投資建議與評級
-    評級：強力買進 / 買進 / 持有 / 減碼 / 賣出
+    強化版投資建議 — 整合葛蘭碧訊號、均線排列、乖離率、交叉預測（V3）。
+    直接呼叫 ma_analysis_enhanced.enhanced_generate_recommendation()。
 
-    技術面評分獨立計算（每項 ±1），不從 trend.score 繼承，避免重複加分：
-      MA5 vs MA20     ±1
-      MA20 vs MA60    ±1
-      價格 vs MA20    ±1
-      MACD 正負       ±1
-      MACD 黃金/死亡  ±1
-      RSI 超買/超賣   ±1（中性 0）
-      KD 超買/超賣    ±1（中性 0）
-      支撐/壓力位置   ±1（中間 0）
-    合計範圍：-8 ~ +8
+    技術面評分不設上下限，直接累加所有項目：
+      原有 8 項各 ±1  → ±8
+      均線排列         ±2
+      葛蘭碧強訊號     ±2/則（最多 2 則計分，±4）
+      死亡/黃金交叉    10日內 ±2，10~20日 ±1（兩組最多 ±4）
+      乖離率警戒       超買/超賣 ±1
+    技術面上限約 ±16（不截斷），加上基本面（-1~+4），總分約 -20~+20。
+
+    評級門檻（比例放大）：
+      強力買進 ≥ 12 ／ 買進 ≥ 6 ／ 持有 ≥ 0 ／ 減碼 ≥ -6 ／ 賣出 < -6
+
+    回傳格式完全相容原版，並新增 ma_analysis 欄位。
     """
-    rsi   = ind.get('rsi')
-    macd  = ind.get('macd')
-    macd_signal = ind.get('macd_signal')
-    k     = ind.get('k')
-    d     = ind.get('d')
-    ma5   = ind.get('ma5')
-    ma20  = ind.get('ma20')
-    ma60  = ind.get('ma60')
-
-    reasons_buy  = []
-    reasons_sell = []
-    risks        = []
-
-    # ── 技術面評分（從 0 開始，每項獨立 ±1）───────────────────
-    tech_score = 0
-
-    # MA5 vs MA20（短線趨勢）
-    if ma5 and ma20:
-        if ma5 > ma20:
-            tech_score += 1
-            reasons_buy.append('MA5 > MA20（短線偏多）')
-        else:
-            tech_score -= 1
-            reasons_sell.append('MA5 < MA20（短線偏空）')
-
-    # MA20 vs MA60（中線趨勢）
-    if ma20 and ma60:
-        if ma20 > ma60:
-            tech_score += 1
-            reasons_buy.append('MA20 > MA60（中線偏多）')
-        else:
-            tech_score -= 1
-            reasons_sell.append('MA20 < MA60（中線偏空）')
-
-    # 價格 vs MA20
-    if ma20:
-        if close > ma20:
-            tech_score += 1
-            reasons_buy.append('股價站上 MA20')
-        else:
-            tech_score -= 1
-            reasons_sell.append('股價跌破 MA20')
-
-    # MACD 正負（動能方向）
-    if macd is not None:
-        if macd > 0:
-            tech_score += 1
-            reasons_buy.append('MACD > 0（多方動能）')
-        elif macd < 0:
-            tech_score -= 1
-            reasons_sell.append('MACD < 0（空方動能）')
-
-    # MACD 黃金/死亡交叉（訊號確認）
-    if macd is not None and macd_signal is not None:
-        if macd > macd_signal:
-            tech_score += 1
-            reasons_buy.append('MACD 黃金交叉，動能轉強')
-        else:
-            tech_score -= 1
-            reasons_sell.append('MACD 死亡交叉，動能轉弱')
-
-    # RSI
-    if rsi is not None:
-        if rsi > 70:
-            tech_score -= 1
-            risks.append(f'RSI={rsi:.1f}（超買，短線注意壓回）')
-        elif rsi < 30:
-            tech_score += 1
-            reasons_buy.append(f'RSI={rsi:.1f}（超賣，反彈機會）')
-        # 30~70 中性，不加減分
-
-    # KD
-    if k is not None and d is not None:
-        if k < 20 and d < 20:
-            tech_score += 1
-            reasons_buy.append(f'KD 超賣區（K={k:.1f}），有反彈機會')
-        elif k > 80 and d > 80:
-            tech_score -= 1
-            reasons_sell.append(f'KD 超買區（K={k:.1f}），注意短線壓力')
-            risks.append('KD 處於超買，短線漲幅受限')
-
-    # 支撐/壓力位置
-    price_range = resist - support
-    if price_range > 0:
-        pos_pct = round((close - support) / price_range * 100, 1)
-    else:
-        pos_pct = 50
-
-    if pos_pct < 20:
-        tech_score += 1
-        reasons_buy.append(f'接近近期支撐（{support}），風險相對低')
-    elif pos_pct > 80:
-        tech_score -= 1
-        reasons_sell.append(f'接近近期壓力（{resist}），上漲空間受限')
-        risks.append(f'股價已在近期高點附近（支撐/壓力位置：{pos_pct}%）')
-
-    # ── 基本面加分/減分 ────────────────────────────────────────
-    fund_score = 0
-    pe = info.get('pe_ratio')
-    pb = info.get('pb_ratio')
-    roe = info.get('roe')
-
-    if pe:
-        if pe < 15:
-            reasons_buy.append(f'本益比 {pe:.1f}x，估值相對合理')
-            fund_score += 1
-        elif pe > 30:
-            risks.append(f'本益比 {pe:.1f}x，估值偏高')
-            fund_score -= 1
-
-    if pb and pb < 1.5:
-        reasons_buy.append(f'股價淨值比 {pb:.2f}x，低於1.5倍')
-        fund_score += 1
-
-    if roe and roe > 0.15:
-        reasons_buy.append(f'ROE {roe*100:.1f}%，獲利能力優異')
-        fund_score += 1
-
-    if div_yield:
-        if div_yield >= 5:
-            reasons_buy.append(f'殖利率 {div_yield:.2f}%，配息豐厚（高股息）')
-            fund_score += 1
-        elif div_yield >= 3:
-            reasons_buy.append(f'殖利率 {div_yield:.2f}%，配息穩定')
-        elif div_yield < 1:
-            risks.append(f'殖利率 {div_yield:.2f}%，配息偏低')
-
-    # ── 綜合評分 ───────────────────────────────────────────────
-    total_score = tech_score + fund_score
-
-    if total_score >= 6:
-        rating = '強力買進'
-        rating_color = '#065f46'
-        rating_bg    = '#d1fae5'
-        rating_icon  = '⬆⬆'
-    elif total_score >= 3:
-        rating = '買進'
-        rating_color = '#15803d'
-        rating_bg    = '#dcfce7'
-        rating_icon  = '⬆'
-    elif total_score >= 0:
-        rating = '持有'
-        rating_color = '#0369a1'
-        rating_bg    = '#dbeafe'
-        rating_icon  = '➡'
-    elif total_score >= -3:
-        rating = '減碼'
-        rating_color = '#b45309'
-        rating_bg    = '#fef3c7'
-        rating_icon  = '⬇'
-    else:
-        rating = '賣出'
-        rating_color = '#b91c1c'
-        rating_bg    = '#fee2e2'
-        rating_icon  = '⬇⬇'
-
-    # ── 目標價（依評級給出不同含義）─────────────────────────────
-    # 基礎估值：均線加權（MA20×0.6 + MA60×0.4），反映中短期合理中心價
-    ma_center = round(ma20 * 0.6 + ma60 * 0.4, 1) if (ma20 and ma60) else None
-
-    if ma_center:
-        if total_score >= 3:
-            # 買進/強力買進：以均線中心向上估算，每多1分+3%
-            target_price = round(ma_center * (1 + (total_score - 2) * 0.03), 1)
-            target_type  = 'upside'    # 上漲目標
-            target_desc  = '上漲目標（均線+趨勢溢價）'
-        elif total_score >= 0:
-            # 持有：直接取均線中心，代表合理均衡價
-            target_price = ma_center
-            target_type  = 'fair'      # 合理估值
-            target_desc  = '合理估值（均線中心）'
-        else:
-            # 減碼/賣出：以均線中心向下估算，反映下行風險位
-            # total_score 為負，每少1分-2.5%，最多-15%
-            downside_pct = max(total_score * 0.025, -0.15)
-            target_price = round(ma_center * (1 + downside_pct), 1)
-            target_type  = 'downside'  # 下行風險目標
-            target_desc  = '下行風險位（均線-弱勢折價）'
-    else:
-        target_price = None
-        target_type  = 'none'
-        target_desc  = ''
-
-    summary = _build_summary(ticker, close, trend, rating, reasons_buy, reasons_sell,
-                              risks, div_yield, info)
-
-    return {
-        'rating':       rating,
-        'rating_color': rating_color,
-        'rating_bg':    rating_bg,
-        'rating_icon':  rating_icon,
-        'total_score':  total_score,
-        'tech_score':   tech_score,
-        'fund_score':   fund_score,
-        'reasons_buy':  reasons_buy,
-        'reasons_sell': reasons_sell,
-        'risks':        risks,
-        'target_price': target_price,
-        'target_type':  target_type,
-        'target_desc':  target_desc,
-        'support':      support,
-        'resist':       resist,
-        'price_position': pos_pct,
-        'summary':      summary,
-    }
+    rec = enhanced_generate_recommendation(
+        ticker, close, ind, trend, chip, info, div_yield, support, resist
+    )
+    # 補充 summary（原版需要）
+    rec['summary'] = _build_summary(
+        ticker, close, trend, rec['rating'],
+        rec['reasons_buy'], rec['reasons_sell'], rec['risks'], div_yield, info
+    )
+    return rec
 
 
 def _build_summary(ticker, close, trend, rating, reasons_buy, reasons_sell, risks, div_yield, info):
@@ -2346,6 +2116,108 @@ def efficient_frontier():
 # ═══════════════════════════════════════════════════════════════
 
 @app.route('/api/sim_analysis/<ticker>', methods=['GET'])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# API：強化版移動平均線分析（含葛蘭碧法則 + 死亡/黃金交叉預測）
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route('/api/ma_analysis/<ticker>', methods=['GET'])
+def ma_analysis_endpoint(ticker):
+    """
+    GET /api/ma_analysis/<ticker>?short=5&long=20&forecast=30
+
+    回傳完整均線分析：
+      - 均線排列型態（多頭/空頭排列）
+      - 各週期乖離率與警戒等級
+      - 葛蘭碧八大法則觸發清單
+      - MA5/MA20、MA20/MA60 死亡/黃金交叉預測（預估交易日數）
+      - 綜合均線分析摘要
+    """
+    import time
+    ticker = ticker.strip().upper()
+    ma_short   = int(request.args.get('short',    5))
+    ma_long    = int(request.args.get('long',    20))
+    forecast   = int(request.args.get('forecast', 30))
+
+    try:
+        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+        raw = fetcher.fetch_stock_analysis(ticker)
+        if not raw or not raw.get('ohlcv'):
+            return jsonify({'status': 'error', 'message': f'無法取得 {ticker} 資料'}), 404
+
+        ohlcv      = raw['ohlcv']
+        indicators = raw.get('indicators', {})
+        close_series = [r['close'] for r in ohlcv]
+
+        def last_val(lst):
+            if not lst: return None
+            return next((v for v in reversed(lst) if v is not None), None)
+
+        latest_ind = {k: last_val(indicators.get(k)) for k in
+                      ['ma5','ma10','ma20','ma60','ma120','ma200',
+                       'macd','macd_signal','rsi','k','d']}
+        close = close_series[-1]
+
+        ma_series_dict = {
+            'ma5':  indicators.get('ma5',  []),
+            'ma20': indicators.get('ma20', []),
+            'ma60': indicators.get('ma60', []),
+        }
+
+        # 完整均線分析
+        result = analyze_ma(close_series, latest_ind, ma_series_dict)
+
+        # 自訂週期交叉預測
+        custom_cross = None
+        if ma_short != 5 or ma_long != 20:
+            custom_cross = estimate_cross_days(close_series, ma_short, ma_long, forecast)
+
+        # 葛蘭碧（MA20 + MA60 雙週期）
+        gran_20 = calc_granville_signals(close_series, indicators.get('ma20', []))
+        gran_60 = calc_granville_signals(close_series, indicators.get('ma60', []))
+
+        # 各週期乖離率
+        bias_all = {}
+        for period, key in [(5,'ma5'),(10,'ma10'),(20,'ma20'),(60,'ma60'),(120,'ma120'),(200,'ma200')]:
+            mv = latest_ind.get(key)
+            b  = calc_bias(close, mv)
+            bias_all[f'ma{period}'] = {
+                'value': b,
+                'ma_value': mv,
+                'warning': bias_warning(b, period) if b is not None else None,
+            }
+
+        return jsonify({
+            'status':  'success',
+            'ticker':  ticker,
+            'name':    raw.get('name', ticker),
+            'close':   close,
+            'date':    ohlcv[-1]['date'],
+            'ma_array': result['array'],
+            'bias':    bias_all,
+            'granville': {
+                'ma20': gran_20,
+                'ma60': gran_60,
+                'summary': (
+                    [f"法則{g['rule']}「{g['name']}」({g['signal'].upper()},{g['strength']})"
+                     for g in gran_20 + gran_60]
+                ),
+            },
+            'cross': {
+                'ma5_ma20':  result['cross_5_20'],
+                'ma20_ma60': result['cross_20_60'],
+                'ma5_ma60':  result['cross_5_60'],
+                'custom':    custom_cross,
+            },
+            'latest_ma': {k: latest_ind.get(k) for k in
+                          ['ma5','ma10','ma20','ma60','ma120','ma200']},
+            'summary':   result['summary'],
+        })
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 def sim_analysis(ticker):
     """
     單一指數模型分析
