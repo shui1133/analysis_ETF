@@ -692,22 +692,20 @@ def _fetch_one_hot(ticker: str, fetcher) -> tuple:
                     if not close_val:
                         continue
                     try:
-                        # volume：嘗試多個欄位名稱，並處理「股→張」單位換算
-                    raw_vol = vol_val if vol_val else 0
-                    try:
-                        raw_vol = float(raw_vol)
-                    except (ValueError, TypeError):
-                        raw_vol = 0
-                    # yfinance 回傳單位為「股」（>= 10000 時除以 1000 換算為張）
-                    lot_vol = max(1, round(raw_vol / 1000)) if raw_vol >= 10000 else int(raw_vol)
-                    result.append({
-                            'date':   str(date_val)[:10],
-                            'open':   float(open_val)  if open_val  else float(close_val),
-                            'high':   float(high_val)  if high_val  else float(close_val),
-                            'low':    float(low_val)   if low_val   else float(close_val),
-                            'close':  float(close_val),
-                            'volume': lot_vol,
-                        })
+                        # volume：處理「股→張」單位換算（yfinance 回傳股數，>= 10000 除以 1000）
+                        try:
+                            raw_vol = float(vol_val) if vol_val else 0.0
+                        except (ValueError, TypeError):
+                            raw_vol = 0.0
+                        lot_vol = max(1, round(raw_vol / 1000)) if raw_vol >= 10000 else int(raw_vol)
+                        result.append({
+                                'date':   str(date_val)[:10],
+                                'open':   float(open_val)  if open_val  else float(close_val),
+                                'high':   float(high_val)  if high_val  else float(close_val),
+                                'low':    float(low_val)   if low_val   else float(close_val),
+                                'close':  float(close_val),
+                                'volume': lot_vol,
+                            })
                     except (ValueError, TypeError):
                         continue
                 return result
