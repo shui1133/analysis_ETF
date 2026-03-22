@@ -1816,50 +1816,25 @@ def efficient_frontier():
         if len(tickers) > 15:
             return jsonify({'status':'error','message':'最多支援15支股票'}), 400
 
-        # ── 初始化 GitHub 快取 ───────────────────────────────
-        try:
-            from github_cache import GitHubCache
-            _ef_gh = GitHubCache()
-        except ImportError:
-            _ef_gh = None
-
-        # ── L1: Render /tmp 快取 ─────────────────────────────
+        # ── L1/L2：三層快取（本機 → GitHub，不觸發網路）────────
         prices = {}
         cached_from = {}
         for tk in tickers:
-            tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
-            if os.path.exists(tmp_path):
+            rows = cache_mgr.get_price(tk, fetcher=None)   # fetcher=None 不觸發 yfinance
+            if rows and len(rows) >= 20:
                 try:
-                    tmp_df    = pd.read_csv(tmp_path, encoding='utf-8-sig')
-                    date_col  = next((c for c in tmp_df.columns if c in ['日期','date','Date']), None)
-                    close_col = next((c for c in tmp_df.columns if c in ['收盤價','close','Close']), None)
-                    if date_col and close_col and len(tmp_df) >= 20:
+                    date_col  = next((c for c in rows[0] if c in ['日期','date','Date']), None)
+                    close_col = next((c for c in rows[0] if c in ['收盤價','close','Close']), None)
+                    if date_col and close_col:
                         s = pd.Series(
-                            tmp_df[close_col].values,
-                            index=pd.to_datetime(tmp_df[date_col])
-                        ).dropna()
-                        prices[tk] = s
-                        cached_from[tk] = '/tmp'
-                except Exception:
-                    pass
-
-        # ── L2: GitHub 持久化快取 ────────────────────────────
-        for tk in tickers:
-            if tk in prices:
-                continue
-            if _ef_gh and _ef_gh.enabled and _ef_gh.is_fresh(tk, 'price'):
-                rows = _ef_gh.load_price(tk)
-                if rows and len(rows) >= 20:
-                    try:
-                        s = pd.Series(
-                            [float(r.get('close', r.get('收盤價', 0))) for r in rows],
-                            index=pd.to_datetime([r.get('date', r.get('日期','')) for r in rows])
+                            [float(r[close_col]) for r in rows],
+                            index=pd.to_datetime([r[date_col] for r in rows])
                         ).dropna()
                         if len(s) >= 20:
                             prices[tk] = s
-                            cached_from[tk] = 'GitHub'
-                    except Exception:
-                        pass
+                            cached_from[tk] = 'local/github'
+                except Exception:
+                    pass
 
         need_fetch = [tk for tk in tickers if tk not in prices]
         if cached_from:
@@ -1933,28 +1908,21 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # 存快取
+            # 存快取（本機 + GitHub，統一由 cache_mgr 輔助函式處理）
+            from github_cache import local_save_price, gh_save_price
             for tk in need_fetch:
                 if tk not in prices:
                     continue
                 price_series = prices[tk]
                 try:
-                    tmp_path = os.path.join(DATA_DIR, f"{tk}_price.csv")
-                    pdf = price_series.reset_index()
-                    pdf.columns = ['日期', '收盤價']
-                    pdf['日期'] = pdf['日期'].astype(str).str[:10]
-                    pdf.to_csv(tmp_path, index=False, encoding='utf-8-sig')
-                except Exception as e_tmp:
-                    print(f"  [EF] /tmp 存檔 {tk} 失敗: {e_tmp}")
-                if _ef_gh and _ef_gh.enabled:
-                    try:
-                        price_list = [
-                            {'date': str(d)[:10], 'close': round(float(v), 2)}
-                            for d, v in price_series.items() if pd.notna(v)
-                        ]
-                        _ef_gh.save_price(tk, price_list)
-                    except Exception as e_gh:
-                        print(f"  [EF] GitHub {tk} 失敗: {e_gh}")
+                    price_list = [
+                        {'date': str(d)[:10], 'close': round(float(v), 2)}
+                        for d, v in price_series.items() if pd.notna(v)
+                    ]
+                    local_save_price(DATA_DIR, tk, price_list)
+                    gh_save_price(tk, price_list)
+                except Exception as e_save:
+                    print(f"  [EF] 存快取 {tk} 失敗（非致命）: {e_save}")
 
         if failed:
             return jsonify({'status':'error',
@@ -2112,11 +2080,6 @@ def efficient_frontier():
 
 
 # ═══════════════════════════════════════════════════════════════
-# SIM 單一指數模型分析 API
-# ═══════════════════════════════════════════════════════════════
-
-@app.route('/api/sim_analysis/<ticker>', methods=['GET'])
-
 # ══════════════════════════════════════════════════════════════════════════════
 # API：強化版移動平均線分析（含葛蘭碧法則 + 死亡/黃金交叉預測）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2218,6 +2181,13 @@ def ma_analysis_endpoint(ticker):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+
+
+# ═══════════════════════════════════════════════════════════════
+# SIM 單一指數模型分析 API
+# ═══════════════════════════════════════════════════════════════
+
+@app.route('/api/sim_analysis/<ticker>', methods=['GET'])
 def sim_analysis(ticker):
     """
     單一指數模型分析
