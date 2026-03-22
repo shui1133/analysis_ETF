@@ -2206,6 +2206,10 @@ function renderAll(data) {
 function renderHeader(data) {
   if (!data || !data.latest) {
     console.warn('[renderHeader] data 或 data.latest 為 undefined，跳過渲染');
+    // ★ 防呆：資料不完整時清除 currentData，避免後續 forceRefresh 送出空 ticker
+    if (typeof currentData !== 'undefined' && currentData && !currentData.latest) {
+      currentData = null;
+    }
     return;
   }
   const l = data.latest;
@@ -5730,6 +5734,8 @@ async function forceRefreshHotStocks() {
 
 // ── 強制從 yfinance 取得單支股票最新股價（表格列按鈕）────────────
 async function forceRefreshSingleHotStock(code) {
+  // ★ 防呆：code 為空時直接跳出，避免後端 400
+  if (!code) { console.warn('[forceRefreshSingle] code 為空，跳過'); return; }
   // 先在表格中顯示更新中狀態
   delete hotStockData[code];
   renderHotTable();
@@ -5738,7 +5744,7 @@ async function forceRefreshSingleHotStock(code) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ticker: code }),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(25000),
     });
     const d = await r.json();
     if (d.results?.[code]?.status === 'success') {
@@ -5762,6 +5768,8 @@ async function forceRefreshSingleHotStock(code) {
 async function forceRefreshCurrentStock() {
   if (!currentData) return;
   const ticker = currentData.ticker;
+  // ★ 防呆：ticker 為空時直接跳出，避免送出空 body 給後端造成 400
+  if (!ticker) { console.warn('[forceRefresh] ticker 為空，跳過'); return; }
   const btn = document.getElementById('btnForceRefreshSingle');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中...'; }
 
@@ -5841,8 +5849,8 @@ async function loadHotStocksSequential(onlyCodes) {
     // 先顯示骨架屏（有畫面比空白好）
     _renderHotSkeleton(missing);
 
-    // ★ 修正：分批發送（每批 8 支），搭配後端 MAX_BATCH=8 / timeout=20s
-    const HOT_SUMMARY_CHUNK   = 8;     // 每批最多 8 支（後端上限一致）
+    // ★ 修正：分批發送（每批 8 支）+ 第一次失敗後等 12s（給後端 warmup 時間）
+    const HOT_SUMMARY_CHUNK   = 8;
     const HOT_SUMMARY_TIMEOUT = 28000; // 28s（低於 Render 30s 硬限）
     let batchSuccess = false;
 
@@ -5897,24 +5905,27 @@ async function loadHotStocksSequential(onlyCodes) {
         // 非 ok 或 status != success
         console.warn(`[hot_summary] 第 ${attempt} 次批次 API 回傳異常`);
         if (attempt < 2) {
+          // ★ 修正：等 12s 再重試，給後端 warmup 預熱時間
           updateHotProgress(countLoaded(), total,
-            `⚠️ 第 ${attempt} 次請求異常，1s 後重試...`);
-          await new Promise(res => setTimeout(res, 1000));
+            `⚠️ 第 ${attempt} 次請求異常，等待後端預熱（12s）...`);
+          await new Promise(res => setTimeout(res, 12000));
         }
       } catch(e) {
-        const isTimeout = e.name === 'TimeoutError' || (e.message || '').includes('timeout');
+        const isTimeout = e.name === 'TimeoutError' || (e.message || '').includes('timeout')
+                       || (e.name === 'AbortError');
         console.warn(`[hot_summary] 第 ${attempt} 次批次請求失敗:`, e.message);
         if (attempt < 2) {
+          // ★ 修正：逾時後等 12s，讓後端 warmup 完成後再打
           updateHotProgress(countLoaded(), total,
-            `⚠️ ${isTimeout ? '請求逾時' : '網路異常'}，1s 後重試...`);
-          await new Promise(res => setTimeout(res, 1000));
+            `⚠️ ${isTimeout ? '伺服器預熱中，請稍候' : '網路異常'}（12s 後自動重試）...`);
+          await new Promise(res => setTimeout(res, 12000));
         }
       }
     }  // end retry loop
 
     if (!chunkOk) { allChunksFailed = true; break; }
-    // 批次間稍作間隔，避免連續請求讓 Render 過載
-    if (ci < chunks.length - 1) await new Promise(res => setTimeout(res, 500));
+    // 批次間稍作間隔，避免 Render 連續請求過載
+    if (ci < chunks.length - 1) await new Promise(res => setTimeout(res, 800));
   }  // end chunks loop
 
   if (!allChunksFailed) {

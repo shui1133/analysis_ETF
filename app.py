@@ -84,13 +84,13 @@ def _background_warmup():
     不阻塞 gunicorn 健康檢查，失敗也不影響正常服務。
     """
     import time as _t
-    _t.sleep(3)   # 等 gunicorn 完全就緒
+    _t.sleep(5)   # 等 gunicorn 完全就緒
     try:
         from github_cache import (GitHubCache, local_save_price,
                                   local_save_dividend, local_save_fundamental,
                                   TOP50_STOCKS)
         gh = GitHubCache()
-        if not gh.enabled:
+        if not getattr(gh, 'enabled', False):
             print("  [Warmup] GitHub 未設定，略過預熱")
             return
         tickers = list(TOP50_STOCKS)
