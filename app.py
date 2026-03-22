@@ -430,6 +430,16 @@ def get_popular_stocks():
 
 # ─────────────────────────────────────────────────────────────────
 # 強制從 yfinance 取得最新股價（熱門股票/ETF/個股共用）
+# ─────────────────────────────────────────────────────────────────
+# GET /api/health — 服務健康檢查（前端 warmup ping 用）
+# 讓 Render 冷啟動時前端可先 ping 此 endpoint 預熱，
+# 避免 /api/hot_summary 首次請求遇到 502 Bad Gateway
+# ─────────────────────────────────────────────────────────────────
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'ok', 'ts': pd.Timestamp.now().isoformat()})
+
+
 # POST /api/force_refresh_price
 # 輸入: { "tickers": ["2330", "00878"] }  或  { "ticker": "2330" }
 # 說明: 忽略所有快取，直接向 yfinance 重抓，並同步存本機 + GitHub
@@ -809,9 +819,10 @@ def hot_summary():
     輸入: { tickers: ['2330', '2317', ...] }
     輸出: { status: 'success', data: { '2330': {...}, '2317': {...} } }
 
-    ★ 修復版 v2：
-    - 批次上限 8 支，分兩批（4+4）執行，避免全批 timeout
-    - 每批 timeout 12s，單支 timeout 10s
+    ★ 修復版 v3：
+    - 0000（大盤）單獨先處理，不佔用一般股票 thread
+    - 批次上限 8 支，每批 3 支並行，batch timeout 30s
+    - 每批 timeout 30s，單支 timeout 8s
     - 任一批失敗不影響已完成的批次結果
     """
     try:
@@ -824,22 +835,29 @@ def hot_summary():
         CHUNK_SIZE = 3   # 每批 3 支（降低單批壓力），timeout 更寬裕
         tickers = tickers[:MAX_BATCH]
 
-        # ★ 修正 v3：0000（大盤指數）在 _fetch_one_hot 內背景轉換成 ^TWII 查詢，
-        #   可與一般股票同批執行，ThreadPoolExecutor 會隔離它的 timeout。
-        #   批次超時從 15s 放寬到 25s，為 ^TWII 最慢情況預留空間。
         result  = {}
 
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
 
-        # 分批執行：每批 3 支，timeout 25s（各支並行），0000 已在 fetcher 內部安全處理
+        # ★ 0000（大盤指數）單獨先處理，避免拖慢一般股票批次
+        if '0000' in tickers:
+            try:
+                tk, summary = _fetch_one_hot('0000', fetcher)
+                result['0000'] = summary
+            except Exception as _e0:
+                print(f"  [hot_summary/0000] 單獨處理失敗: {_e0}")
+                result['0000'] = None
+            tickers = [t for t in tickers if t != '0000']
+
+        # 分批執行：每批 3 支，timeout 30s（各支並行）
         chunks = [tickers[i:i+CHUNK_SIZE] for i in range(0, len(tickers), CHUNK_SIZE)]
         for chunk in chunks:
             with ThreadPoolExecutor(max_workers=3) as pool:
                 futures = {pool.submit(_fetch_one_hot, tk, fetcher): tk for tk in chunk}
                 try:
-                    for fut in as_completed(futures, timeout=25):
+                    for fut in as_completed(futures, timeout=30):
                         try:
-                            tk, summary = fut.result(timeout=10)
+                            tk, summary = fut.result(timeout=8)
                             result[tk] = summary
                         except Exception as e:
                             tk = futures[fut]
@@ -1748,14 +1766,36 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
       乖離率警戒       超買/超賣 ±1
     技術面上限約 ±16（不截斷），加上基本面（-1~+4），總分約 -20~+20。
 
-    評級門檻（比例放大）：
-      強力買進 ≥ 12 ／ 買進 ≥ 6 ／ 持有 ≥ 0 ／ 減碼 ≥ -6 ／ 賣出 < -6
+    評級門檻（v2 調整）：
+      強力買進 ≥ 6 ／ 買進 ≥ 3 ／ 持有 ≥ 0 ／ 減碼 ≥ -3 ／ 賣出 < -3
 
     回傳格式完全相容原版，並新增 ma_analysis 欄位。
     """
     rec = enhanced_generate_recommendation(
         ticker, close, ind, trend, chip, info, div_yield, support, resist
     )
+
+    # ── 覆蓋評級門檻（v2：縮短門檻使評級更靈敏）──────────────────
+    _score = rec.get('total_score', 0)
+    if _score >= 6:
+        _rating = '強力買進'
+        _color  = '#16a34a'; _bg = '#14532d'; _icon = '🚀'
+    elif _score >= 3:
+        _rating = '買進'
+        _color  = '#2563eb'; _bg = '#1e3a8a'; _icon = '✅'
+    elif _score >= 0:
+        _rating = '持有'
+        _color  = '#d97706'; _bg = '#78350f'; _icon = '⚖️'
+    elif _score >= -3:
+        _rating = '減碼'
+        _color  = '#ea580c'; _bg = '#7c2d12'; _icon = '⚠️'
+    else:
+        _rating = '賣出'
+        _color  = '#dc2626'; _bg = '#7f1d1d'; _icon = '🔴'
+    rec['rating']       = _rating
+    rec['rating_color'] = _color
+    rec['rating_bg']    = _bg
+    rec['rating_icon']  = _icon
     # 補充 summary（原版需要）
     rec['summary'] = _build_summary(
         ticker, close, trend, rec['rating'],

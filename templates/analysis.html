@@ -5823,10 +5823,12 @@ async function _pollCacheVersion() {
 }
 // 頁面載入後立即送 warmup ping，喚醒後端；之後每 5 分鐘輪詢快取版本
 (async () => {
-  // 立即 warmup：讓 Render Starter 在使用者按下按鈕前就完成預熱
+  // 立即 warmup：ping /api/health 讓 Render 在使用者操作前完成冷啟動預熱
+  // timeout 60s 涵蓋 Render 最長冷啟動時間，失敗靜默不影響頁面
   try {
-    await fetch('/api/cache_version', { signal: AbortSignal.timeout(10000) });
-  } catch(e) { /* 靜默，僅做預熱用途 */ }
+    await fetch('/api/health', { signal: AbortSignal.timeout(60000) });
+    console.log('[Warmup] 後端已就緒');
+  } catch(e) { console.warn('[Warmup] 後端預熱 ping 失敗（冷啟動中）:', e.message); }
   await _pollCacheVersion();
   setInterval(_pollCacheVersion, 5 * 60 * 1000);
 })();
@@ -6250,10 +6252,22 @@ async function forceRefreshHotStocks() {
         });
         if (r.ok) {
           const d = await r.json();
-          // 清除已更新的本機 IDB 快取，讓下次重新渲染時使用最新資料
+          // ★ 修正：重取完整資料並存入 IDB，下次開頁直接命中快取
           for (const code of chunk) {
             if (d.results?.[code]?.status === 'success') {
-              delete hotStockData[code];
+              try {
+                const r2 = await fetch('/api/stock_analysis/' + code,
+                                       { signal: AbortSignal.timeout(15000) });
+                const d2 = await r2.json();
+                if (d2.status === 'success' && d2.data) {
+                  hotStockData[code] = d2.data;
+                  await hotCacheSave(code, d2.data);   // 存 IDB + localStorage
+                } else {
+                  delete hotStockData[code];
+                }
+              } catch (_e) {
+                delete hotStockData[code];
+              }
               done++;
             }
           }
@@ -6328,6 +6342,11 @@ async function forceRefreshCurrentStock() {
       // 清除記憶體快取，重新載入個股完整資料
       await hotCacheClear();
       await loadStock(ticker);
+      // ★ 修正：把剛取得的最新資料存入 IDB + localStorage，下次開頁免重打 API
+      if (currentData) {
+        await hotCacheSave(ticker, currentData);
+        console.log(`[forceRefresh] ${ticker} 最新股價已存入 IDB 快取`);
+      }
     } else {
       alert(`取得 ${ticker} 最新股價失敗：${d.results?.[ticker]?.message || '未知錯誤'}`);
     }
@@ -6448,20 +6467,20 @@ async function loadHotStocksSequential(onlyCodes) {
         // 非 ok 或 status != success
         console.warn(`[hot_summary] 第 ${attempt} 次批次 API 回傳異常`);
         if (attempt < 2) {
-          // ★ 修正：等 12s 再重試，給後端 warmup 預熱時間
+          // 等 30s 再重試，涵蓋 Render 冷啟動最長時間（約 30~60s）
           updateHotProgress(countLoaded(), total,
-            `⚠️ 第 ${attempt} 次請求異常，等待後端預熱（12s）...`);
-          await new Promise(res => setTimeout(res, 12000));
+            `⚠️ 第 ${attempt} 次請求異常，等待後端預熱（30s）...`);
+          await new Promise(res => setTimeout(res, 30000));
         }
       } catch(e) {
         const isTimeout = e.name === 'TimeoutError' || (e.message || '').includes('timeout')
                        || (e.name === 'AbortError');
         console.warn(`[hot_summary] 第 ${attempt} 次批次請求失敗:`, e.message);
         if (attempt < 2) {
-          // ★ 修正：逾時後等 12s，讓後端 warmup 完成後再打
+          // 逾時後等 30s，讓後端 warmup 完成後再打
           updateHotProgress(countLoaded(), total,
-            `⚠️ ${isTimeout ? '伺服器預熱中，請稍候' : '網路異常'}（12s 後自動重試）...`);
-          await new Promise(res => setTimeout(res, 12000));
+            `⚠️ ${isTimeout ? '伺服器預熱中，請稍候' : '網路異常'}（30s 後自動重試）...`);
+          await new Promise(res => setTimeout(res, 30000));
         }
       }
     }  // end retry loop
