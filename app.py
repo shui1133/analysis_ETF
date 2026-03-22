@@ -76,6 +76,54 @@ cached_results    = {}
 etf_memory_cache  = {}
 analysis_cache    = {}   # 股票分析快取（key=ticker）
 
+# ★ 新增：啟動時背景預熱快取（從 GitHub 拉取 → 存本機）
+def _background_warmup():
+    """
+    Render 部署後快取為空，這個背景執行緒在啟動後立即從 GitHub
+    把最近一次的快取拉回本機，讓第一次前端請求直接命中 L1/L2。
+    不阻塞 gunicorn 健康檢查，失敗也不影響正常服務。
+    """
+    import time as _t
+    _t.sleep(3)   # 等 gunicorn 完全就緒
+    try:
+        from github_cache import (GitHubCache, local_save_price,
+                                  local_save_dividend, local_save_fundamental,
+                                  TOP50_STOCKS)
+        gh = GitHubCache()
+        if not gh.enabled:
+            print("  [Warmup] GitHub 未設定，略過預熱")
+            return
+        tickers = list(TOP50_STOCKS)
+        if isinstance(POPULAR_STOCKS, dict):
+            tickers += [k for k in POPULAR_STOCKS.keys() if k not in tickers]
+        elif isinstance(POPULAR_STOCKS, list):
+            for s in POPULAR_STOCKS:
+                code = s.get('code') or s.get('ticker') if isinstance(s, dict) else s
+                if code and code not in tickers:
+                    tickers.append(code)
+        print(f"  [Warmup] 開始預熱 {len(tickers)} 支股票快取...")
+        hit = 0
+        for tk in tickers:
+            try:
+                rows = gh.load_price(tk)
+                if rows:
+                    local_save_price(DATA_DIR, tk, rows)
+                    hit += 1
+                rows_d = gh.load_dividend(tk)
+                if rows_d:
+                    local_save_dividend(DATA_DIR, tk, rows_d)
+                info = gh.load_fundamental(tk)
+                if info:
+                    local_save_fundamental(DATA_DIR, tk, info)
+            except Exception:
+                pass
+        print(f"  [Warmup] ✅ 預熱完成，命中 {hit}/{len(tickers)} 支")
+    except Exception as e:
+        print(f"  [Warmup] 預熱失敗（不影響服務）: {e}")
+
+import threading as _threading
+_threading.Thread(target=_background_warmup, daemon=True).start()
+
 
 # ═══════════════════════════════════════════════════════════════
 # 頁面路由
