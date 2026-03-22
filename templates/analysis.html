@@ -7528,26 +7528,15 @@ function _drawGranCandleChart(data, period) {
         { type:'line', label:'MA5',  data: ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // ④ MA20
         { type:'line', label:'MA20', data: ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // ⑤~⑫ 葛蘭碧八種訊號各自標記
-        ...([1,2,3,4,5,6,7,8].map(r => {
-          const gl = GRANVILLE_LABELS[r];
-          const isBuy = gl.type === 'buy';
-          const d = granRuleData[r];
-          return {
-            type:'line', label: gl.short, data: d,
-            backgroundColor: gl.color + 'dd',
-            borderColor: 'rgba(0,0,0,0)',
-            borderWidth: 0,
-            pointRadius: d.map(v => v != null ? 11 : 0),
-            pointHoverRadius: d.map(v => v != null ? 13 : 0),
-            pointStyle: isBuy ? 'triangle' : 'triangle',
-            pointRotation: isBuy ? 0 : 180,
-            pointBackgroundColor: gl.color,
-            pointBorderColor: '#fff',
-            pointBorderWidth: 1.5,
-            fill: false, spanGaps: false, showLine: false, order: 0,
-          };
-        })),
+        // ⑤~⑫ 葛蘭碧八種訊號各自標記（用個別 dataset）
+        { type:'line', label:GRANVILLE_LABELS[1].short, data:granRuleData[1], backgroundColor:GRANVILLE_LABELS[1].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[1].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[1].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[1].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        { type:'line', label:GRANVILLE_LABELS[2].short, data:granRuleData[2], backgroundColor:GRANVILLE_LABELS[2].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[2].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[2].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[2].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        { type:'line', label:GRANVILLE_LABELS[3].short, data:granRuleData[3], backgroundColor:GRANVILLE_LABELS[3].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[3].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[3].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[3].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        { type:'line', label:GRANVILLE_LABELS[4].short, data:granRuleData[4], backgroundColor:GRANVILLE_LABELS[4].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[4].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[4].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[4].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        { type:'line', label:GRANVILLE_LABELS[5].short, data:granRuleData[5], backgroundColor:GRANVILLE_LABELS[5].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[5].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[5].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[5].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        { type:'line', label:GRANVILLE_LABELS[6].short, data:granRuleData[6], backgroundColor:GRANVILLE_LABELS[6].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[6].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[6].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[6].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        { type:'line', label:GRANVILLE_LABELS[7].short, data:granRuleData[7], backgroundColor:GRANVILLE_LABELS[7].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[7].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[7].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[7].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        { type:'line', label:GRANVILLE_LABELS[8].short, data:granRuleData[8], backgroundColor:GRANVILLE_LABELS[8].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[8].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[8].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[8].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
         // ⑦ 黃金交叉（☆）
         {
           type:'line', label:'黃金交叉', data: crossGoldenData,
@@ -7594,7 +7583,7 @@ function _drawGranCandleChart(data, period) {
                 });
             }
           }
-        },,
+        },
         tooltip: {
           callbacks: {
             title: ctxArr => ctxArr[0]?.label || '',
