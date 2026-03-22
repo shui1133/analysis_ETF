@@ -593,6 +593,13 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         info, div_yield, support, resist
     )
 
+    # yfinance volume 是「股數」，台灣慣用「張」（1張=1000股）
+    # 若 volume < 10000 視為已換算過（如來自本機快取）；否則除以 1000
+    def _to_lots(v):
+        if not v:
+            return 0
+        return max(1, round(v / 1000)) if v >= 10000 else int(v)
+
     return {
         'ticker':       ticker,
         'name':         raw.get('name', ticker),
@@ -600,7 +607,7 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         'open':         last.get('open'),
         'high':         last['high'],
         'low':          last['low'],
-        'volume':       last.get('volume', 0),
+        'volume':       _to_lots(last.get('volume', 0)),
         'change':       change,
         'change_pct':   change_pct,
         'date':         last['date'],

@@ -447,41 +447,74 @@ class _GitHubWriter:
     def put(self, path: str, content_str: str, commit_msg: str = "cache update") -> bool:
         if not self.enabled:
             return False
-        payload = {
-            "message": commit_msg,
-            "content": base64.b64encode(content_str.encode("utf-8")).decode("utf-8"),
-            "branch": GITHUB_BRANCH,
-        }
-        sha = self._get_sha(path)
-        if sha:
-            payload["sha"] = sha
-        try:
-            r = requests.put(f"{API_BASE}/{path}", headers=self._headers,
-                             json=payload, timeout=20)
-            if r.status_code in (200, 201):
-                new_sha = r.json()["content"]["sha"]
-                self._sha[path] = new_sha
-                return True
+
+        encoded = base64.b64encode(content_str.encode("utf-8")).decode("utf-8")
+
+        for attempt in range(1, 3):   # 最多重試 2 次（處理 SHA 衝突）
+            # ── 每次都重新取 SHA（確保最新）──────────────────────
+            if path in self._sha:
+                sha = self._sha[path]
             else:
-                # ★ 詳細的錯誤輸出（幫助診斷 token 權限問題）
+                sha = self._get_sha(path)
+
+            payload = {
+                "message": commit_msg,
+                "content": encoded,
+                "branch":  GITHUB_BRANCH,
+            }
+            if sha:
+                payload["sha"] = sha
+
+            try:
+                r = requests.put(f"{API_BASE}/{path}", headers=self._headers,
+                                 json=payload, timeout=20)
+                if r.status_code in (200, 201):
+                    new_sha = r.json()["content"]["sha"]
+                    self._sha[path] = new_sha
+                    return True
+
                 err_body = ""
                 try:
                     err_body = r.json().get("message", "")
                 except Exception:
                     pass
-                print(f"  [GitHub-W] ❌ PUT {path} 失敗：HTTP {r.status_code} {err_body}")
-                if r.status_code == 401:
-                    print("             → Token 無效，請重新產生 GitHub PAT（Settings → Developer settings → PAT）")
-                elif r.status_code == 403:
-                    print("             → Token 缺少 repo 寫入權限，請勾選 repo scope")
-                elif r.status_code == 422:
-                    print("             → SHA 衝突，清除 sha 快取並重試...")
+
+                if r.status_code == 422:
+                    # SHA 過期或不符：清除快取，強制重新 GET，然後重試
+                    print(f"  [GitHub-W] ⚠️  PUT {path} 422 SHA 衝突（attempt {attempt}），重新取 SHA 後重試...")
                     if path in self._sha:
                         del self._sha[path]
+                    # 直接向 API 重取 SHA，不走快取
+                    try:
+                        rg = requests.get(f"{API_BASE}/{path}", headers=self._headers, timeout=10)
+                        if rg.status_code == 200:
+                            fresh_sha = rg.json().get("sha")
+                            if fresh_sha:
+                                self._sha[path] = fresh_sha
+                                print(f"             → 取得最新 SHA: {fresh_sha[:8]}...")
+                        elif rg.status_code == 404:
+                            # 檔案不存在，下次不帶 SHA 重試
+                            print("             → 檔案不存在（首次建立）")
+                    except Exception as e_sha:
+                        print(f"             → 重取 SHA 失敗: {e_sha}")
+                    continue   # 重試
+
+                # 其他錯誤直接放棄
+                print(f"  [GitHub-W] ❌ PUT {path} 失敗：HTTP {r.status_code} {err_body}")
+                if r.status_code == 401:
+                    print("             → Token 無效，請重新產生 GitHub PAT")
+                elif r.status_code == 403:
+                    print("             → Token 缺少 repo 寫入權限，請勾選 repo scope")
                 return False
-        except Exception as e:
-            print(f"  [GitHub-W] PUT {path} 例外: {e}")
-            return False
+
+            except Exception as e:
+                print(f"  [GitHub-W] PUT {path} 例外 (attempt {attempt}): {e}")
+                if attempt < 2:
+                    continue
+                return False
+
+        print(f"  [GitHub-W] ❌ PUT {path} 兩次重試均失敗")
+        return False
 
 
 # 模組層級單例（避免重複建立 headers）
