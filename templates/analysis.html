@@ -299,6 +299,12 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('recommendation')" id="tab-recommendation">
         <i class="fa-solid fa-lightbulb mr-1"></i>投資建議
       </button>
+      <button class="tab-btn" onclick="switchTab('maanalysis')" id="tab-maanalysis">
+        <i class="fa-solid fa-wave-square mr-1"></i>移動平均線分析
+      </button>
+      <button class="tab-btn" onclick="switchTab('granville')" id="tab-granville">
+        <i class="fa-solid fa-scroll mr-1"></i>葛蘭碧八大法則
+      </button>
     </div>
 
     <!-- ═══ Tab: 圖表技術分析 ══════════════════════════════════════ -->
@@ -1318,69 +1324,259 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </p>
       </div>
 
-      <!-- 移動平均線 -->
+    </div><!-- /panel-tradeoverview -->
+
+    <!-- ═══ Tab: 移動平均線分析 ══════════════════════════════════════ -->
+    <div id="panel-maanalysis" class="hidden space-y-4">
+
+      <!-- MA 數值卡片 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-wave-square text-purple-400"></i>技術指標 - 移動平均線
+          <i class="fa-solid fa-wave-square text-purple-400"></i>移動平均線分析
+          <span class="text-slate-400 text-sm font-normal">— 各期均線數值與多空判斷</span>
         </h3>
-        <!-- MA 數值卡片 -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" id="maCards">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" id="maCards2">
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1">MA5（5日）</div>
-            <div class="text-xl font-black mono" id="ma-5">--</div>
-            <div class="text-xs mt-1" id="ma-5-rel">--</div>
+            <div class="text-xl font-black mono" id="ma2-5">--</div>
+            <div class="text-xs mt-1" id="ma2-5-rel">--</div>
           </div>
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1">MA10（10日）</div>
-            <div class="text-xl font-black mono" id="ma-10">--</div>
-            <div class="text-xs mt-1" id="ma-10-rel">--</div>
+            <div class="text-xl font-black mono" id="ma2-10">--</div>
+            <div class="text-xs mt-1" id="ma2-10-rel">--</div>
           </div>
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1">MA20（月線）</div>
-            <div class="text-xl font-black mono" id="ma-20">--</div>
-            <div class="text-xs mt-1" id="ma-20-rel">--</div>
+            <div class="text-xl font-black mono" id="ma2-20">--</div>
+            <div class="text-xs mt-1" id="ma2-20-rel">--</div>
           </div>
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1">MA60（季線）</div>
-            <div class="text-xl font-black mono" id="ma-60">--</div>
-            <div class="text-xs mt-1" id="ma-60-rel">--</div>
+            <div class="text-xl font-black mono" id="ma2-60">--</div>
+            <div class="text-xs mt-1" id="ma2-60-rel">--</div>
           </div>
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1" style="color:#f97316">MA120（半年線）</div>
-            <div class="text-xl font-black mono" id="ma-120">--</div>
-            <div class="text-xs mt-1" id="ma-120-rel">--</div>
+            <div class="text-xl font-black mono" id="ma2-120">--</div>
+            <div class="text-xs mt-1" id="ma2-120-rel">--</div>
           </div>
           <div class="ind-card text-center">
             <div class="text-xs text-slate-500 mb-1" style="color:#ec4899">MA200（年線）</div>
-            <div class="text-xl font-black mono" id="ma-200">--</div>
-            <div class="text-xs mt-1" id="ma-200-rel">--</div>
+            <div class="text-xl font-black mono" id="ma2-200">--</div>
+            <div class="text-xs mt-1" id="ma2-200-rel">--</div>
           </div>
         </div>
-        <!-- MA 多空判斷 -->
+
+        <!-- 多空趨勢判斷 -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
           <div class="rounded-xl p-3 bg-slate-800/60 border border-slate-700">
             <div class="text-xs text-slate-400 mb-1">短線趨勢（MA5 vs MA20）</div>
-            <div class="font-black text-base" id="ma-short-trend">--</div>
+            <div class="font-black text-base" id="ma2-short-trend">--</div>
           </div>
           <div class="rounded-xl p-3 bg-slate-800/60 border border-slate-700">
             <div class="text-xs text-slate-400 mb-1">中線趨勢（MA20 vs MA60）</div>
-            <div class="font-black text-base" id="ma-mid-trend">--</div>
+            <div class="font-black text-base" id="ma2-mid-trend">--</div>
           </div>
           <div class="rounded-xl p-3 bg-slate-800/60 border border-slate-700">
             <div class="text-xs text-slate-400 mb-1">多頭排列（MA5>MA20>MA60）</div>
-            <div class="font-black text-base" id="ma-bull-arr">--</div>
+            <div class="font-black text-base" id="ma2-bull-arr">--</div>
           </div>
         </div>
+
         <!-- 均線走勢圖（近120日） -->
-        <div style="height:240px;position:relative;">
-          <canvas id="maChart"></canvas>
+        <div style="height:280px;position:relative;">
+          <canvas id="maChart2"></canvas>
         </div>
         <p class="text-xs text-slate-500 mt-2">
           <i class="fa-solid fa-circle-info mr-1"></i>
-          移動平均線（MA）為過去N日收盤價均值，常用於判斷趨勢方向與支撐/壓力位。
+          移動平均線（MA）為過去N日收盤價均值，常用於判斷趨勢方向與支撐/壓力位。實線為短中期均線，虛線為長期均線（MA120/MA200）。
         </p>
       </div>
-    </div><!-- /panel-tradeoverview -->
+
+      <!-- 乖離率分析 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-chart-bar text-blue-400"></i>乖離率分析（BIAS）
+          <span class="text-slate-400 text-sm font-normal">— 股價偏離均線程度</span>
+        </h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4" id="biasCards">
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">BIAS5</div>
+            <div class="text-xl font-black mono" id="bias-5">--</div>
+            <div class="text-xs text-slate-500 mt-1">%</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">BIAS10</div>
+            <div class="text-xl font-black mono" id="bias-10">--</div>
+            <div class="text-xs text-slate-500 mt-1">%</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">BIAS20</div>
+            <div class="text-xl font-black mono" id="bias-20">--</div>
+            <div class="text-xs text-slate-500 mt-1">%</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">BIAS60</div>
+            <div class="text-xl font-black mono" id="bias-60">--</div>
+            <div class="text-xs text-slate-500 mt-1">%</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">BIAS120</div>
+            <div class="text-xl font-black mono" id="bias-120">--</div>
+            <div class="text-xs text-slate-500 mt-1">%</div>
+          </div>
+          <div class="ind-card text-center">
+            <div class="text-xs text-slate-500 mb-1">BIAS200</div>
+            <div class="text-xl font-black mono" id="bias-200">--</div>
+            <div class="text-xs text-slate-500 mt-1">%</div>
+          </div>
+        </div>
+        <div class="text-xs text-slate-400 mt-3 space-y-1">
+          <div><span class="text-green-400 font-bold">正乖離（+）</span>：股價高於均線，偏多；乖離過大（>6%）表示超買，需注意回落風險。</div>
+          <div><span class="text-red-400 font-bold">負乖離（−）</span>：股價低於均線，偏空；乖離過大（<-6%）表示超賣，可能出現技術性反彈。</div>
+        </div>
+      </div>
+
+      <!-- 均線交叉與預測 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-arrows-cross text-yellow-400"></i>均線交叉分析
+          <span class="text-slate-400 text-sm font-normal">— 黃金交叉 / 死亡交叉</span>
+        </h3>
+        <div id="maCrossSection" class="space-y-3">
+          <div class="text-slate-400 text-sm" id="maCrossEmpty">載入中...</div>
+        </div>
+      </div>
+
+      <!-- 均線排列強化分析（來自後端 ma_analysis） -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-layer-group text-purple-400"></i>均線強化分析
+          <span class="text-slate-400 text-sm font-normal">— 排列型態、預測與訊號</span>
+        </h3>
+        <div id="maEnhancedSection2" class="space-y-3">
+          <div id="maEnhancedCards2" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+          <div id="maTechSummaryBox2" class="rounded-xl p-4 border hidden"></div>
+        </div>
+      </div>
+
+    </div><!-- /panel-maanalysis -->
+
+
+    <!-- ═══ Tab: 葛蘭碧八大法則 ═══════════════════════════════════════ -->
+    <div id="panel-granville" class="hidden space-y-4">
+
+      <!-- 圖例說明（與 panel-chart 中相同） -->
+      <div class="card p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <h3 class="font-bold text-sm text-white"><i class="fa-solid fa-scroll mr-2 text-amber-400"></i>葛蘭碧八大法則 — 完整說明</h3>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
+          <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.08);border-color:#10b981aa">
+            <span class="font-black text-sm" style="color:#10b981">① 買 起漲買進</span>
+            <div class="text-slate-400 mt-1">均線由降轉升，股價向上突破均線。趨勢初始反轉訊號，為最強力買入時機。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(52,211,153,0.08);border-color:#34d399aa">
+            <span class="font-black text-sm" style="color:#34d399">② 買 續漲加碼</span>
+            <div class="text-slate-400 mt-1">股價在均線上方回落至均線附近後反彈。多頭趨勢中的加碼機會。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(110,231,183,0.08);border-color:#6ee7b7aa">
+            <span class="font-black text-sm" style="color:#6ee7b7">③ 買 超賣反彈</span>
+            <div class="text-slate-400 mt-1">負乖離過大（跌離均線過遠），技術性反彈訊號。風險較高，需配合成交量確認。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(167,243,208,0.08);border-color:#a7f3d0aa">
+            <span class="font-black text-sm" style="color:#a7f3d0">④ 買 末跌買進</span>
+            <div class="text-slate-400 mt-1">股價跌破均線，但均線仍向上。視為最後一次回測支撐的短線買入機會。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.08);border-color:#ef4444aa">
+            <span class="font-black text-sm" style="color:#ef4444">⑤ 賣 趨勢轉空</span>
+            <div class="text-slate-400 mt-1">均線向下，股價跌破均線。趨勢反轉為空頭，為最強力賣出時機。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(249,115,22,0.08);border-color:#f97316aa">
+            <span class="font-black text-sm" style="color:#f97316">⑥ 賣 超買回吐</span>
+            <div class="text-slate-400 mt-1">正乖離過大（漲離均線過遠），逢高減碼訊號。超買後容易出現修正。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(251,146,60,0.08);border-color:#fb923caa">
+            <span class="font-black text-sm" style="color:#fb923c">⑦ 賣 反彈賣出</span>
+            <div class="text-slate-400 mt-1">空頭趨勢中，股價向均線反彈後再度下跌。空頭中的減碼或出場時機。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(252,165,165,0.08);border-color:#fca5a5aa">
+            <span class="font-black text-sm" style="color:#fca5a5">⑧ 賣 空頭賣出</span>
+            <div class="text-slate-400 mt-1">均線向下，股價短暫超漲突破均線。空頭格局中的反彈高點賣出。</div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-4 text-xs text-slate-400 border-t border-slate-700 pt-3">
+          <span><span style="display:inline-block;width:10px;height:10px;background:#fbbf24;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#fbbf24">★ 黃金交叉</span>：短均線上穿長均線（買入訊號）</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#f43f5e;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#f43f5e">✕ 死亡交叉</span>：短均線下穿長均線（賣出訊號）</span>
+        </div>
+      </div>
+
+      <!-- 目前觸發訊號 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-bolt text-yellow-400"></i>目前觸發訊號
+          <span class="text-slate-400 text-sm font-normal">— 基於後端分析結果</span>
+        </h3>
+        <div id="granSignalList" class="space-y-3">
+          <div class="text-slate-400 text-sm">請先查詢個股以顯示葛蘭碧訊號分析。</div>
+        </div>
+      </div>
+
+      <!-- K線圖上的葛蘭碧標記（嵌入圖表） -->
+      <div class="card p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h3 class="font-bold text-sm text-white">葛蘭碧訊號 K線圖</h3>
+          <div class="flex flex-wrap gap-1">
+            <button class="period-btn active" onclick="setGranPeriod('D')" id="granpbtn-D">日線</button>
+            <button class="period-btn" onclick="setGranPeriod('W')" id="granpbtn-W">週線</button>
+          </div>
+        </div>
+        <div class="chart-wrap" style="height:360px">
+          <canvas id="granCandleChart"></canvas>
+        </div>
+        <div class="text-xs text-slate-500 mt-2">
+          <i class="fa-solid fa-circle-info mr-1"></i>
+          <span style="color:#10b981">▲</span> 買入訊號（①②③④）&nbsp;&nbsp;
+          <span style="color:#ef4444">▼</span> 賣出訊號（⑤⑥⑦⑧）&nbsp;&nbsp;
+          ★ 黃金交叉&nbsp;&nbsp;✕ 死亡交叉
+        </div>
+      </div>
+
+      <!-- 葛蘭碧詳細訊號分析 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-magnifying-glass text-blue-400"></i>詳細訊號解析
+          <span class="text-slate-400 text-sm font-normal">— MA20 / MA60 雙均線</span>
+        </h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <div class="text-xs font-bold text-slate-400 mb-2 uppercase tracking-widest">MA20 訊號（月線）</div>
+            <div id="gran20List" class="space-y-2">
+              <div class="text-slate-500 text-sm">--</div>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-400 mb-2 uppercase tracking-widest">MA60 訊號（季線）</div>
+            <div id="gran60List" class="space-y-2">
+              <div class="text-slate-500 text-sm">--</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作建議摘要 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-clipboard-check text-green-400"></i>葛蘭碧操作建議
+        </h3>
+        <div id="granSummaryBox" class="rounded-xl p-4 border border-slate-700 text-slate-300 text-sm">
+          請先查詢個股。
+        </div>
+      </div>
+
+    </div><!-- /panel-granville -->
+
 
     <!-- ═══ Tab: 財報分析 ════════════════════════════════════════ -->
     <div id="panel-finreport" class="hidden space-y-4">
@@ -4484,7 +4680,7 @@ function drawKDChart(data) {
 // ════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  const tabs = ['chart','fundamental','chip','tradeoverview','finreport','frontier','sim','news','recommendation','montecarlo','scenario'];
+  const tabs = ['chart','fundamental','chip','tradeoverview','finreport','frontier','sim','news','recommendation','montecarlo','scenario','maanalysis','granville'];
   tabs.forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn   = document.getElementById(`tab-${t}`);
@@ -4509,6 +4705,8 @@ function switchTab(tab) {
   if (tab === 'sim' && currentData) runSIMAnalysis();
   if (tab === 'tradeoverview' && currentData) renderTradeOverview(currentData);
   if (tab === 'finreport' && currentData) loadFinReport(currentData.ticker);
+  if (tab === 'maanalysis' && currentData) renderMAAnalysisTab(currentData);
+  if (tab === 'granville' && currentData) renderGranvilleTab(currentData);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -6464,7 +6662,7 @@ async function loadHotStocksSequential(onlyCodes) {
 
     // ★ 修正：分批發送（每批 8 支）+ 第一次失敗後等 12s（給後端 warmup 時間）
     const HOT_SUMMARY_CHUNK   = 8;
-    const HOT_SUMMARY_TIMEOUT = 28000; // 28s（低於 Render 30s 硬限）
+    const HOT_SUMMARY_TIMEOUT = 35000; // 35s（後端每批最長 15s×2重試，加上網路緩衝）
     let batchSuccess = false;
 
     // 將 missing 切成每批 8 支的 chunks
@@ -7146,11 +7344,28 @@ function renderTradeOverview(data) {
     });
   }
 
-  // 移動平均線卡片
+  // 移動平均線已移至獨立分頁（panel-maanalysis）
+  // 切換至「移動平均線分析」分頁時由 renderMAAnalysisTab() 處理渲染
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// 移動平均線分析 Tab
+// ════════════════════════════════════════════════════════════════
+let hotChartMA2 = null;
+
+function renderMAAnalysisTab(data) {
+  const tech  = (data.technical && data.technical.latest) || {};
+  const chart = data.chart || {};
+  const closes = chart.closes || [];
+  const dates  = chart.dates  || [];
+  const close  = (data.latest || {}).close || 0;
+
+  // ── MA 數值卡片 ──
   const maVals = { 5: tech.ma5, 10: tech.ma10, 20: tech.ma20, 60: tech.ma60, 120: tech.ma120, 200: tech.ma200 };
   for (const [period, val] of Object.entries(maVals)) {
-    const el    = document.getElementById('ma-' + period);
-    const relEl = document.getElementById('ma-' + period + '-rel');
+    const el    = document.getElementById('ma2-' + period);
+    const relEl = document.getElementById('ma2-' + period + '-rel');
     if (el) {
       el.textContent = val ? val.toFixed(2) : '--';
       el.className   = 'text-xl font-black mono ' + (val && close > val ? 'up' : val && close < val ? 'down' : 'flat');
@@ -7162,67 +7377,281 @@ function renderTradeOverview(data) {
     } else if (relEl) { relEl.textContent = '--'; relEl.className = 'text-xs mt-1 flat'; }
   }
 
-  // 多空排列判斷
-  const ma5v = tech.ma5, ma20v = tech.ma20, ma60v = tech.ma60;
-  const stEl = document.getElementById('ma-short-trend');
-  const mtEl = document.getElementById('ma-mid-trend');
-  const baEl = document.getElementById('ma-bull-arr');
-  if (ma5v && ma20v) {
-    if (ma5v > ma20v) { stEl.textContent='⬆ 短線偏多（MA5 > MA20）'; stEl.className='font-black text-base up'; }
-    else              { stEl.textContent='⬇ 短線偏空（MA5 < MA20）'; stEl.className='font-black text-base down'; }
-  } else { stEl.textContent='資料不足'; stEl.className='font-black text-base flat'; }
-  if (ma20v && ma60v) {
-    if (ma20v > ma60v) { mtEl.textContent='⬆ 中線偏多（MA20 > MA60）'; mtEl.className='font-black text-base up'; }
-    else               { mtEl.textContent='⬇ 中線偏空（MA20 < MA60）'; mtEl.className='font-black text-base down'; }
-  } else { mtEl.textContent='資料不足'; mtEl.className='font-black text-base flat'; }
-  if (ma5v && ma20v && ma60v) {
-    if (ma5v > ma20v && ma20v > ma60v)      { baEl.textContent='✅ 多頭排列'; baEl.className='font-black text-base up'; }
-    else if (ma5v < ma20v && ma20v < ma60v) { baEl.textContent='❌ 空頭排列'; baEl.className='font-black text-base down'; }
-    else                                     { baEl.textContent='〰 混合排列'; baEl.className='font-black text-base flat'; }
-  } else { baEl.textContent='資料不足'; baEl.className='font-black text-base flat'; }
+  // ── 乖離率 ──
+  for (const [period, val] of Object.entries(maVals)) {
+    const el = document.getElementById('bias-' + period);
+    if (!el) continue;
+    if (val && close) {
+      const bias = (close - val) / val * 100;
+      el.textContent = (bias > 0 ? '+' : '') + bias.toFixed(2);
+      el.className = 'text-xl font-black mono ' + (bias > 3 ? 'up' : bias < -3 ? 'down' : 'flat');
+    } else {
+      el.textContent = '--';
+      el.className = 'text-xl font-black mono flat';
+    }
+  }
 
-  // MA 折線圖（近120日）
-  const maLen  = Math.min(120, closes.length);
-  const maOff  = closes.length - maLen;
-  const maDts  = dates.slice(-maLen);
-  const maCls  = closes.slice(-maLen);
-  const getMA  = key => {
+  // ── 多空排列判斷 ──
+  const { ma5: ma5v, ma20: ma20v, ma60: ma60v } = tech;
+  const stEl = document.getElementById('ma2-short-trend');
+  const mtEl = document.getElementById('ma2-mid-trend');
+  const baEl = document.getElementById('ma2-bull-arr');
+  if (stEl) {
+    if (ma5v && ma20v) {
+      if (ma5v > ma20v) { stEl.textContent='⬆ 短線偏多（MA5 > MA20）'; stEl.className='font-black text-base up'; }
+      else              { stEl.textContent='⬇ 短線偏空（MA5 < MA20）'; stEl.className='font-black text-base down'; }
+    } else { stEl.textContent='資料不足'; stEl.className='font-black text-base flat'; }
+  }
+  if (mtEl) {
+    if (ma20v && ma60v) {
+      if (ma20v > ma60v) { mtEl.textContent='⬆ 中線偏多（MA20 > MA60）'; mtEl.className='font-black text-base up'; }
+      else               { mtEl.textContent='⬇ 中線偏空（MA20 < MA60）'; mtEl.className='font-black text-base down'; }
+    } else { mtEl.textContent='資料不足'; mtEl.className='font-black text-base flat'; }
+  }
+  if (baEl) {
+    if (ma5v && ma20v && ma60v) {
+      if (ma5v > ma20v && ma20v > ma60v)      { baEl.textContent='✅ 多頭排列'; baEl.className='font-black text-base up'; }
+      else if (ma5v < ma20v && ma20v < ma60v) { baEl.textContent='❌ 空頭排列'; baEl.className='font-black text-base down'; }
+      else                                     { baEl.textContent='〰 混合排列'; baEl.className='font-black text-base flat'; }
+    } else { baEl.textContent='資料不足'; baEl.className='font-black text-base flat'; }
+  }
+
+  // ── 均線交叉分析 ──
+  const maAna   = (data.technical && data.technical.ma_analysis) || {};
+  const cross520  = maAna.cross_5_20  || {};
+  const cross2060 = maAna.cross_20_60 || {};
+  const crossSect = document.getElementById('maCrossSection');
+  if (crossSect) {
+    const mkCross = (obj, shortLabel, longLabel) => {
+      if (!obj || !obj.type) return '';
+      const isBuy = obj.type === 'golden';
+      const col   = isBuy ? '#fbbf24' : '#f43f5e';
+      const icon  = isBuy ? '★ 黃金交叉' : '✕ 死亡交叉';
+      const days  = obj.days_to_cross != null ? `（預計 ${obj.days_to_cross} 天後）` : '';
+      return `<div class="rounded-xl p-4 border" style="background:${isBuy?'rgba(251,191,36,.08)':'rgba(244,63,94,.08)'};border-color:${col}60">
+        <div class="font-black text-sm mb-1" style="color:${col}">${icon} ${shortLabel}/${longLabel} ${days}</div>
+        <div class="text-slate-300 text-sm">${obj.desc || ''}</div>
+        ${obj.price_at_cross != null ? `<div class="text-xs text-slate-400 mt-1">預測交叉價格：<span class="mono font-bold">${obj.price_at_cross.toFixed(2)}</span></div>` : ''}
+      </div>`;
+    };
+    const html = mkCross(cross520,'MA5','MA20') + mkCross(cross2060,'MA20','MA60');
+    crossSect.innerHTML = html || '<div class="text-slate-400 text-sm">目前無交叉訊號預測。</div>';
+  }
+
+  // ── 均線強化分析卡片 ──
+  const cards2 = document.getElementById('maEnhancedCards2');
+  const summary2 = document.getElementById('maTechSummaryBox2');
+  if (cards2) {
+    const arr = maAna.array || {};
+    const items = [];
+    if (arr.status)    items.push({ icon:'fa-solid fa-list-ol', label:'均線排列',   val: arr.status,    color: arr.color || '#94a3b8' });
+    if (arr.ma5_slope) items.push({ icon:'fa-solid fa-chart-line', label:'MA5 斜率', val: arr.ma5_slope,  color: arr.ma5_slope.includes('上升')?'#10b981':'#ef4444' });
+    if (arr.ma20_slope)items.push({ icon:'fa-solid fa-chart-line', label:'MA20斜率', val: arr.ma20_slope, color: arr.ma20_slope.includes('上升')?'#10b981':'#ef4444' });
+    if (arr.above_count != null) items.push({ icon:'fa-solid fa-layer-group', label:'價格位於均線之上', val: `${arr.above_count} / ${arr.total_count || 6} 條`, color: arr.above_count >= 4 ? '#10b981' : arr.above_count <= 2 ? '#ef4444' : '#f59e0b' });
+    cards2.innerHTML = items.map(it =>
+      `<div class="ind-card"><div class="flex items-center gap-2 mb-1"><i class="${it.icon} text-xs" style="color:${it.color}"></i><span class="text-xs text-slate-400">${it.label}</span></div><div class="font-black text-sm" style="color:${it.color}">${it.val}</div></div>`
+    ).join('');
+  }
+  if (summary2 && maAna.summary) {
+    summary2.innerHTML = `<div class="text-sm text-slate-200">${maAna.summary}</div>`;
+    summary2.classList.remove('hidden');
+  }
+
+  // ── MA 折線圖（近120日）──
+  const maLen = Math.min(120, closes.length);
+  const maOff = closes.length - maLen;
+  const maDts = dates.slice(-maLen);
+  const maCls = closes.slice(-maLen);
+  const getMA = key => {
     const arr = chart[key] || [];
     return arr.length >= maOff + maLen ? arr.slice(maOff, maOff + maLen) : arr.slice(-maLen);
   };
-
-  if (hotChartMA) { hotChartMA.destroy(); hotChartMA = null; }
-  const maCtx = document.getElementById('maChart');
-  if (maCtx) {
-    hotChartMA = new Chart(maCtx, {
+  if (hotChartMA2) { hotChartMA2.destroy(); hotChartMA2 = null; }
+  const maCtx2 = document.getElementById('maChart2');
+  if (maCtx2 && maCls.length > 0) {
+    hotChartMA2 = new Chart(maCtx2, {
       type: 'line',
       data: {
         labels: maDts.map(d => d ? d.slice(5) : ''),
         datasets: [
-          { label:'收盤',  data: maCls,          borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA5',   data: getMA('ma5'),    borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA10',  data: getMA('ma10'),   borderColor:'#8b5cf6', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA20',  data: getMA('ma20'),   borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA60',  data: getMA('ma60'),   borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA120', data: getMA('ma120'),  borderColor:'#f97316', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
-          { label:'MA200', data: getMA('ma200'),  borderColor:'#ec4899', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[6,4] },
+          { label:'收盤',  data: maCls,           borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA5',   data: getMA('ma5'),     borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA10',  data: getMA('ma10'),    borderColor:'#8b5cf6', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA20',  data: getMA('ma20'),    borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA60',  data: getMA('ma60'),    borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA120', data: getMA('ma120'),   borderColor:'#f97316', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
+          { label:'MA200', data: getMA('ma200'),   borderColor:'#ec4899', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[6,4] },
         ]
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive:true, maintainAspectRatio:false,
         plugins: {
           legend: { labels: { color:'#94a3b8', font:{size:11}, boxWidth:16 } },
           tooltip: { mode:'index', intersect:false,
-            callbacks: { label: ctx => ctx.dataset.label + ': ' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '--') } }
+            callbacks:{ label: ctx => ctx.dataset.label + ': ' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '--') } }
         },
         scales: {
-          x: { ticks: { color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
-          y: { ticks: { color:'#64748b', font:{size:9} }, grid:{color:'#1e293b'} }
+          x: { ticks:{ color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
+          y: { ticks:{ color:'#64748b', font:{size:9} }, grid:{color:'#1e293b'} }
         },
-        interaction: { mode:'index', intersect:false }
+        interaction:{ mode:'index', intersect:false }
       }
     });
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 葛蘭碧八大法則 Tab
+// ════════════════════════════════════════════════════════════════
+let granCandleChart = null;
+let granCurrentPeriod = 'D';
+let granCurrentData   = null;
+
+function setGranPeriod(p) {
+  granCurrentPeriod = p;
+  ['D','W'].forEach(pp => {
+    const btn = document.getElementById('granpbtn-' + pp);
+    if (btn) btn.classList.toggle('active', pp === p);
+  });
+  if (granCurrentData) _drawGranCandleChart(granCurrentData, p);
+}
+
+function renderGranvilleTab(data) {
+  granCurrentData = data;
+  const maAna   = (data.technical && data.technical.ma_analysis) || {};
+  const gran20  = maAna.granville_20 || maAna.granville || [];
+  const gran60  = maAna.granville_60 || [];
+
+  // ── 目前觸發訊號 ──
+  const sigList = document.getElementById('granSignalList');
+  if (sigList) {
+    const allGran = [...gran20.map(g => ({...g, maLabel:'MA20'})), ...gran60.map(g => ({...g, maLabel:'MA60'}))];
+    if (allGran.length === 0) {
+      sigList.innerHTML = '<div class="text-slate-400 text-sm">目前無觸發葛蘭碧訊號。</div>';
+    } else {
+      sigList.innerHTML = allGran.map(g => {
+        const isBuy = g.signal === 'buy';
+        const col   = isBuy ? '#10b981' : '#ef4444';
+        const bg    = isBuy ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
+        const strength = g.strength === 'strong' ? '強' : '中';
+        return `<div class="rounded-xl p-4 border" style="background:${bg};border-color:${col}60">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="font-black text-sm" style="color:${col}">${g.name || ''}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full" style="background:${bg};color:${col};border:1px solid ${col}60">${g.maLabel} · ${strength}訊號</span>
+            ${isBuy ? '<span class="signal-tag signal-buy">買入</span>' : '<span class="signal-tag signal-sell">賣出</span>'}
+          </div>
+          <div class="text-slate-300 text-sm">${g.desc || ''}</div>
+          ${g.bias != null ? `<div class="text-xs text-slate-400 mt-1">乖離率：<span class="mono font-bold ${g.bias>0?'up':'down'}">${g.bias>0?'+':''}${g.bias.toFixed(2)}%</span></div>` : ''}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── MA20 / MA60 詳細訊號列表 ──
+  const mk = (list, elId) => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!list || list.length === 0) {
+      el.innerHTML = '<div class="text-slate-500 text-sm">無觸發訊號。</div>'; return;
+    }
+    el.innerHTML = list.map(g => {
+      const isBuy = g.signal === 'buy';
+      const col   = isBuy ? '#10b981' : '#ef4444';
+      return `<div class="rounded-lg p-3 border text-sm" style="background:${isBuy?'rgba(16,185,129,0.06)':'rgba(239,68,68,0.06)'};border-color:${col}50">
+        <div class="font-bold mb-1" style="color:${col}">${g.name || ''} <span class="text-xs font-normal text-slate-400">（${g.strength==='strong'?'強':'中'}）</span></div>
+        <div class="text-slate-300">${g.desc || ''}</div>
+      </div>`;
+    }).join('');
+  };
+  mk(gran20, 'gran20List');
+  mk(gran60, 'gran60List');
+
+  // ── 操作建議摘要 ──
+  const summaryBox = document.getElementById('granSummaryBox');
+  if (summaryBox) {
+    const buyCount  = [...gran20,...gran60].filter(g=>g.signal==='buy').length;
+    const sellCount = [...gran20,...gran60].filter(g=>g.signal==='sell').length;
+    const strongBuy  = [...gran20,...gran60].filter(g=>g.signal==='buy'&&g.strength==='strong').length;
+    const strongSell = [...gran20,...gran60].filter(g=>g.signal==='sell'&&g.strength==='strong').length;
+    let summary = '';
+    if (buyCount === 0 && sellCount === 0) {
+      summary = '<span class="text-slate-400">目前無明確葛蘭碧訊號，建議持續觀察均線走勢。</span>';
+    } else if (strongBuy > 0 && sellCount === 0) {
+      summary = `<span class="up font-bold">📈 強力買入訊號</span>：觸發 ${strongBuy} 個強力買入訊號，均線走勢偏多，可考慮分批建倉，並設定停損。`;
+    } else if (strongSell > 0 && buyCount === 0) {
+      summary = `<span class="down font-bold">📉 強力賣出訊號</span>：觸發 ${strongSell} 個強力賣出訊號，均線趨勢轉弱，建議逐步減碼或觀望。`;
+    } else if (buyCount > sellCount) {
+      summary = `<span class="up font-bold">📈 偏多訊號</span>：買入訊號（${buyCount}）多於賣出訊號（${sellCount}），整體偏多，可逢低分批建倉。`;
+    } else if (sellCount > buyCount) {
+      summary = `<span class="down font-bold">📉 偏空訊號</span>：賣出訊號（${sellCount}）多於買入訊號（${buyCount}），整體偏空，建議謹慎操作。`;
+    } else {
+      summary = `<span class="flat font-bold">〰 多空交錯</span>：買入訊號（${buyCount}）與賣出訊號（${sellCount}）並存，市場方向不明，建議等待明確突破再行動。`;
+    }
+    summaryBox.innerHTML = summary;
+  }
+
+  // ── K 線圖 ──
+  _drawGranCandleChart(data, granCurrentPeriod);
+}
+
+function _drawGranCandleChart(data, period) {
+  const ch   = buildPeriodChartData(data, period);
+  const ctx  = document.getElementById('granCandleChart');
+  if (!ctx) return;
+  if (granCandleChart) { granCandleChart.destroy(); granCandleChart = null; }
+
+  const MAX_BARS = period === 'D' ? 120 : 104;
+  const n      = Math.min(ch.dates.length, MAX_BARS);
+  const offset = ch.dates.length - n;
+  const sl = arr => arr.slice(offset);
+
+  const closes  = sl(ch.closes);
+  const opens   = sl(ch.opens);
+  const highs   = sl(ch.highs);
+  const lows    = sl(ch.lows);
+  const labels  = sl(ch.labels || ch.dates);
+  const ma2     = sl(ch.ma2);   // MA20
+
+  const granSigs   = calcGranvilleOnSeries(closes, ma2);
+  const crossSigs  = calcMACrossSignals(closes, sl(ch.ma1), ma2);
+
+  const granBuyData  = new Array(n).fill(null);
+  const granSellData = new Array(n).fill(null);
+  granSigs.forEach(sig => {
+    const gl = GRANVILLE_LABELS[sig.rule];
+    if (!gl) return;
+    if (gl.type === 'buy')  granBuyData[sig.idx]  = lows[sig.idx]  != null ? lows[sig.idx]  * 0.993 : closes[sig.idx] * 0.993;
+    else                    granSellData[sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.007 : closes[sig.idx] * 1.007;
+  });
+
+  const candleData = closes.map((c,i) => ({ x:labels[i], o:opens[i]||c, h:highs[i]||c, l:lows[i]||c, c }));
+
+  granCandleChart = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        { type:'candlestick', label:'K線', data: candleData,
+          color:{ up:'#10b981', down:'#ef4444', unchanged:'#94a3b8' },
+          borderColor:{ up:'#10b981', down:'#ef4444', unchanged:'#94a3b8' } },
+        { type:'line', label:'MA20', data: ma2, borderColor:'#3b82f6', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+        { type:'scatter', label:'葛蘭碧買入', data: granBuyData.map((v,i)=>v!=null?{x:labels[i],y:v}:null).filter(Boolean),
+          backgroundColor:'#10b981', borderColor:'#fff', pointStyle:'triangle', rotation:0, pointRadius:9, pointHoverRadius:11 },
+        { type:'scatter', label:'葛蘭碧賣出', data: granSellData.map((v,i)=>v!=null?{x:labels[i],y:v}:null).filter(Boolean),
+          backgroundColor:'#ef4444', borderColor:'#fff', pointStyle:'triangle', rotation:180, pointRadius:9, pointHoverRadius:11 },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: {
+        legend:{ display:false },
+        tooltip:{ mode:'index', intersect:false }
+      },
+      scales: {
+        x:{ ticks:{ color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
+        y:{ ticks:{ color:'#64748b', font:{size:9} }, grid:{color:'#1e293b'} }
+      }
+    }
+  });
 }
 
 // ════════════════════════════════════════════════════════════════

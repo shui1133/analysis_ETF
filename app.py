@@ -692,13 +692,21 @@ def _fetch_one_hot(ticker: str, fetcher) -> tuple:
                     if not close_val:
                         continue
                     try:
-                        result.append({
+                        # volume：嘗試多個欄位名稱，並處理「股→張」單位換算
+                    raw_vol = vol_val if vol_val else 0
+                    try:
+                        raw_vol = float(raw_vol)
+                    except (ValueError, TypeError):
+                        raw_vol = 0
+                    # yfinance 回傳單位為「股」（>= 10000 時除以 1000 換算為張）
+                    lot_vol = max(1, round(raw_vol / 1000)) if raw_vol >= 10000 else int(raw_vol)
+                    result.append({
                             'date':   str(date_val)[:10],
                             'open':   float(open_val)  if open_val  else float(close_val),
                             'high':   float(high_val)  if high_val  else float(close_val),
                             'low':    float(low_val)   if low_val   else float(close_val),
                             'close':  float(close_val),
-                            'volume': int(float(vol_val)) if vol_val else 0,
+                            'volume': lot_vol,
                         })
                     except (ValueError, TypeError):
                         continue
@@ -788,19 +796,19 @@ def hot_summary():
             return jsonify({'status': 'error', 'message': '請提供 tickers 清單'}), 400
 
         MAX_BATCH  = 8
-        CHUNK_SIZE = 4   # 每批 4 支，分兩批執行
+        CHUNK_SIZE = 3   # 每批 3 支（降低單批壓力），timeout 更寬裕
         tickers = tickers[:MAX_BATCH]
 
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
         result  = {}
 
-        # 分批執行：避免單一大批全部超時
+        # 分批執行：每批 3 支，timeout 15s（各支並行），降低全批逾時機率
         chunks = [tickers[i:i+CHUNK_SIZE] for i in range(0, len(tickers), CHUNK_SIZE)]
         for chunk in chunks:
-            with ThreadPoolExecutor(max_workers=4) as pool:
+            with ThreadPoolExecutor(max_workers=3) as pool:
                 futures = {pool.submit(_fetch_one_hot, tk, fetcher): tk for tk in chunk}
                 try:
-                    for fut in as_completed(futures, timeout=12):
+                    for fut in as_completed(futures, timeout=15):
                         try:
                             tk, summary = fut.result(timeout=10)
                             result[tk] = summary
@@ -815,11 +823,12 @@ def hot_summary():
                         if tk not in result:
                             if fut.done():
                                 try:
-                                    _, summary = fut.result()
+                                    _, summary = fut.result(timeout=2)
                                     result[tk] = summary
                                 except Exception:
                                     result[tk] = None
                             else:
+                                fut.cancel()  # 取消尚未完成的 future
                                 result[tk] = None
 
         # 補齊任何未處理的 ticker
