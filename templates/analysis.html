@@ -3806,10 +3806,12 @@ function drawCandleChartPeriod(data, period) {
         // ① 蠟燭實體（開~收浮動長條）
         {
           label: 'OHLC',
-          data:  dates.map((_, i) => [
-            Math.min(opens[i], closes[i]),
-            Math.max(opens[i], closes[i])
-          ]),
+          data:  dates.map((_, i) => {
+            const o = opens[i]  ?? closes[i];
+            const c = closes[i] ?? opens[i];
+            if (o == null || c == null) return null;
+            return [Math.min(o, c), Math.max(o, c)];
+          }),
           backgroundColor: bodyColors,
           borderColor:     bodyColors,
           borderWidth: 0,
@@ -3821,7 +3823,12 @@ function drawCandleChartPeriod(data, period) {
         {
           type: 'bar',
           label: 'wick',
-          data:  dates.map((_, i) => [lows[i], highs[i]]),
+          data:  dates.map((_, i) => {
+            const h = highs[i] ?? closes[i];
+            const l = lows[i]  ?? closes[i];
+            if (h == null || l == null) return null;
+            return [l, h];
+          }),
           backgroundColor: wickColors,
           borderColor:     wickColors,
           borderWidth: 0,
@@ -3935,11 +3942,28 @@ function drawVolumeChartPeriod(data, period) {
   const bgColors = vols.map((_, i) =>
     closes[i] >= opens[i] ? 'rgba(239,68,68,.75)' : 'rgba(22,163,74,.75)');
 
+  // 成交量全為 0 時顯示提示訊息
+  const hasVol = vols.some(v => v > 0);
+  if (!hasVol) {
+    const parent = ctx.parentElement;
+    if (parent && !parent.querySelector('.no-vol-msg')) {
+      const msg = document.createElement('div');
+      msg.className = 'no-vol-msg';
+      msg.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#475569;font-size:12px;text-align:center;';
+      msg.textContent = '暫無成交量資料';
+      parent.style.position = 'relative';
+      parent.appendChild(msg);
+    }
+  } else {
+    const old = ctx.parentElement?.querySelector('.no-vol-msg');
+    if (old) old.remove();
+  }
+
   charts.volume = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: labels,
-      datasets: [{ label:'成交量', data: vols, backgroundColor: bgColors, borderWidth:0 }]
+      datasets: [{ label:'成交量', data: vols.map(v => v||null), backgroundColor: bgColors, borderWidth:0 }]
     },
     options: {
       responsive: true, maintainAspectRatio: false, animation: { duration:200 },
@@ -7236,22 +7260,22 @@ function renderMAAnalysisTab(data) {
         plugins: {
           legend: {
             labels: {
-              color:'#94a3b8', font:{size:11}, boxWidth:14,
+              color:'#94a3b8', font:{size:11}, boxWidth:16, padding:10,
               generateLabels: (chart) => {
                 return chart.data.datasets.map((ds, i) => {
                   const label = ds.label || '';
-                  // 黃金交叉：金色星星
-                  if (label === '黃金交叉') return { text:'⭐ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:0, datasetIndex:i, hidden:false };
-                  // 死亡交叉：紅色 ✕
-                  if (label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:0, datasetIndex:i, hidden:false };
-                  // 超買賣出參考：紅色倒三角
-                  if (label === '超買賣出參考') return { text:'▼ 超買賣出', fillStyle:'rgba(239,68,68,0.85)', strokeStyle:'#ef4444', lineWidth:0, datasetIndex:i, hidden:false };
-                  // 超賣買入參考：綠色正三角
-                  if (label === '超賣買入參考') return { text:'▲ 超賣買入', fillStyle:'rgba(16,185,129,0.85)', strokeStyle:'#10b981', lineWidth:0, datasetIndex:i, hidden:false };
-                  // 一般均線：色塊
+                  // 黃金交叉：金色方塊＋文字
+                  if (label === '黃金交叉') return { text:'⭐ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:1, datasetIndex:i, hidden:false };
+                  // 死亡交叉：紅色方塊＋文字
+                  if (label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:1, datasetIndex:i, hidden:false };
+                  // 超買賣出參考：橘色方塊
+                  if (label === '超買賣出參考') return { text:'▼ 超買賣出', fillStyle:'rgba(239,68,68,0.85)', strokeStyle:'#ef4444', lineWidth:1, datasetIndex:i, hidden:false };
+                  // 超賣買入參考：綠色方塊
+                  if (label === '超賣買入參考') return { text:'▲ 超賣買入', fillStyle:'rgba(16,185,129,0.85)', strokeStyle:'#10b981', lineWidth:1, datasetIndex:i, hidden:false };
+                  // 一般均線：色線
                   return {
                     text: label,
-                    fillStyle: ds.borderColor || '#94a3b8',
+                    fillStyle: 'transparent',
                     strokeStyle: ds.borderColor || '#94a3b8',
                     lineWidth: 2,
                     lineDash: ds.borderDash || [],
@@ -7431,15 +7455,16 @@ function _drawGranCandleChart(data, period) {
 
   // ── 葛蘭碧訊號計算 ──────────────────────────────────────
   const granSigs = calcGranvilleOnSeries(closes, ma2);
-  const granBuyData  = new Array(n).fill(null);
-  const granSellData = new Array(n).fill(null);
+  // 為每種規則建立獨立資料陣列（8種各自顯示標記）
+  const granRuleData = {};
+  for (let r = 1; r <= 8; r++) granRuleData[r] = new Array(n).fill(null);
   granSigs.forEach(sig => {
     const gl = GRANVILLE_LABELS[sig.rule];
     if (!gl) return;
     if (gl.type === 'buy')
-      granBuyData[sig.idx]  = lows[sig.idx]  != null ? lows[sig.idx]  * 0.993 : closes[sig.idx] * 0.993;
+      granRuleData[sig.rule][sig.idx] = lows[sig.idx]  != null ? lows[sig.idx]  * 0.990 : closes[sig.idx] * 0.990;
     else
-      granSellData[sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.007 : closes[sig.idx] * 1.007;
+      granRuleData[sig.rule][sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.010 : closes[sig.idx] * 1.010;
   });
 
   // ── 黃金/死亡交叉 ────────────────────────────────────────
@@ -7470,7 +7495,12 @@ function _drawGranCandleChart(data, period) {
         // ① K 棒實體
         {
           label: 'OHLC',
-          data:  dates.map((_, i) => [Math.min(opens[i], closes[i]), Math.max(opens[i], closes[i])]),
+          data:  dates.map((_, i) => {
+            const o = opens[i] ?? closes[i];
+            const c = closes[i] ?? opens[i];
+            if (o == null || c == null) return null;
+            return [Math.min(o, c), Math.max(o, c)];
+          }),
           backgroundColor: bodyColors,
           borderColor: bodyColors,
           borderWidth: 0,
@@ -7481,7 +7511,12 @@ function _drawGranCandleChart(data, period) {
         // ② 影線（最高～最低）
         {
           label: 'wick',
-          data:  dates.map((_, i) => [lows[i], highs[i]]),
+          data:  dates.map((_, i) => {
+            const h = highs[i] ?? closes[i];
+            const l = lows[i]  ?? closes[i];
+            if (h == null || l == null) return null;
+            return [l, h];
+          }),
           backgroundColor: wickColors,
           borderColor: wickColors,
           borderWidth: 0,
@@ -7493,28 +7528,26 @@ function _drawGranCandleChart(data, period) {
         { type:'line', label:'MA5',  data: ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // ④ MA20
         { type:'line', label:'MA20', data: ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // ⑤ 葛蘭碧買入訊號（三角向上）
-        {
-          type:'line', label:'葛蘭碧買入', data: granBuyData,
-          backgroundColor:'rgba(16,185,129,0.9)', borderColor:'rgba(16,185,129,0)',
-          borderWidth:0,
-          pointRadius: granBuyData.map(v => v != null ? 9 : 0),
-          pointHoverRadius: granBuyData.map(v => v != null ? 11 : 0),
-          pointStyle:'triangle', pointRotation:0,
-          pointBackgroundColor:'rgba(16,185,129,0.9)', pointBorderColor:'#10b981', pointBorderWidth:1.5,
-          fill:false, spanGaps:false, showLine:false, order:0,
-        },
-        // ⑥ 葛蘭碧賣出訊號（三角向下）
-        {
-          type:'line', label:'葛蘭碧賣出', data: granSellData,
-          backgroundColor:'rgba(239,68,68,0.9)', borderColor:'rgba(239,68,68,0)',
-          borderWidth:0,
-          pointRadius: granSellData.map(v => v != null ? 9 : 0),
-          pointHoverRadius: granSellData.map(v => v != null ? 11 : 0),
-          pointStyle:'triangle', pointRotation:180,
-          pointBackgroundColor:'rgba(239,68,68,0.9)', pointBorderColor:'#ef4444', pointBorderWidth:1.5,
-          fill:false, spanGaps:false, showLine:false, order:0,
-        },
+        // ⑤~⑫ 葛蘭碧八種訊號各自標記
+        ...([1,2,3,4,5,6,7,8].map(r => {
+          const gl = GRANVILLE_LABELS[r];
+          const isBuy = gl.type === 'buy';
+          const d = granRuleData[r];
+          return {
+            type:'line', label: gl.short, data: d,
+            backgroundColor: gl.color + 'dd',
+            borderColor: 'rgba(0,0,0,0)',
+            borderWidth: 0,
+            pointRadius: d.map(v => v != null ? 11 : 0),
+            pointHoverRadius: d.map(v => v != null ? 13 : 0),
+            pointStyle: isBuy ? 'triangle' : 'triangle',
+            pointRotation: isBuy ? 0 : 180,
+            pointBackgroundColor: gl.color,
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1.5,
+            fill: false, spanGaps: false, showLine: false, order: 0,
+          };
+        })),
         // ⑦ 黃金交叉（☆）
         {
           type:'line', label:'黃金交叉', data: crossGoldenData,
@@ -7539,24 +7572,40 @@ function _drawGranCandleChart(data, period) {
       plugins: {
         legend: {
           labels: {
-            color:'#94a3b8', font:{size:11}, boxWidth:14,
-            filter: item => !['OHLC','wick'].includes(item.text)
+            color:'#94a3b8', font:{size:10}, boxWidth:12, padding:8,
+            filter: item => !['OHLC','wick'].includes(item.text),
+            generateLabels: (chart) => {
+              return chart.data.datasets
+                .filter(ds => !['OHLC','wick'].includes(ds.label))
+                .map(ds => {
+                  const i = chart.data.datasets.indexOf(ds);
+                  const gl = Object.values(GRANVILLE_LABELS).find(g => g.short === ds.label);
+                  if (gl) {
+                    // 葛蘭碧規則：顯示規則短標籤，買入綠色/賣出紅色
+                    return { text: ds.label, fillStyle: gl.color, strokeStyle: gl.color,
+                             lineWidth:0, datasetIndex:i, hidden:false };
+                  }
+                  if (ds.label === '黃金交叉') return { text:'⭐黃金', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:0, datasetIndex:i, hidden:false };
+                  if (ds.label === '死亡交叉') return { text:'✕死亡', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:0, datasetIndex:i, hidden:false };
+                  // MA 線：色條
+                  return { text: ds.label, fillStyle:'transparent',
+                           strokeStyle: ds.borderColor||'#94a3b8', lineWidth:2,
+                           datasetIndex:i, hidden:false };
+                });
+            }
           }
-        },
+        },,
         tooltip: {
           callbacks: {
             title: ctxArr => ctxArr[0]?.label || '',
             label: ctx => {
               const i = ctx.dataIndex;
               const dsLabel = ctx.dataset.label || '';
-              if (dsLabel === '葛蘭碧買入' || dsLabel === '葛蘭碧賣出') {
+              // 葛蘭碧八種規則標籤（①買②買...⑧賣）
+              const glEntry = Object.values(GRANVILLE_LABELS).find(g => g.short === dsLabel);
+              if (glEntry) {
                 if (ctx.parsed?.y == null) return null;
-                const sig = granSigs.find(s => s.idx === i);
-                if (sig) {
-                  const info = GRANVILLE_LABELS[sig.rule];
-                  return [`${info.full}`, `${info.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`];
-                }
-                return null;
+                return [`${glEntry.full}`, `${glEntry.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`];
               }
               if (dsLabel === '黃金交叉') { if (ctx.parsed?.y==null) return null; return ['⭐ 黃金交叉','短均上穿長均，買入訊號']; }
               if (dsLabel === '死亡交叉') { if (ctx.parsed?.y==null) return null; return ['✕ 死亡交叉','短均下穿長均，賣出訊號']; }
