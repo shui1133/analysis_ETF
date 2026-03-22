@@ -766,7 +766,10 @@ def hot_summary():
     輸入: { tickers: ['2330', '2317', ...] }
     輸出: { status: 'success', data: { '2330': {...}, '2317': {...} } }
 
-    ★ 修復版：三層快取優先 + ThreadPoolExecutor 並發，避免 Render 502
+    ★ 修復版 v2：
+    - 批次上限 8 支，分兩批（4+4）執行，避免全批 timeout
+    - 每批 timeout 12s，單支 timeout 10s
+    - 任一批失敗不影響已完成的批次結果
     """
     try:
         body    = request.get_json(force=True) or {}
@@ -774,26 +777,42 @@ def hot_summary():
         if not tickers:
             return jsonify({'status': 'error', 'message': '請提供 tickers 清單'}), 400
 
-        # ★ 修正：Render Starter 30s 硬限，批次縮至 8 支確保安全
-        MAX_BATCH = 8
+        MAX_BATCH  = 8
+        CHUNK_SIZE = 4   # 每批 4 支，分兩批執行
         tickers = tickers[:MAX_BATCH]
 
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
         result  = {}
 
-        # ★ 修正：workers 提升至 4、總 timeout 縮至 20s（留 10s 給 Render 緩衝）
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {pool.submit(_fetch_one_hot, tk, fetcher): tk for tk in tickers}
-            for fut in as_completed(futures, timeout=20):
+        # 分批執行：避免單一大批全部超時
+        chunks = [tickers[i:i+CHUNK_SIZE] for i in range(0, len(tickers), CHUNK_SIZE)]
+        for chunk in chunks:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {pool.submit(_fetch_one_hot, tk, fetcher): tk for tk in chunk}
                 try:
-                    tk, summary = fut.result(timeout=8)
-                    result[tk] = summary
+                    for fut in as_completed(futures, timeout=12):
+                        try:
+                            tk, summary = fut.result(timeout=10)
+                            result[tk] = summary
+                        except Exception as e:
+                            tk = futures[fut]
+                            print(f"  [hot_summary] {tk} future 例外: {e}")
+                            result[tk] = None
                 except Exception as e:
-                    tk = futures[fut]
-                    print(f"  [hot_summary] {tk} future 例外: {e}")
-                    result[tk] = None
+                    # 本批次超時：取已完成結果，其餘補 None
+                    print(f"  [hot_summary] 批次超時 ({chunk}): {e}")
+                    for fut, tk in futures.items():
+                        if tk not in result:
+                            if fut.done():
+                                try:
+                                    _, summary = fut.result()
+                                    result[tk] = summary
+                                except Exception:
+                                    result[tk] = None
+                            else:
+                                result[tk] = None
 
-        # 補齊 timeout 未完成的 ticker
+        # 補齊任何未處理的 ticker
         for tk in tickers:
             if tk not in result:
                 result[tk] = None
@@ -1042,20 +1061,47 @@ def _get_twii_analysis():
     """
     取得台灣加權指數（^TWII）分析資料
     以 ticker='0000' 作為識別，對外格式與一般股票相同
+
+    修正（v2）：
+    - 延長 yfinance timeout（15 → 30s）
+    - 加入最多 3 次重試 + 指數退避，解決 rate-limit 500 錯誤
+    - 快取延長至 600 秒（10 分鐘），降低頻繁重打壓力
     """
     import time
     import yfinance as yf
 
     TICKER_KEY = '0000'
+    # 快取延長至 10 分鐘，減少對 yfinance 的頻繁請求
     cache_entry = analysis_cache.get(TICKER_KEY)
-    if cache_entry and (time.time() - cache_entry.get('ts', 0)) < 300:
+    if cache_entry and (time.time() - cache_entry.get('ts', 0)) < 600:
         return jsonify({'status': 'success', 'data': cache_entry['data']})
 
     try:
-        tk = yf.Ticker('^TWII')
-        hist = tk.history(period='5y', timeout=15)
+        # 重試機制（最多 3 次，指數退避）
+        hist = None
+        last_err = None
+        for _attempt in range(1, 4):
+            try:
+                tk = yf.Ticker('^TWII')
+                hist = tk.history(period='5y', timeout=30)
+                if hist is not None and not hist.empty:
+                    break
+                print(f"  [TWII] 第{_attempt}次資料為空，{'重試...' if _attempt < 3 else '放棄'}")
+            except Exception as _e:
+                last_err = _e
+                print(f"  [TWII] 第{_attempt}次失敗: {_e}，{'重試...' if _attempt < 3 else '放棄'}")
+            if _attempt < 3:
+                time.sleep(1.5 * _attempt)
+
         if hist is None or hist.empty:
-            return jsonify({'status': 'error', 'message': '無法取得台灣加權指數資料'}), 404
+            err_msg = str(last_err) if last_err else '無法取得台灣加權指數資料'
+            # 若有舊快取（不限時間），降級回傳舊資料
+            stale = analysis_cache.get(TICKER_KEY)
+            if stale and stale.get('data'):
+                print("  [TWII] yfinance 失敗，回傳舊快取資料")
+                return jsonify({'status': 'success', 'data': stale['data'],
+                                'from_stale_cache': True})
+            return jsonify({'status': 'error', 'message': err_msg}), 404
 
         hist = hist.sort_index()
         ohlcv = []

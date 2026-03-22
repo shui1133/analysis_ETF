@@ -356,7 +356,13 @@ def gh_fetch_fundamental(ticker: str) -> Optional[Dict]:
 # ══════════════════════════════════════════════════════════════
 
 class GitHubCache:
-    """Warmup 用的舊介面包裝。"""
+    """
+    Warmup / 舊版相容介面包裝。
+
+    修正紀錄：
+    - 補齊 save_price / save_dividend / save_fundamental
+      （app.py 部分路徑仍呼叫這些方法，避免 AttributeError）
+    """
 
     def __init__(self) -> None:
         self.enabled = bool(os.environ.get("GH_CACHE_TOKEN", ""))
@@ -369,6 +375,7 @@ class GitHubCache:
             return False
         return _gh_raw_get(f"data/{ticker}/{ext}") is not None
 
+    # ── 讀取 ────────────────────────────────────────────────────
     def load_price(self, ticker: str) -> Optional[List[Dict]]:
         return gh_fetch_price(ticker)
 
@@ -377,6 +384,19 @@ class GitHubCache:
 
     def load_fundamental(self, ticker: str) -> Optional[Dict]:
         return gh_fetch_fundamental(ticker)
+
+    # ── 寫入（補齊缺失方法，修正 AttributeError）────────────────
+    def save_price(self, ticker: str, rows: List[Dict]) -> bool:
+        """相容舊呼叫：gh_cache.save_price(ticker, rows)"""
+        return gh_save_price(ticker, rows)
+
+    def save_dividend(self, ticker: str, rows: List[Dict]) -> bool:
+        """相容舊呼叫：gh_cache.save_dividend(ticker, rows)"""
+        return gh_save_dividend(ticker, rows)
+
+    def save_fundamental(self, ticker: str, info: Dict) -> bool:
+        """相容舊呼叫：gh_cache.save_fundamental(ticker, info)"""
+        return gh_save_fundamental(ticker, info)
 
 
 # ══════════════════════════════════════════════════════════════
