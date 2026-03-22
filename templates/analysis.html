@@ -1432,9 +1432,9 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             <div class="text-xs text-slate-500 mt-1">%</div>
           </div>
         </div>
-        <div class="text-xs text-slate-400 mt-3 space-y-1">
-          <div><span class="text-green-400 font-bold">正乖離（+）</span>：股價高於均線，偏多；乖離過大（>6%）表示超買，需注意回落風險。</div>
-          <div><span class="text-red-400 font-bold">負乖離（−）</span>：股價低於均線，偏空；乖離過大（<-6%）表示超賣，可能出現技術性反彈。</div>
+        <div class="text-xs text-slate-400 mt-3 space-y-1 border-t border-slate-700 pt-3">
+          <div><span class="text-green-400 font-bold">▲ 正乖離（+）：</span>股價高於均線，偏多。乖離 <span class="text-orange-400 font-bold">&gt;6%</span> 表示超買（⑥賣 超買回吐），MA 折線圖上以<span class="text-red-400">▼紅三角</span>標示賣出參考點。</div>
+          <div><span class="text-red-400 font-bold">▼ 負乖離（−）：</span>股價低於均線，偏空。乖離 <span class="text-green-400 font-bold">&lt;-6%</span> 表示超賣（③買 超賣反彈），MA 折線圖上以<span class="text-green-400">▲綠三角</span>標示買入參考點。</div>
         </div>
       </div>
 
@@ -1442,10 +1442,15 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
           <i class="fa-solid fa-arrows-cross text-yellow-400"></i>均線交叉分析
-          <span class="text-slate-400 text-sm font-normal">— 黃金交叉 / 死亡交叉</span>
+          <span class="text-slate-400 text-sm font-normal">— 黃金交叉 / 死亡交叉 / 預估到達天數</span>
         </h3>
-        <div id="maCrossSection" class="space-y-3">
-          <div class="text-slate-400 text-sm" id="maCrossEmpty">載入中...</div>
+        <div class="flex flex-wrap gap-3 text-xs text-slate-400 mb-3">
+          <span><span style="display:inline-block;width:10px;height:10px;background:#fbbf24;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#fbbf24">⭐ 黃金交叉</span>：MA5 上穿 MA20，短線買入訊號</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#f43f5e;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#f43f5e">✕ 死亡交叉</span>：MA5 下穿 MA20，短線賣出訊號</span>
+          <span class="text-slate-500">⚠ 標示表示預計 ≤10 個交易日即將到達</span>
+        </div>
+        <div id="maCrossSection" class="space-y-2">
+          <div class="text-slate-400 text-sm">載入中...</div>
         </div>
       </div>
 
@@ -3781,23 +3786,6 @@ function drawCandleChartPeriod(data, period) {
   const ma3    = sl(ch.ma3);
   const cfg    = PERIOD_CFG[period];
 
-  // ── 葛蘭碧訊號（對 MA2/MA20 計算）──────────────────────────
-  const granSigs = (period === 'D' || period === 'W') ? calcGranvilleOnSeries(closes, ma2) : [];
-  // 只保留最近10個訊號（避免圖表過於擁擠）
-  const recentGran = granSigs.slice(-10);
-
-  // ── MA交叉訊號（MA1/MA2）────────────────────────────────────
-  const crossSigs = calcMACrossSignals(closes, ma1, ma2);
-  const recentCross = crossSigs.slice(-6);
-
-  // ── 死亡/黃金交叉預測（從後端資料）──────────────────────────
-  const maAna  = (data.technical && data.technical.ma_analysis) || {};
-  const cross520  = maAna.cross_5_20  || {};
-  const cross2060 = maAna.cross_20_60 || {};
-
-  // 根數越多 → K棒越細；加粗 2~2.5 倍（原值 × 2.2），影線固定極細避免重疊
-  const barPct  = n <= 30 ? Math.min(0.92, 0.75 * 2.2) : n <= 60 ? Math.min(0.92, 0.65 * 2.2) : n <= 120 ? Math.min(0.88, 0.55 * 2.2) : Math.min(0.82, 0.45 * 2.2);
-  const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;
 
   // 台股：紅漲綠跌
   const upClr   = 'rgba(239,68,68,0.92)';
@@ -3806,196 +3794,6 @@ function drawCandleChartPeriod(data, period) {
   const wickColors = dates.map((_, i) => closes[i] >= opens[i]
     ? 'rgba(239,68,68,0.6)' : 'rgba(22,163,74,0.6)');
 
-  // ── 葛蘭碧散點 dataset（買/賣各一組）──────────────────────
-  const granBuyData  = new Array(n).fill(null);
-  const granSellData = new Array(n).fill(null);
-  const granBuyMeta  = new Array(n).fill(null);  // 儲存規則號碼
-  const granSellMeta = new Array(n).fill(null);
-  recentGran.forEach(sig => {
-    const info = GRANVILLE_LABELS[sig.rule];
-    if (!info) return;
-    if (info.type === 'buy') {
-      granBuyData[sig.idx]  = lows[sig.idx]  != null ? lows[sig.idx]  * 0.993 : closes[sig.idx] * 0.993;
-      granBuyMeta[sig.idx]  = sig.rule;
-    } else {
-      granSellData[sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.007 : closes[sig.idx] * 1.007;
-      granSellMeta[sig.idx] = sig.rule;
-    }
-  });
-
-  // ── MA交叉散點 dataset ─────────────────────────────────────
-  const crossGoldenData = new Array(n).fill(null);
-  const crossDeathData  = new Array(n).fill(null);
-  recentCross.forEach(sig => {
-    const midPrice = ((ma1[sig.idx] || closes[sig.idx]) + (ma2[sig.idx] || closes[sig.idx])) / 2;
-    if (sig.type === 'golden') crossGoldenData[sig.idx] = midPrice;
-    else                       crossDeathData[sig.idx]  = midPrice;
-  });
-
-  // ── 死亡/黃金交叉預測線（在最後一根K棒之後標記）──────────
-  // 使用 afterDraw plugin 手繪垂直虛線與標籤
-  // ★ 修正：標籤加入交易日 + 自然日，≤10天加 ⚠ 警示
-  const crossPredictions = [];
-  if (cross520.cross_type !== 'none' && cross520.est_days) {
-    const d5 = cross520.est_days, c5 = cross520.est_calendar_days||'?';
-    const isDeath5 = cross520.cross_type === 'death';
-    const warn5    = d5 <= 10 ? '⚠ ' : '';
-    crossPredictions.push({
-      days:  d5,
-      type:  cross520.cross_type,
-      label: `${warn5}MA5/20 ${isDeath5?'DC':'GC'}（${d5}交易日 / ${c5}自然日後）`,
-      color: isDeath5 ? '#ef4444' : '#10b981',
-    });
-  }
-  if (cross2060.cross_type !== 'none' && cross2060.est_days) {
-    const d20 = cross2060.est_days, c20 = cross2060.est_calendar_days||'?';
-    const isDeath20 = cross2060.cross_type === 'death';
-    const warn20    = d20 <= 10 ? '⚠ ' : '';
-    crossPredictions.push({
-      days:  d20,
-      type:  cross2060.cross_type,
-      label: `${warn20}MA20/60 ${isDeath20?'DC':'GC'}（${d20}交易日 / ${c20}自然日後）`,
-      color: isDeath20 ? '#f97316' : '#34d399',
-    });
-  }
-
-  const granvilleOverlayPlugin = {
-    id: 'granvilleOverlay',
-    afterDraw(chart) {
-      const { ctx: c, chartArea, scales } = chart;
-      if (!chartArea) return;
-      c.save();
-
-      // 取得 category 軸 x 像素的輔助函數
-      const getX = idx => {
-        try { return scales.x.getPixelForValue(idx); }
-        catch(e) { return null; }
-      };
-
-      // ① 葛蘭碧訊號文字標籤（在散點上方/下方繪製說明標籤）
-      recentGran.forEach(sig => {
-        const info = GRANVILLE_LABELS[sig.rule];
-        if (!info || sig.idx >= n) return;
-        const xPx = getX(sig.idx);
-        if (xPx == null) return;
-        const isBuy = info.type === 'buy';
-        const yPrice = isBuy
-          ? (lows[sig.idx]  != null ? lows[sig.idx]  * 0.993 : closes[sig.idx] * 0.993)
-          : (highs[sig.idx] != null ? highs[sig.idx] * 1.007 : closes[sig.idx] * 1.007);
-        const yPx = scales.y.getPixelForValue(yPrice);
-        const labelY = isBuy ? yPx + 18 : yPx - 18;
-
-        // 背景圓角矩形
-        const text = info.short;
-        c.font = 'bold 10px "Noto Sans TC",sans-serif';
-        const tw = c.measureText(text).width;
-        const pad = 4, rh = 14, rw = tw + pad * 2;
-        const rx = xPx - rw / 2, ry = labelY - rh / 2;
-        c.fillStyle = info.bg;
-        c.strokeStyle = info.color;
-        c.lineWidth = 1.2;
-        c.beginPath();
-        if (c.roundRect) c.roundRect(rx, ry, rw, rh, 3);
-        else { c.rect(rx, ry, rw, rh); }
-        c.fill(); c.stroke();
-        // 文字
-        c.fillStyle = info.color;
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText(text, xPx, labelY);
-      });
-
-      // ② MA交叉文字標籤（在旗幟旁邊）
-      recentCross.forEach(sig => {
-        if (sig.idx >= n) return;
-        const xPx = getX(sig.idx);
-        if (xPx == null) return;
-        const isGolden = sig.type === 'golden';
-        const midPrice = ((ma1[sig.idx] || closes[sig.idx]) + (ma2[sig.idx] || closes[sig.idx])) / 2;
-        const yPx = scales.y.getPixelForValue(midPrice);
-        const clr = isGolden ? '#fbbf24' : '#f43f5e';
-        const lbl = isGolden ? 'GC' : 'DC';
-        c.font = 'bold 9px "Noto Sans TC",sans-serif';
-        c.fillStyle = clr;
-        c.textAlign = 'center';
-        c.textBaseline = isGolden ? 'bottom' : 'top';
-        c.fillText(lbl, xPx, isGolden ? yPx - 20 : yPx + 20);
-      });
-
-      // ③ 死亡/黃金交叉預測虛線（在最後一根K棒右側延伸）
-      if (crossPredictions.length > 0 && period === 'D') {
-        const lastIdx = n - 1;
-        const xLast = getX(lastIdx);
-        if (xLast == null) { c.restore(); return; }
-        const barW   = n > 1 ? Math.abs(getX(1) - getX(0)) : 8;
-        const pixPerDay = Math.max(barW, 4);
-
-        // 現在位置垂直虛線
-        c.setLineDash([4, 4]);
-        c.strokeStyle = '#64748b';
-        c.lineWidth = 1;
-        c.globalAlpha = 0.5;
-        c.beginPath();
-        c.moveTo(xLast, chartArea.top);
-        c.lineTo(xLast, chartArea.bottom);
-        c.stroke();
-        c.setLineDash([]);
-        c.globalAlpha = 1;
-
-        crossPredictions.forEach((pred, pi) => {
-          const xPred = xLast + pred.days * pixPerDay;
-          const clampedX = Math.min(xPred, chartArea.right - 2);
-          const tagY = chartArea.top + pi * 26 + 12;
-
-          // 預測水平箭頭線
-          c.setLineDash([5, 3]);
-          c.strokeStyle = pred.color;
-          c.lineWidth = 1.8;
-          c.globalAlpha = 0.8;
-          c.beginPath();
-          c.moveTo(xLast, tagY);
-          c.lineTo(clampedX, tagY);
-          c.stroke();
-          c.setLineDash([]);
-          c.globalAlpha = 1;
-
-          // 預測垂直線（在預測位置）
-          if (xPred <= chartArea.right) {
-            c.setLineDash([3, 4]);
-            c.strokeStyle = pred.color;
-            c.lineWidth = 1.5;
-            c.globalAlpha = 0.6;
-            c.beginPath();
-            c.moveTo(xPred, chartArea.top);
-            c.lineTo(xPred, chartArea.bottom);
-            c.stroke();
-            c.setLineDash([]);
-            c.globalAlpha = 1;
-          }
-
-          // 標籤框
-          c.font = 'bold 9.5px "Noto Sans TC",sans-serif';
-          const tw2 = c.measureText(pred.label).width + 10;
-          const lx = xLast + 4;
-          c.fillStyle = pred.color + '22';
-          c.strokeStyle = pred.color;
-          c.lineWidth = 1;
-          c.beginPath();
-          if (c.roundRect) c.roundRect(lx, tagY - 9, tw2, 17, 3);
-          else c.rect(lx, tagY - 9, tw2, 17);
-          c.fill(); c.stroke();
-          c.fillStyle = pred.color;
-          c.textAlign = 'left';
-          c.textBaseline = 'middle';
-          c.fillText(pred.label, lx + 5, tagY);
-        });
-        c.setLineDash([]);
-        c.globalAlpha = 1;
-      }
-
-      c.restore();
-    }
-  };
 
   charts.candle = new Chart(ctx, {
     type: 'bar',
@@ -4038,85 +3836,9 @@ function drawCandleChartPeriod(data, period) {
         { type:'line', label:`MA${cfg.ma[2]}`, data:ma3,
           borderColor:'#a78bfa', borderWidth:2.5, pointRadius:0,
           fill:false, tension:.3, spanGaps:false, order:1 },
-        // ④ 葛蘭碧買入訊號散點（三角向上）— 與K棒同索引對齊
-        {
-          type: 'line',
-          label: '葛蘭碧買入',
-          data: granBuyData,
-          backgroundColor: 'rgba(16,185,129,0.85)',
-          borderColor: 'rgba(16,185,129,0)',
-          borderWidth: 0,
-          pointRadius: granBuyData.map(v => v != null ? 8 : 0),
-          pointHoverRadius: granBuyData.map(v => v != null ? 10 : 0),
-          pointStyle: 'triangle',
-          pointRotation: 0,
-          pointBackgroundColor: 'rgba(16,185,129,0.9)',
-          pointBorderColor: '#10b981',
-          pointBorderWidth: 1.5,
-          fill: false,
-          spanGaps: false,
-          showLine: false,
-          order: 0,
-        },
-        // ⑤ 葛蘭碧賣出訊號散點（三角向下）
-        {
-          type: 'line',
-          label: '葛蘭碧賣出',
-          data: granSellData,
-          backgroundColor: 'rgba(239,68,68,0.85)',
-          borderColor: 'rgba(239,68,68,0)',
-          borderWidth: 0,
-          pointRadius: granSellData.map(v => v != null ? 8 : 0),
-          pointHoverRadius: granSellData.map(v => v != null ? 10 : 0),
-          pointStyle: 'triangle',
-          pointRotation: 180,
-          pointBackgroundColor: 'rgba(239,68,68,0.9)',
-          pointBorderColor: '#ef4444',
-          pointBorderWidth: 1.5,
-          fill: false,
-          spanGaps: false,
-          showLine: false,
-          order: 0,
-        },
-        // ⑥ MA黃金交叉標記（☆星形）
-        {
-          type: 'line',
-          label: '黃金交叉',
-          data: crossGoldenData,
-          borderColor: 'rgba(251,191,36,0)',
-          borderWidth: 0,
-          pointRadius: crossGoldenData.map(v => v != null ? 10 : 0),
-          pointHoverRadius: crossGoldenData.map(v => v != null ? 12 : 0),
-          pointStyle: 'star',
-          pointBackgroundColor: 'rgba(251,191,36,0.95)',
-          pointBorderColor: '#f59e0b',
-          pointBorderWidth: 2,
-          fill: false,
-          spanGaps: false,
-          showLine: false,
-          order: 0,
-        },
-        // ⑦ MA死亡交叉標記（✕）
-        {
-          type: 'line',
-          label: '死亡交叉',
-          data: crossDeathData,
-          borderColor: 'rgba(244,63,94,0)',
-          borderWidth: 0,
-          pointRadius: crossDeathData.map(v => v != null ? 10 : 0),
-          pointHoverRadius: crossDeathData.map(v => v != null ? 12 : 0),
-          pointStyle: 'crossRot',
-          pointBackgroundColor: 'rgba(244,63,94,0.95)',
-          pointBorderColor: '#f43f5e',
-          pointBorderWidth: 2.5,
-          fill: false,
-          spanGaps: false,
-          showLine: false,
-          order: 0,
-        },
       ]
     },
-    plugins: [granvilleOverlayPlugin],
+    plugins: [],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -4136,23 +3858,6 @@ function drawCandleChartPeriod(data, period) {
             label: ctx => {
               const i = ctx.dataIndex;
               const dsLabel = ctx.dataset.label || '';
-              if (dsLabel === '葛蘭碧買入' || dsLabel === '葛蘭碧賣出') {
-                if (ctx.parsed?.y == null) return null;
-                const sig = recentGran.find(s => s.idx === i);
-                if (sig) {
-                  const info = GRANVILLE_LABELS[sig.rule];
-                  return [`${info.full}`, `${info.type === 'buy' ? '📈 買入訊號' : '📉 賣出訊號'}`];
-                }
-                return null;
-              }
-              if (dsLabel === '黃金交叉') {
-                if (ctx.parsed?.y == null) return null;
-                return ['⭐ 黃金交叉（短均>長均）', '短期均線向上穿越，買入訊號'];
-              }
-              if (dsLabel === '死亡交叉') {
-                if (ctx.parsed?.y == null) return null;
-                return ['✕ 死亡交叉（短均<長均）', '短期均線向下穿越，賣出訊號'];
-              }
               if (ctx.datasetIndex === 0) {
                 const dir = closes[i] >= opens[i] ? '▲ 上漲' : '▼ 下跌';
                 return [`開: ${opens[i]}`, `高: ${highs[i]}`, `低: ${lows[i]}`, `收: ${closes[i]}`, dir];
@@ -7420,23 +7125,7 @@ function renderMAAnalysisTab(data) {
   const maAna   = (data.technical && data.technical.ma_analysis) || {};
   const cross520  = maAna.cross_5_20  || {};
   const cross2060 = maAna.cross_20_60 || {};
-  const crossSect = document.getElementById('maCrossSection');
-  if (crossSect) {
-    const mkCross = (obj, shortLabel, longLabel) => {
-      if (!obj || !obj.type) return '';
-      const isBuy = obj.type === 'golden';
-      const col   = isBuy ? '#fbbf24' : '#f43f5e';
-      const icon  = isBuy ? '★ 黃金交叉' : '✕ 死亡交叉';
-      const days  = obj.days_to_cross != null ? `（預計 ${obj.days_to_cross} 天後）` : '';
-      return `<div class="rounded-xl p-4 border" style="background:${isBuy?'rgba(251,191,36,.08)':'rgba(244,63,94,.08)'};border-color:${col}60">
-        <div class="font-black text-sm mb-1" style="color:${col}">${icon} ${shortLabel}/${longLabel} ${days}</div>
-        <div class="text-slate-300 text-sm">${obj.desc || ''}</div>
-        ${obj.price_at_cross != null ? `<div class="text-xs text-slate-400 mt-1">預測交叉價格：<span class="mono font-bold">${obj.price_at_cross.toFixed(2)}</span></div>` : ''}
-      </div>`;
-    };
-    const html = mkCross(cross520,'MA5','MA20') + mkCross(cross2060,'MA20','MA60');
-    crossSect.innerHTML = html || '<div class="text-slate-400 text-sm">目前無交叉訊號預測。</div>';
-  }
+
 
   // ── 均線強化分析卡片 ──
   const cards2 = document.getElementById('maEnhancedCards2');
@@ -7457,7 +7146,7 @@ function renderMAAnalysisTab(data) {
     summary2.classList.remove('hidden');
   }
 
-  // ── MA 折線圖（近120日）──
+  // ── MA 折線圖（近120日）含黃金/死亡交叉標記 ──
   const maLen = Math.min(120, closes.length);
   const maOff = closes.length - maLen;
   const maDts = dates.slice(-maLen);
@@ -7466,6 +7155,30 @@ function renderMAAnalysisTab(data) {
     const arr = chart[key] || [];
     return arr.length >= maOff + maLen ? arr.slice(maOff, maOff + maLen) : arr.slice(-maLen);
   };
+  const ma5arr  = getMA('ma5');
+  const ma20arr = getMA('ma20');
+
+  // ── 計算黃金/死亡交叉點 ──
+  const maGoldenPts = new Array(maCls.length).fill(null);
+  const maDeathPts  = new Array(maCls.length).fill(null);
+  for (let i = 1; i < maCls.length; i++) {
+    if (!ma5arr[i] || !ma20arr[i] || !ma5arr[i-1] || !ma20arr[i-1]) continue;
+    if (ma5arr[i-1] <= ma20arr[i-1] && ma5arr[i] > ma20arr[i])
+      maGoldenPts[i] = (ma5arr[i] + ma20arr[i]) / 2;
+    else if (ma5arr[i-1] >= ma20arr[i-1] && ma5arr[i] < ma20arr[i])
+      maDeathPts[i]  = (ma5arr[i] + ma20arr[i]) / 2;
+  }
+
+  // ── 正乖離過大（>6%）標記買賣參考點 ──
+  const biasHighPts = new Array(maCls.length).fill(null);  // 正乖離 >6% 超買
+  const biasLowPts  = new Array(maCls.length).fill(null);  // 負乖離 <-6% 超賣
+  for (let i = 0; i < maCls.length; i++) {
+    if (!ma20arr[i] || !maCls[i]) continue;
+    const bias = (maCls[i] - ma20arr[i]) / ma20arr[i] * 100;
+    if (bias >  6) biasHighPts[i] = maCls[i];
+    if (bias < -6) biasLowPts[i]  = maCls[i];
+  }
+
   if (hotChartMA2) { hotChartMA2.destroy(); hotChartMA2 = null; }
   const maCtx2 = document.getElementById('maChart2');
   if (maCtx2 && maCls.length > 0) {
@@ -7474,21 +7187,65 @@ function renderMAAnalysisTab(data) {
       data: {
         labels: maDts.map(d => d ? d.slice(5) : ''),
         datasets: [
-          { label:'收盤',  data: maCls,           borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA5',   data: getMA('ma5'),     borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA10',  data: getMA('ma10'),    borderColor:'#8b5cf6', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA20',  data: getMA('ma20'),    borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA60',  data: getMA('ma60'),    borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
-          { label:'MA120', data: getMA('ma120'),   borderColor:'#f97316', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
-          { label:'MA200', data: getMA('ma200'),   borderColor:'#ec4899', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[6,4] },
+          { label:'收盤',    data: maCls,           borderColor:'#e2e8f0', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA5',     data: ma5arr,           borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA10',    data: getMA('ma10'),    borderColor:'#8b5cf6', borderWidth:2.5, pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA20',    data: ma20arr,          borderColor:'#3b82f6', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA60',    data: getMA('ma60'),    borderColor:'#ef4444', borderWidth:2,   pointRadius:0, fill:false, tension:0.1 },
+          { label:'MA120',   data: getMA('ma120'),   borderColor:'#f97316', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[4,3] },
+          { label:'MA200',   data: getMA('ma200'),   borderColor:'#ec4899', borderWidth:2,   pointRadius:0, fill:false, tension:0.1, borderDash:[6,4] },
+          // ★ 黃金交叉
+          {
+            label:'黃金交叉', data: maGoldenPts, type:'line',
+            borderColor:'rgba(251,191,36,0)', borderWidth:0, fill:false, showLine:false, spanGaps:false,
+            pointRadius:    maGoldenPts.map(v => v!=null ? 11 : 0),
+            pointStyle:     'star',
+            pointBackgroundColor: '#fbbf24', pointBorderColor: '#fbbf24',
+          },
+          // ✕ 死亡交叉
+          {
+            label:'死亡交叉', data: maDeathPts, type:'line',
+            borderColor:'rgba(244,63,94,0)', borderWidth:0, fill:false, showLine:false, spanGaps:false,
+            pointRadius:    maDeathPts.map(v => v!=null ? 11 : 0),
+            pointStyle:     'crossRot',
+            pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth:2.5,
+          },
+          // ● 超買（正乖離>6%，賣出參考）
+          {
+            label:'超買賣出參考', data: biasHighPts, type:'line',
+            borderColor:'rgba(239,68,68,0)', borderWidth:0, fill:false, showLine:false, spanGaps:false,
+            pointRadius:    biasHighPts.map(v => v!=null ? 7 : 0),
+            pointStyle:     'triangle', pointRotation: 180,
+            pointBackgroundColor: 'rgba(239,68,68,0.85)', pointBorderColor: '#ef4444', pointBorderWidth:1,
+          },
+          // ▲ 超賣（負乖離<-6%，買入參考）
+          {
+            label:'超賣買入參考', data: biasLowPts, type:'line',
+            borderColor:'rgba(16,185,129,0)', borderWidth:0, fill:false, showLine:false, spanGaps:false,
+            pointRadius:    biasLowPts.map(v => v!=null ? 7 : 0),
+            pointStyle:     'triangle', pointRotation: 0,
+            pointBackgroundColor: 'rgba(16,185,129,0.85)', pointBorderColor: '#10b981', pointBorderWidth:1,
+          },
         ]
       },
       options: {
         responsive:true, maintainAspectRatio:false,
         plugins: {
-          legend: { labels: { color:'#94a3b8', font:{size:11}, boxWidth:16 } },
-          tooltip: { mode:'index', intersect:false,
-            callbacks:{ label: ctx => ctx.dataset.label + ': ' + (ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '--') } }
+          legend: { labels: { color:'#94a3b8', font:{size:11}, boxWidth:14 } },
+          tooltip: {
+            mode:'index', intersect:false,
+            callbacks:{
+              label: ctx => {
+                const dsLabel = ctx.dataset.label;
+                if (ctx.parsed?.y == null) return null;
+                if (dsLabel === '黃金交叉') return ['⭐ 黃金交叉','MA5上穿MA20，買入訊號'];
+                if (dsLabel === '死亡交叉') return ['✕ 死亡交叉','MA5下穿MA20，賣出訊號'];
+                if (dsLabel === '超買賣出參考') return [`⚠ 正乖離>${((ctx.parsed.y-ma20arr[ctx.dataIndex])/ma20arr[ctx.dataIndex]*100).toFixed(1)}%，逢高注意`];
+                if (dsLabel === '超賣買入參考') return [`✅ 負乖離${((ctx.parsed.y-ma20arr[ctx.dataIndex])/ma20arr[ctx.dataIndex]*100).toFixed(1)}%，技術性反彈參考`];
+                return `${dsLabel}: ${ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '--'}`;
+              }
+            }
+          }
         },
         scales: {
           x: { ticks:{ color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
@@ -7497,6 +7254,34 @@ function renderMAAnalysisTab(data) {
         interaction:{ mode:'index', intersect:false }
       }
     });
+  }
+
+  // ── 均線交叉預測資訊卡（預估天數）──
+  const crossSect = document.getElementById('maCrossSection');
+  if (crossSect) {
+    const mkCross = (obj, shortLabel, longLabel) => {
+      if (!obj || !obj.type || obj.type === 'none') return '';
+      const isBuy = obj.type === 'golden';
+      const col   = isBuy ? '#fbbf24' : '#f43f5e';
+      const icon  = isBuy ? '⭐ 黃金交叉' : '✕ 死亡交叉';
+      const tradeDays = obj.days_to_cross != null ? obj.days_to_cross : (obj.est_days != null ? obj.est_days : null);
+      const calDays   = obj.est_calendar_days != null ? obj.est_calendar_days : null;
+      const urgency   = tradeDays != null && tradeDays <= 10 ? '⚠ ' : '';
+      const daysText  = tradeDays != null
+        ? `${urgency}預計 <strong style="color:${col}">${tradeDays}</strong> 個交易日（約 ${calDays||'?'} 自然日）後到達`
+        : '';
+      const priceText = obj.price_at_cross != null
+        ? `預測交叉價格：<span class="mono font-bold" style="color:${col}">${obj.price_at_cross.toFixed(2)}</span>`
+        : (obj.est_price != null ? `預測交叉價格：<span class="mono font-bold" style="color:${col}">${obj.est_price.toFixed(2)}</span>` : '');
+      return `<div class="rounded-xl p-4 border mb-2" style="background:${isBuy?'rgba(251,191,36,.08)':'rgba(244,63,94,.08)'};border-color:${col}60">
+        <div class="font-black text-sm mb-2" style="color:${col}">${icon}：${shortLabel} / ${longLabel}</div>
+        ${daysText ? `<div class="text-slate-300 text-sm mb-1">${daysText}</div>` : ''}
+        ${priceText ? `<div class="text-xs text-slate-400">${priceText}</div>` : ''}
+        ${obj.desc ? `<div class="text-slate-400 text-xs mt-1">${obj.desc}</div>` : ''}
+      </div>`;
+    };
+    const html = mkCross(cross520,'MA5','MA20') + mkCross(cross2060,'MA20','MA60');
+    crossSect.innerHTML = html || '<div class="rounded-xl p-4 border border-slate-700 text-slate-400 text-sm">目前無交叉訊號預測。均線走勢平穩，請持續觀察。</div>';
   }
 }
 
@@ -7605,50 +7390,158 @@ function _drawGranCandleChart(data, period) {
   const offset = ch.dates.length - n;
   const sl = arr => arr.slice(offset);
 
-  const closes  = sl(ch.closes);
-  const opens   = sl(ch.opens);
-  const highs   = sl(ch.highs);
-  const lows    = sl(ch.lows);
-  const labels  = sl(ch.labels || ch.dates);
-  const ma2     = sl(ch.ma2);   // MA20
+  const dates  = sl(ch.dates);
+  const labels = sl(ch.labels || ch.dates);
+  const closes = sl(ch.closes);
+  const opens  = sl(ch.opens);
+  const highs  = sl(ch.highs);
+  const lows   = sl(ch.lows);
+  const ma1    = sl(ch.ma1);
+  const ma2    = sl(ch.ma2);   // MA20
 
-  const granSigs   = calcGranvilleOnSeries(closes, ma2);
-  const crossSigs  = calcMACrossSignals(closes, sl(ch.ma1), ma2);
-
+  // ── 葛蘭碧訊號計算 ──────────────────────────────────────
+  const granSigs = calcGranvilleOnSeries(closes, ma2);
   const granBuyData  = new Array(n).fill(null);
   const granSellData = new Array(n).fill(null);
   granSigs.forEach(sig => {
     const gl = GRANVILLE_LABELS[sig.rule];
     if (!gl) return;
-    if (gl.type === 'buy')  granBuyData[sig.idx]  = lows[sig.idx]  != null ? lows[sig.idx]  * 0.993 : closes[sig.idx] * 0.993;
-    else                    granSellData[sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.007 : closes[sig.idx] * 1.007;
+    if (gl.type === 'buy')
+      granBuyData[sig.idx]  = lows[sig.idx]  != null ? lows[sig.idx]  * 0.993 : closes[sig.idx] * 0.993;
+    else
+      granSellData[sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.007 : closes[sig.idx] * 1.007;
   });
 
-  const candleData = closes.map((c,i) => ({ x:labels[i], o:opens[i]||c, h:highs[i]||c, l:lows[i]||c, c }));
+  // ── 黃金/死亡交叉 ────────────────────────────────────────
+  const crossSigs = calcMACrossSignals(closes, ma1, ma2);
+  const crossGoldenData = new Array(n).fill(null);
+  const crossDeathData  = new Array(n).fill(null);
+  crossSigs.forEach(sig => {
+    const midPrice = ((ma1[sig.idx]||closes[sig.idx]) + (ma2[sig.idx]||closes[sig.idx])) / 2;
+    if (sig.type === 'golden') crossGoldenData[sig.idx] = midPrice;
+    else                       crossDeathData[sig.idx]  = midPrice;
+  });
+
+  // ── K 棒顏色（台股紅漲綠跌）─────────────────────────────
+  const upClr   = 'rgba(239,68,68,0.92)';
+  const downClr = 'rgba(22,163,74,0.92)';
+  const bodyColors = dates.map((_, i) => closes[i] >= opens[i] ? upClr : downClr);
+  const wickColors = dates.map((_, i) => closes[i] >= opens[i]
+    ? 'rgba(239,68,68,0.6)' : 'rgba(22,163,74,0.6)');
+
+  const barPct  = n <= 30 ? Math.min(0.92, 0.75*2.2) : n <= 60 ? Math.min(0.92, 0.65*2.2) : n <= 120 ? Math.min(0.88, 0.55*2.2) : Math.min(0.82, 0.45*2.2);
+  const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;
 
   granCandleChart = new Chart(ctx, {
+    type: 'bar',
     data: {
-      labels,
+      labels: labels,
       datasets: [
-        { type:'candlestick', label:'K線', data: candleData,
-          color:{ up:'#10b981', down:'#ef4444', unchanged:'#94a3b8' },
-          borderColor:{ up:'#10b981', down:'#ef4444', unchanged:'#94a3b8' } },
-        { type:'line', label:'MA20', data: ma2, borderColor:'#3b82f6', borderWidth:1.5, pointRadius:0, fill:false, tension:0.1 },
-        { type:'scatter', label:'葛蘭碧買入', data: granBuyData.map((v,i)=>v!=null?{x:labels[i],y:v}:null).filter(Boolean),
-          backgroundColor:'#10b981', borderColor:'#fff', pointStyle:'triangle', rotation:0, pointRadius:9, pointHoverRadius:11 },
-        { type:'scatter', label:'葛蘭碧賣出', data: granSellData.map((v,i)=>v!=null?{x:labels[i],y:v}:null).filter(Boolean),
-          backgroundColor:'#ef4444', borderColor:'#fff', pointStyle:'triangle', rotation:180, pointRadius:9, pointHoverRadius:11 },
+        // ① K 棒實體
+        {
+          label: 'OHLC',
+          data:  dates.map((_, i) => [Math.min(opens[i], closes[i]), Math.max(opens[i], closes[i])]),
+          backgroundColor: bodyColors,
+          borderColor: bodyColors,
+          borderWidth: 0,
+          barPercentage: barPct,
+          categoryPercentage: 0.9,
+          order: 2,
+        },
+        // ② 影線（最高～最低）
+        {
+          label: 'wick',
+          data:  dates.map((_, i) => [lows[i], highs[i]]),
+          backgroundColor: wickColors,
+          borderColor: wickColors,
+          borderWidth: 0,
+          barPercentage: wickPct,
+          categoryPercentage: 0.9,
+          order: 3,
+        },
+        // ③ MA5
+        { type:'line', label:'MA5',  data: ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // ④ MA20
+        { type:'line', label:'MA20', data: ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // ⑤ 葛蘭碧買入訊號（三角向上）
+        {
+          type:'line', label:'葛蘭碧買入', data: granBuyData,
+          backgroundColor:'rgba(16,185,129,0.9)', borderColor:'rgba(16,185,129,0)',
+          borderWidth:0,
+          pointRadius: granBuyData.map(v => v != null ? 9 : 0),
+          pointHoverRadius: granBuyData.map(v => v != null ? 11 : 0),
+          pointStyle:'triangle', pointRotation:0,
+          pointBackgroundColor:'rgba(16,185,129,0.9)', pointBorderColor:'#10b981', pointBorderWidth:1.5,
+          fill:false, spanGaps:false, showLine:false, order:0,
+        },
+        // ⑥ 葛蘭碧賣出訊號（三角向下）
+        {
+          type:'line', label:'葛蘭碧賣出', data: granSellData,
+          backgroundColor:'rgba(239,68,68,0.9)', borderColor:'rgba(239,68,68,0)',
+          borderWidth:0,
+          pointRadius: granSellData.map(v => v != null ? 9 : 0),
+          pointHoverRadius: granSellData.map(v => v != null ? 11 : 0),
+          pointStyle:'triangle', pointRotation:180,
+          pointBackgroundColor:'rgba(239,68,68,0.9)', pointBorderColor:'#ef4444', pointBorderWidth:1.5,
+          fill:false, spanGaps:false, showLine:false, order:0,
+        },
+        // ⑦ 黃金交叉（☆）
+        {
+          type:'line', label:'黃金交叉', data: crossGoldenData,
+          borderColor:'rgba(251,191,36,0)', borderWidth:0,
+          pointRadius: crossGoldenData.map(v => v != null ? 10 : 0),
+          pointStyle:'star', pointBackgroundColor:'#fbbf24', pointBorderColor:'#fbbf24',
+          fill:false, showLine:false, spanGaps:false, order:0,
+        },
+        // ⑧ 死亡交叉（✕）
+        {
+          type:'line', label:'死亡交叉', data: crossDeathData,
+          borderColor:'rgba(244,63,94,0)', borderWidth:0,
+          pointRadius: crossDeathData.map(v => v != null ? 10 : 0),
+          pointStyle:'crossRot', pointBackgroundColor:'#f43f5e', pointBorderColor:'#f43f5e', pointBorderWidth:2.5,
+          fill:false, showLine:false, spanGaps:false, order:0,
+        },
       ]
     },
+    plugins: [],
     options: {
-      responsive:true, maintainAspectRatio:false,
+      responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend:{ display:false },
-        tooltip:{ mode:'index', intersect:false }
+        legend: {
+          labels: {
+            color:'#94a3b8', font:{size:11}, boxWidth:14,
+            filter: item => !['OHLC','wick'].includes(item.text)
+          }
+        },
+        tooltip: {
+          callbacks: {
+            title: ctxArr => ctxArr[0]?.label || '',
+            label: ctx => {
+              const i = ctx.dataIndex;
+              const dsLabel = ctx.dataset.label || '';
+              if (dsLabel === '葛蘭碧買入' || dsLabel === '葛蘭碧賣出') {
+                if (ctx.parsed?.y == null) return null;
+                const sig = granSigs.find(s => s.idx === i);
+                if (sig) {
+                  const info = GRANVILLE_LABELS[sig.rule];
+                  return [`${info.full}`, `${info.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`];
+                }
+                return null;
+              }
+              if (dsLabel === '黃金交叉') { if (ctx.parsed?.y==null) return null; return ['⭐ 黃金交叉','短均上穿長均，買入訊號']; }
+              if (dsLabel === '死亡交叉') { if (ctx.parsed?.y==null) return null; return ['✕ 死亡交叉','短均下穿長均，賣出訊號']; }
+              if (ctx.datasetIndex === 0) {
+                return [`開:${opens[i]?.toFixed(2)||'--'} 高:${highs[i]?.toFixed(2)||'--'} 低:${lows[i]?.toFixed(2)||'--'} 收:${closes[i]?.toFixed(2)||'--'}`];
+              }
+              if (ctx.datasetIndex === 1) return null;
+              return `${dsLabel}: ${ctx.parsed.y?.toFixed(2)||'--'}`;
+            }
+          }
+        }
       },
       scales: {
-        x:{ ticks:{ color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
-        y:{ ticks:{ color:'#64748b', font:{size:9} }, grid:{color:'#1e293b'} }
+        x: { ticks:{ color:'#64748b', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
+        y: { ticks:{ color:'#64748b', font:{size:9} }, grid:{color:'#1e293b'} }
       }
     }
   });
