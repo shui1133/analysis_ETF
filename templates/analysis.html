@@ -3794,6 +3794,9 @@ function drawCandleChartPeriod(data, period) {
   const wickColors = dates.map((_, i) => closes[i] >= opens[i]
     ? 'rgba(239,68,68,0.6)' : 'rgba(22,163,74,0.6)');
 
+  // 根數越多 → K棒越細
+  const barPct  = n <= 30 ? Math.min(0.92, 0.75 * 2.2) : n <= 60 ? Math.min(0.92, 0.65 * 2.2) : n <= 120 ? Math.min(0.88, 0.55 * 2.2) : Math.min(0.82, 0.45 * 2.2);
+  const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;
 
   charts.candle = new Chart(ctx, {
     type: 'bar',
@@ -7231,7 +7234,34 @@ function renderMAAnalysisTab(data) {
       options: {
         responsive:true, maintainAspectRatio:false,
         plugins: {
-          legend: { labels: { color:'#94a3b8', font:{size:11}, boxWidth:14 } },
+          legend: {
+            labels: {
+              color:'#94a3b8', font:{size:11}, boxWidth:14,
+              generateLabels: (chart) => {
+                return chart.data.datasets.map((ds, i) => {
+                  const label = ds.label || '';
+                  // 黃金交叉：金色星星
+                  if (label === '黃金交叉') return { text:'⭐ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:0, datasetIndex:i, hidden:false };
+                  // 死亡交叉：紅色 ✕
+                  if (label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:0, datasetIndex:i, hidden:false };
+                  // 超買賣出參考：紅色倒三角
+                  if (label === '超買賣出參考') return { text:'▼ 超買賣出', fillStyle:'rgba(239,68,68,0.85)', strokeStyle:'#ef4444', lineWidth:0, datasetIndex:i, hidden:false };
+                  // 超賣買入參考：綠色正三角
+                  if (label === '超賣買入參考') return { text:'▲ 超賣買入', fillStyle:'rgba(16,185,129,0.85)', strokeStyle:'#10b981', lineWidth:0, datasetIndex:i, hidden:false };
+                  // 一般均線：色塊
+                  return {
+                    text: label,
+                    fillStyle: ds.borderColor || '#94a3b8',
+                    strokeStyle: ds.borderColor || '#94a3b8',
+                    lineWidth: 2,
+                    lineDash: ds.borderDash || [],
+                    datasetIndex: i,
+                    hidden: false,
+                  };
+                });
+              }
+            }
+          },
           tooltip: {
             mode:'index', intersect:false,
             callbacks:{
