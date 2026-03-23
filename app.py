@@ -662,14 +662,19 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         'reasons_sell': rec.get('reasons_sell', []),
         # ★ 修正：加入近 1260 日完整 chart 陣列，供個股頁成交量圖使用
         # _summaryToDataFormat 的 chart.volumes 目前為空陣列導致圖表空白
-        'chart': {
-            'dates':   [r['date']           for r in ohlcv[-1260:]],
-            'opens':   [r.get('open', r['close']) for r in ohlcv[-1260:]],
-            'highs':   [r.get('high', r['close']) for r in ohlcv[-1260:]],
-            'lows':    [r.get('low',  r['close']) for r in ohlcv[-1260:]],
-            'closes':  [r['close']          for r in ohlcv[-1260:]],
-            'volumes': [_to_lots(r.get('volume', 0)) for r in ohlcv[-1260:]],
-        },
+        'chart': (lambda rows: {
+            'dates':   [r['date']   for r in rows],
+            # ★ open 缺值時用前根 close（保留漲跌色判斷），避免日線 K 棒全部消失
+            'opens':   [rows[i].get('open') if rows[i].get('open')
+                        else (rows[i-1]['close'] if i > 0 else rows[i]['close'])
+                        for i in range(len(rows))],
+            'highs':   [r.get('high', r['close']) for r in rows],
+            'lows':    [r.get('low',  r['close']) for r in rows],
+            'closes':  [r['close']  for r in rows],
+            # ★ volume 閾值改為 100000：快取已是「張」(< 10萬)，yfinance 原始股數才 >= 10萬
+            'volumes': [round(r.get('volume', 0) / 1000) if (r.get('volume') or 0) >= 100000
+                        else int(r.get('volume') or 0) for r in rows],
+        })(ohlcv[-1260:]),
     }
 
 
@@ -728,6 +733,7 @@ def _fetch_one_hot(ticker: str, fetcher) -> tuple:
         if ohlcv_rows and len(ohlcv_rows) >= 20:
             def _norm_ohlcv(rows):
                 result = []
+                prev_close = None
                 for r in rows:
                     date_val  = r.get('date') or r.get('日期') or ''
                     close_val = r.get('close') or r.get('Close') or r.get('收盤價')
@@ -738,20 +744,26 @@ def _fetch_one_hot(ticker: str, fetcher) -> tuple:
                     if not close_val:
                         continue
                     try:
-                        # volume：處理「股→張」單位換算（yfinance 回傳股數，>= 10000 除以 1000）
+                        close_f = float(close_val)
+                        # ★ 修正：open 缺值時優先用前根 close（保留漲跌方向），再 fallback 當根 close
+                        open_f  = float(open_val) if open_val else (prev_close if prev_close else close_f)
+                        high_f  = float(high_val) if high_val else close_f
+                        low_f   = float(low_val)  if low_val  else close_f
+                        # ★ 修正：volume 閾值從 10000 改為 100000（快取已是「張」通常 < 10萬，原始股數才 > 10萬）
                         try:
                             raw_vol = float(vol_val) if vol_val else 0.0
                         except (ValueError, TypeError):
                             raw_vol = 0.0
-                        lot_vol = max(1, round(raw_vol / 1000)) if raw_vol >= 10000 else int(raw_vol)
+                        lot_vol = round(raw_vol / 1000) if raw_vol >= 100000 else int(raw_vol)
                         result.append({
                                 'date':   str(date_val)[:10],
-                                'open':   float(open_val)  if open_val  else float(close_val),
-                                'high':   float(high_val)  if high_val  else float(close_val),
-                                'low':    float(low_val)   if low_val   else float(close_val),
-                                'close':  float(close_val),
+                                'open':   open_f,
+                                'high':   max(high_f, open_f, close_f),
+                                'low':    min(low_f,  open_f, close_f),
+                                'close':  close_f,
                                 'volume': lot_vol,
                             })
+                        prev_close = close_f
                     except (ValueError, TypeError):
                         continue
                 return result
@@ -936,6 +948,7 @@ def get_stock_analysis(ticker):
         if ohlcv_rows and len(ohlcv_rows) >= 20:
             def _norm_cache_ohlcv(rows):
                 result = []
+                prev_close = None
                 for r in rows:
                     date_val  = r.get('date') or r.get('日期') or ''
                     close_val = r.get('close') or r.get('Close') or r.get('收盤價')
@@ -946,19 +959,26 @@ def get_stock_analysis(ticker):
                     if not close_val:
                         continue
                     try:
+                        close_f = float(close_val)
+                        # ★ 修正：open 缺值時優先用前根 close（保留漲跌方向），再 fallback 當根 close
+                        open_f  = float(open_val) if open_val else (prev_close if prev_close else close_f)
+                        high_f  = float(high_val) if high_val else close_f
+                        low_f   = float(low_val)  if low_val  else close_f
+                        # ★ 修正：volume 閾值從 10000 改為 100000（快取已是「張」通常 < 10萬，原始股數才 > 10萬）
                         try:
                             raw_vol = float(vol_val) if vol_val else 0.0
                         except (ValueError, TypeError):
                             raw_vol = 0.0
-                        lot_vol = max(1, round(raw_vol / 1000)) if raw_vol >= 10000 else int(raw_vol)
+                        lot_vol = round(raw_vol / 1000) if raw_vol >= 100000 else int(raw_vol)
                         result.append({
                             'date':   str(date_val)[:10],
-                            'open':   float(open_val)  if open_val  else float(close_val),
-                            'high':   float(high_val)  if high_val  else float(close_val),
-                            'low':    float(low_val)   if low_val   else float(close_val),
-                            'close':  float(close_val),
+                            'open':   open_f,
+                            'high':   max(high_f, open_f, close_f),
+                            'low':    min(low_f,  open_f, close_f),
+                            'close':  close_f,
                             'volume': lot_vol,
                         })
+                        prev_close = close_f
                     except (ValueError, TypeError):
                         continue
                 return result
@@ -1171,7 +1191,8 @@ def get_stock_analysis(ticker):
                 return 0
             if _src_is_cached:
                 return int(v)   # 快取已換算為張，直接回傳
-            return max(1, round(v / 1000)) if v else 0
+            # ★ 修正：yfinance 原始股數通常 >= 100000，改用此閾值避免誤算
+            return round(float(v) / 1000) if float(v) >= 100000 else int(float(v))
 
         def slice_ind(key):
             lst = indicators.get(key, [])
@@ -1234,11 +1255,14 @@ def get_stock_analysis(ticker):
             # 圖表資料
             'chart': {
                 'dates':        [r['date']   for r in chart_ohlcv],
-                'opens':        [r['open']   for r in chart_ohlcv],
+                # ★ 修正：open 缺值時用前根 close 作為 fallback，確保日線 K 棒正常顯示紅/綠色
+                'opens':        [chart_ohlcv[i].get('open') if chart_ohlcv[i].get('open')
+                                 else (chart_ohlcv[i-1]['close'] if i > 0 else chart_ohlcv[i]['close'])
+                                 for i in range(len(chart_ohlcv))],
                 'highs':        [r['high']   for r in chart_ohlcv],
                 'lows':         [r['low']    for r in chart_ohlcv],
                 'closes':       [r['close']  for r in chart_ohlcv],
-                'volumes':      [to_lots(r['volume']) for r in chart_ohlcv],
+                'volumes':      [to_lots(r.get('volume', 0)) for r in chart_ohlcv],
                 'ma5':          slice_ind('ma5'),
                 'ma10':         slice_ind('ma10'),
                 'ma20':         slice_ind('ma20'),

@@ -400,6 +400,48 @@ class GitHubCache:
 
 
 # ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+# 輔助：修補精簡格式 price rows（date/close 無 open 欄位）
+# ══════════════════════════════════════════════════════════════
+
+def _patch_open_with_prev_close(rows: List[Dict]) -> List[Dict]:
+    """
+    ★ 修正 Bug：精簡快取格式（date, close）缺少 open/high/low/volume 欄位，
+    導致前端 K 棒實體全為 null、日線紅/綠色柱子消失。
+
+    此函數檢查每列是否缺少 open 欄位，若缺值則以前根 close 填補，
+    使漲跌方向（close vs open）可被正確判斷。
+    不修改已有合法 open 值的列。
+    """
+    if not rows:
+        return rows
+    patched = []
+    prev_close = None
+    for r in rows:
+        row = dict(r)  # 避免修改原始 dict
+        # 判斷 open 欄位是否存在且有效
+        open_val = row.get('open') or row.get('Open') or row.get('開盤價')
+        close_val = row.get('close') or row.get('Close') or row.get('收盤價')
+        try:
+            close_f = float(close_val) if close_val else None
+        except (ValueError, TypeError):
+            close_f = None
+
+        if close_f is not None:
+            # 若 open 缺值，用前根 close（或當根 close）填補
+            try:
+                open_f = float(open_val) if open_val else None
+            except (ValueError, TypeError):
+                open_f = None
+
+            if open_f is None:
+                row['open'] = prev_close if prev_close is not None else close_f
+            prev_close = close_f
+
+        patched.append(row)
+    return patched
+
+
 # CacheManager：三層快取主體
 # ══════════════════════════════════════════════════════════════
 
@@ -420,12 +462,16 @@ class CacheManager:
                 with open(path, encoding="utf-8") as f:
                     rows = list(csv.DictReader(f))
                 if rows:
+                    # ★ 修正：若 CSV 為精簡格式（只有 date/close），補上 open=prev_close
+                    #   確保後續 _norm_*_ohlcv 可以正確判斷漲跌方向，日線 K 棒才有顏色
+                    rows = _patch_open_with_prev_close(rows)
                     return rows
             except Exception:
                 pass
 
         rows = gh_fetch_price(ticker)
         if rows and len(rows) >= 20:
+            rows = _patch_open_with_prev_close(rows)
             local_save_price(self.data_dir, ticker, rows)
             return rows
 
