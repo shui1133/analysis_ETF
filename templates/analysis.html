@@ -47,6 +47,13 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
 /* 評級徽章 */
 .rating-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;font-weight:800;font-size:13px;}
+/* 熱門股票評級圖示 - 深底淺字（文字高對比淺色，整體保持深色背景） */
+.hot-rating-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-weight:800;font-size:12px;letter-spacing:.3px;white-space:nowrap;}
+.hot-rating-strong-buy{background:#14532d;color:#86efac;border:1px solid #16a34a60;}
+.hot-rating-buy      {background:#1e3a8a;color:#93c5fd;border:1px solid #2563eb60;}
+.hot-rating-hold     {background:#78350f;color:#fde68a;border:1px solid #d9770660;}
+.hot-rating-reduce   {background:#7c2d12;color:#fdba74;border:1px solid #ea580c60;}
+.hot-rating-sell     {background:#7f1d1d;color:#fca5a5;border:1px solid #dc262660;}
 
 /* 信號標籤 */
 .signal-tag{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;margin:2px;}
@@ -385,60 +392,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
       </div>
 
-      <!-- 葛蘭碧法則圖例說明 -->
-      <div class="card p-4" id="granvilleLegendCard">
-        <div class="flex flex-wrap items-center gap-2 mb-3">
-          <h3 class="font-bold text-sm text-white"><i class="fa-solid fa-scroll mr-2 text-amber-400"></i>葛蘭碧八大法則 — 圖上標記說明</h3>
-          <span class="text-xs text-slate-500">（僅在日線/週線顯示）</span>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
-          <div class="rounded-lg p-2 border" style="background:rgba(16,185,129,0.08);border-color:#10b981aa">
-            <span class="font-black" style="color:#10b981">① 買</span>
-            <span class="text-slate-300 ml-1">起漲買進</span>
-            <div class="text-slate-400 mt-0.5">均線由降轉升，股價向上突破</div>
-          </div>
-          <div class="rounded-lg p-2 border" style="background:rgba(52,211,153,0.08);border-color:#34d399aa">
-            <span class="font-black" style="color:#34d399">② 買</span>
-            <span class="text-slate-300 ml-1">續漲加碼</span>
-            <div class="text-slate-400 mt-0.5">均線上方拉回均線後反彈</div>
-          </div>
-          <div class="rounded-lg p-2 border" style="background:rgba(110,231,183,0.08);border-color:#6ee7b7aa">
-            <span class="font-black" style="color:#6ee7b7">③ 買</span>
-            <span class="text-slate-300 ml-1">超賣反彈</span>
-            <div class="text-slate-400 mt-0.5">負乖離過大，技術性反彈</div>
-          </div>
-          <div class="rounded-lg p-2 border" style="background:rgba(167,243,208,0.08);border-color:#a7f3d0aa">
-            <span class="font-black" style="color:#a7f3d0">④ 買</span>
-            <span class="text-slate-300 ml-1">末跌買進</span>
-            <div class="text-slate-400 mt-0.5">跌破均線但均線仍上升</div>
-          </div>
-          <div class="rounded-lg p-2 border" style="background:rgba(239,68,68,0.08);border-color:#ef4444aa">
-            <span class="font-black" style="color:#ef4444">⑤ 賣</span>
-            <span class="text-slate-300 ml-1">趨勢轉空</span>
-            <div class="text-slate-400 mt-0.5">均線向下，股價跌破均線</div>
-          </div>
-          <div class="rounded-lg p-2 border" style="background:rgba(249,115,22,0.08);border-color:#f97316aa">
-            <span class="font-black" style="color:#f97316">⑥ 賣</span>
-            <span class="text-slate-300 ml-1">超買回吐</span>
-            <div class="text-slate-400 mt-0.5">正乖離過大，逢高減碼</div>
-          </div>
-          <div class="rounded-lg p-2 border" style="background:rgba(251,146,60,0.08);border-color:#fb923caa">
-            <span class="font-black" style="color:#fb923c">⑦ 賣</span>
-            <span class="text-slate-300 ml-1">反彈賣出</span>
-            <div class="text-slate-400 mt-0.5">均線下方反彈後再度下跌</div>
-          </div>
-          <div class="rounded-lg p-2 border" style="background:rgba(252,165,165,0.08);border-color:#fca5a5aa">
-            <span class="font-black" style="color:#fca5a5">⑧ 賣</span>
-            <span class="text-slate-300 ml-1">空頭賣出</span>
-            <div class="text-slate-400 mt-0.5">均線向下，股價短暫超漲</div>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-4 text-xs text-slate-400 border-t border-slate-700 pt-3">
-          <span><span style="display:inline-block;width:10px;height:10px;background:#fbbf24;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#fbbf24">★ 黃金交叉</span>：短均線上穿長均線（買入訊號）</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#f43f5e;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#f43f5e">✕ 死亡交叉</span>：短均線下穿長均線（賣出訊號）</span>
-          <span class="text-slate-500">── 虛線：交叉預測位置（日線有效）</span>
-        </div>
-      </div>
+      <!-- 葛蘭碧法則圖例說明已移至「葛蘭碧八大法則」Tab -->
       <div class="card p-4">
         <h3 class="font-bold text-sm text-white mb-3">成交量</h3>
         <div class="chart-wrap" style="height:120px">
@@ -488,11 +442,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               <i class="fa-solid fa-microscope mr-1 text-blue-400"></i>各指標詳細解讀
             </h4>
             <div id="techDetailCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
-            <!-- ▼ 強化均線分析區塊（葛蘭碧 + 交叉預測） -->
-            <div id="maEnhancedSection" class="hidden mt-3 space-y-3">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">均線強化分析</div>
-              <div id="maEnhancedCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
-            </div>
+            <!-- ▼ 葛蘭碧/交叉預測詳細分析已移至各自 Tab，此處不再顯示 -->
           </div>
           <div id="techSummaryBox" class="rounded-xl p-4 border"></div>
         </div>
@@ -1329,6 +1279,55 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <!-- ═══ Tab: 移動平均線分析 ══════════════════════════════════════ -->
     <div id="panel-maanalysis" class="hidden space-y-4">
 
+      <!-- 理論說明（源自 PPTX） -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-book-open text-purple-400"></i>移動平均線（Moving Averages）說明
+        </h3>
+        <p class="text-sm text-slate-300 leading-relaxed mb-4">
+          移動平均線可歸屬於傳統的時間數列分析方法，運用移動平均數來分析預測乃是理所當然。計算方式有<strong class="text-white">簡單平均、加權、指數平滑</strong>等方法。公式：MA = ΣP(t-i) / n。可消除不規則波動，展現出整體趨勢方向；若移動平均線逐期上升，則整體趨勢屬於多頭。
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <div class="rounded-xl p-3 border border-slate-700 bg-slate-800/40">
+            <div class="text-xs font-bold text-amber-400 mb-1">⚡ 短期均線</div>
+            <div class="font-black text-white mb-1">MA5 / MA10</div>
+            <div class="text-xs text-slate-400">短期進出依據，5日（週線）及10日均線。反應靈敏，適合短線操作參考。</div>
+          </div>
+          <div class="rounded-xl p-3 border border-slate-700 bg-slate-800/40">
+            <div class="text-xs font-bold text-blue-400 mb-1">📅 中期均線</div>
+            <div class="font-black text-white mb-1">MA20 / MA60</div>
+            <div class="text-xs text-slate-400">20日（月線）可預測股價未來變動方向；60日（季線）為中期進出依據。</div>
+          </div>
+          <div class="rounded-xl p-3 border border-slate-700 bg-slate-800/40">
+            <div class="text-xs font-bold text-pink-400 mb-1">📈 長期均線</div>
+            <div class="font-black text-white mb-1">MA120 / MA200</div>
+            <div class="text-xs text-slate-400">120日（半年線）及240日（年線），是主力、實戶及作手參考的重要指標。</div>
+          </div>
+        </div>
+        <!-- 均線特性說明 -->
+        <div class="border-t border-slate-700 pt-4">
+          <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">均線關鍵概念</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-300">
+            <div class="flex items-start gap-2">
+              <span class="text-yellow-400 font-black mt-0.5">★</span>
+              <div><strong class="text-white">黃金交叉（Golden Cross）：</strong>短天期移動平均線由下而上穿越長天期移動平均線，且兩者都處於上升狀況，為買入訊號。反之為死亡交叉（Dead Cross）。</div>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-blue-400 font-black mt-0.5">▲</span>
+              <div><strong class="text-white">多頭排列（Bullish Array）：</strong>實際價格及短中長天期均線呈現由上而下依序排列（價格 > MA5 > MA20 > MA60），代表強勢多頭。</div>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-green-400 font-black mt-0.5">+</span>
+              <div><strong class="text-white">正乖離（+）：</strong>目前股價高於移動平均線，顯示投資人平均處於獲利狀況，整體偏多。乖離過大則有超買回調風險。</div>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="text-red-400 font-black mt-0.5">−</span>
+              <div><strong class="text-white">負乖離（−）：</strong>目前股價低於移動平均線，顯示投資人平均陷入虧損狀況，整體偏空。乖離過大則有技術性反彈機會。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- MA 數值卡片 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
@@ -1472,48 +1471,61 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <!-- ═══ Tab: 葛蘭碧八大法則 ═══════════════════════════════════════ -->
     <div id="panel-granville" class="hidden space-y-4">
 
-      <!-- 圖例說明（與 panel-chart 中相同） -->
-      <div class="card p-4">
-        <div class="flex flex-wrap items-center gap-2 mb-3">
-          <h3 class="font-bold text-sm text-white"><i class="fa-solid fa-scroll mr-2 text-amber-400"></i>葛蘭碧八大法則 — 完整說明</h3>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
-          <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.08);border-color:#10b981aa">
-            <span class="font-black text-sm" style="color:#10b981">① 買 起漲買進</span>
-            <div class="text-slate-400 mt-1">均線由降轉升，股價向上突破均線。趨勢初始反轉訊號，為最強力買入時機。</div>
+      <!-- 理論說明（源自 PPTX） -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-book-open text-amber-400"></i>葛蘭碧（Granville）法則說明
+        </h3>
+        <p class="text-sm text-slate-300 leading-relaxed mb-4">
+          葛蘭碧八大法則的運作，是利用<strong class="text-white">價格與其移動平均線的關係</strong>作為買進與賣出訊號的依據。其認為價格的波動具有某種規律，移動平均則代表著趨勢的方向。當價格的波動偏離趨勢時（即價格與移動平均的偏離），未來將會朝趨勢方向修正，因此偏離時為一個買賣訊號。
+        </p>
+        <!-- 四大買進訊號 -->
+        <div class="mb-4">
+          <div class="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+            <i class="fa-solid fa-circle-up"></i> 四大買進訊號
           </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(52,211,153,0.08);border-color:#34d399aa">
-            <span class="font-black text-sm" style="color:#34d399">② 買 續漲加碼</span>
-            <div class="text-slate-400 mt-1">股價在均線上方回落至均線附近後反彈。多頭趨勢中的加碼機會。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(110,231,183,0.08);border-color:#6ee7b7aa">
-            <span class="font-black text-sm" style="color:#6ee7b7">③ 買 超賣反彈</span>
-            <div class="text-slate-400 mt-1">負乖離過大（跌離均線過遠），技術性反彈訊號。風險較高，需配合成交量確認。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(167,243,208,0.08);border-color:#a7f3d0aa">
-            <span class="font-black text-sm" style="color:#a7f3d0">④ 買 末跌買進</span>
-            <div class="text-slate-400 mt-1">股價跌破均線，但均線仍向上。視為最後一次回測支撐的短線買入機會。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.08);border-color:#ef4444aa">
-            <span class="font-black text-sm" style="color:#ef4444">⑤ 賣 趨勢轉空</span>
-            <div class="text-slate-400 mt-1">均線向下，股價跌破均線。趨勢反轉為空頭，為最強力賣出時機。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(249,115,22,0.08);border-color:#f97316aa">
-            <span class="font-black text-sm" style="color:#f97316">⑥ 賣 超買回吐</span>
-            <div class="text-slate-400 mt-1">正乖離過大（漲離均線過遠），逢高減碼訊號。超買後容易出現修正。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(251,146,60,0.08);border-color:#fb923caa">
-            <span class="font-black text-sm" style="color:#fb923c">⑦ 賣 反彈賣出</span>
-            <div class="text-slate-400 mt-1">空頭趨勢中，股價向均線反彈後再度下跌。空頭中的減碼或出場時機。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(252,165,165,0.08);border-color:#fca5a5aa">
-            <span class="font-black text-sm" style="color:#fca5a5">⑧ 賣 空頭賣出</span>
-            <div class="text-slate-400 mt-1">均線向下，股價短暫超漲突破均線。空頭格局中的反彈高點賣出。</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.08);border-color:#10b981aa">
+              <div class="font-black mb-1" style="color:#10b981">① 起漲買進訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">平均線由下降逐漸轉為水平且往上趨勢，而股價由下往上<strong class="text-white">突破平均線</strong>時。為趨勢初始反轉，最強力買入時機。</div>
+            </div>
+            <div class="rounded-lg p-3 border" style="background:rgba(52,211,153,0.08);border-color:#34d399aa">
+              <div class="font-black mb-1" style="color:#34d399">② 續漲買進訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價趨勢線位於均線<strong class="text-white">上方</strong>，股價突然下跌但未跌至均線下方又<strong class="text-white">反彈</strong>。此時為多頭趨勢中的加碼時機。</div>
+            </div>
+            <div class="rounded-lg p-3 border" style="background:rgba(110,231,183,0.08);border-color:#6ee7b7aa">
+              <div class="font-black mb-1" style="color:#6ee7b7">③ 超賣反彈訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價跌至均線下方，且<strong class="text-white">偏離均線很遠</strong>（負乖離過大），此時股價可能趨近均線，為技術性反彈買入時機（需配合量能確認）。</div>
+            </div>
+            <div class="rounded-lg p-3 border" style="background:rgba(167,243,208,0.08);border-color:#a7f3d0aa">
+              <div class="font-black mb-1" style="color:#a7f3d0">④ 末跌買進訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價由均線上方<strong class="text-white">跌至均線下方</strong>，但均線仍處於上升趨勢階段。視為最後一次回測支撐的短線買入機會（弱訊號）。</div>
+            </div>
           </div>
         </div>
-        <div class="flex flex-wrap gap-4 text-xs text-slate-400 border-t border-slate-700 pt-3">
-          <span><span style="display:inline-block;width:10px;height:10px;background:#fbbf24;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#fbbf24">★ 黃金交叉</span>：短均線上穿長均線（買入訊號）</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#f43f5e;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#f43f5e">✕ 死亡交叉</span>：短均線下穿長均線（賣出訊號）</span>
+        <!-- 四大賣出訊號 -->
+        <div>
+          <div class="text-xs font-bold text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+            <i class="fa-solid fa-circle-down"></i> 四大賣出訊號
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.08);border-color:#ef4444aa">
+              <div class="font-black mb-1" style="color:#ef4444">⑤ 趨勢轉空賣出訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">平均線由上升逐漸轉為水平且<strong class="text-white">往下趨勢</strong>，而股價由上往下突破平均線時。趨勢反轉為空頭，最強力賣出時機。</div>
+            </div>
+            <div class="rounded-lg p-3 border" style="background:rgba(249,115,22,0.08);border-color:#f97316aa">
+              <div class="font-black mb-1" style="color:#f97316">⑥ 超買回吐賣出訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價位於平均線上方，且<strong class="text-white">不斷上漲偏離均線</strong>（正乖離過大），表短期漲幅已高，可逢高出脫，超買後易現修正。</div>
+            </div>
+            <div class="rounded-lg p-3 border" style="background:rgba(251,146,60,0.08);border-color:#fb923caa">
+              <div class="font-black mb-1" style="color:#fb923c">⑦ 反彈賣出訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價趨勢線位於均線<strong class="text-white">下方</strong>，股價突然上漲但未超越均線又被拉回時。空頭趨勢中的反彈高點減碼或出場時機。</div>
+            </div>
+            <div class="rounded-lg p-3 border" style="background:rgba(252,165,165,0.08);border-color:#fca5a5aa">
+              <div class="font-black mb-1" style="color:#fca5a5">⑧ 空頭賣出訊號</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價位於平均線下方，<strong class="text-white">短暫突破均線上方</strong>（空頭格局中的反彈高點），均線向下，可於此點逢高出脫。</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2381,7 +2393,7 @@ function searchStock() {
 // 快取每日 16:00 後強制失效（配合台股收盤後排程更新）
 // GitHub 快取：透過後端 GET /api/stock_cache/<ticker> 讀取，寫入由後端自動處理
 const _stockDataCache = {};   // 記憶體層 { ticker: { data, ts } }
-const _STOCK_CACHE_TTL = 5 * 60 * 1000;  // 記憶體層 5分鐘
+const _STOCK_CACHE_TTL = 30 * 60 * 1000;  // 記憶體層 30分鐘（加快重複載入）
 
 async function loadStock(ticker) {
   ticker = ticker.toUpperCase();
@@ -2720,33 +2732,20 @@ function renderTechSignalDetail(data) {
     cards.push(makeCard('fa-solid fa-percent','MA20 乖離率',biasText,biasSt,biasDesc,'乖離率 > +5% 超買，< -5% 超賣（以 MA20 為基準）'));
   }
 
-  // ▼ 葛蘭碧八大法則卡片
+  // ▼ 葛蘭碧八大法則卡片（已移至「葛蘭碧八大法則」Tab，此處僅顯示摘要導覽）
   const granList = (maAn.granville || []).slice(0,4);
   if (granList.length > 0) {
-    const signalNames = {1:'起漲買進',2:'續漲加碼',3:'超賣反彈',4:'末跌買進',5:'趨勢轉空賣出',6:'超買回吐',7:'反彈賣出',8:'空頭賣出'};
-    const strengthMap = {strong:'強訊號',moderate:'中訊號',weak:'弱訊號'};
-    const strengthColor = {strong:'#22c55e',moderate:'#f59e0b',weak:'#94a3b8'};
-    const granHtml = granList.map(g => {
-      const sc = strengthColor[g.strength]||'#94a3b8';
-      const st = strengthMap[g.strength]||g.strength;
-      const isBuy = g.signal==='buy';
-      return `<div class="flex items-start gap-2 mb-2">
-        <span style="color:${isBuy?'#10b981':'#ef4444'};font-size:13px;margin-top:2px">
-          <i class="fa-solid fa-${isBuy?'circle-up':'circle-down'}"></i>
-        </span>
-        <div class="flex-1">
-          <span class="font-bold text-white text-xs">法則${g.rule}「${g.name}」</span>
-          <span class="ml-1 text-xs px-1.5 py-0.5 rounded" style="background:${sc}22;color:${sc}">${st}</span>
-          <div class="text-slate-400 text-xs mt-0.5">${g.description}</div>
-        </div>
-      </div>`;
-    }).join('');
     const anyBuy = granList.some(g=>g.signal==='buy'), anySell = granList.some(g=>g.signal==='sell');
     const granSt = anyBuy && !anySell ? 'buy' : anySell && !anyBuy ? 'sell' : 'neutral';
-    cards.push(makeCard('fa-solid fa-scroll','葛蘭碧法則',`觸發 ${granList.length} 則`,granSt,granHtml,''));
+    const granIcon = granSt==='buy'?'fa-solid fa-circle-up':granSt==='sell'?'fa-solid fa-circle-down':'fa-solid fa-scroll';
+    const granHtml = `<div class="text-slate-300 text-sm mb-2">觸發 <strong style="color:${granSt==='buy'?'#10b981':granSt==='sell'?'#ef4444':'#94a3b8'}">${granList.length} 則</strong>葛蘭碧訊號，詳細解析請前往專屬分析頁。</div>
+      <button onclick="switchTab('granville')" class="text-xs px-3 py-1.5 rounded-lg font-bold" style="background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f680;">
+        <i class="fa-solid fa-scroll mr-1 text-amber-400"></i>前往葛蘭碧八大法則 Tab →
+      </button>`;
+    cards.push(makeCard(granIcon,'葛蘭碧法則',`觸發 ${granList.length} 則`,granSt,granHtml,''));
   }
 
-  // ▼ 死亡/黃金交叉預測卡片
+  // ▼ 均線交叉預測（已移至「移動平均線分析」Tab，此處僅顯示摘要導覽）
   const cross520  = maAn.cross_5_20  || {};
   const cross2060 = maAn.cross_20_60 || {};
   const crossItems = [
@@ -2754,43 +2753,15 @@ function renderTechSignalDetail(data) {
     {label:'MA20/MA60', key:'20_60', data: cross2060},
   ].filter(c => c.data.cross_type && c.data.cross_type !== 'none');
   if (crossItems.length > 0) {
-    const confColor = {high:'#10b981',medium:'#f59e0b',low:'#94a3b8'};
-    const confLabel = {high:'高',medium:'中',low:'低'};
-    const crossHtml = crossItems.map(c => {
-      const isDeath  = c.data.cross_type === 'death';
-      const cc       = isDeath ? '#ef4444' : '#22c55e';
-      const days     = c.data.est_days;
-      const calDays  = c.data.est_calendar_days || '?';
-      const conf     = c.data.confidence || 'low';
-      const gapTrend = {'narrowing':'縮小中','widening':'擴大中','stable':'穩定','unknown':''}[c.data.gap_trend||'']||'';
-      // 緊急程度顏色（≤5天紅、≤10天橘、≤20天黃）
-      const urgency  = days!=null && days<=5  ? '#dc2626'
-                     : days!=null && days<=10 ? '#f97316'
-                     : days!=null && days<=20 ? '#f59e0b' : '#94a3b8';
-      const crossLabel = isDeath ? 'DC（死亡交叉）' : 'GC（黃金交叉）';
-      const daysStr    = days!=null
-        ? `約 <strong style="color:${urgency};font-size:14px">${days}</strong> 個交易日`
-          + `（<strong style="color:${urgency}">${calDays}</strong> 自然日）後`
-        : '時間不明';
-      const urgWarn = days!=null && days<=10
-        ? `<div style="margin-top:5px;font-size:11px;font-weight:bold;color:${urgency}">⚠ 距 ${crossLabel} 僅剩 ${days} 個交易日，請密切注意</div>`
-        : '';
-      return `<div style="background:${isDeath?'rgba(127,29,29,.35)':'rgba(20,83,45,.25)'};border:1px solid ${cc}55;border-radius:10px;padding:10px 13px;margin-bottom:8px;">
-  <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
-    <i class="fa-solid fa-${isDeath?'skull-crossbones':'star'}" style="color:${cc}"></i>
-    <span style="font-weight:bold;font-size:13px;color:${cc}">${c.label} ${crossLabel}</span>
-    <span style="font-size:11px;padding:1px 7px;border-radius:4px;background:${confColor[conf]}22;color:${confColor[conf]}">信心：${confLabel[conf]||conf}</span>
-  </div>
-  <div style="color:#f1f5f9;font-size:13px;margin-bottom:3px;">預估 ${daysStr} 出現 <span style="color:${cc};font-weight:bold">${crossLabel}</span></div>
-  <div style="color:#64748b;font-size:11px;">${gapTrend?'均線差距 '+gapTrend+' ・':''}<span style="color:#475569">${c.data.details||''}</span></div>
-  ${urgWarn}
-</div>`;
-    }).join('');
     const hasDeathCross = crossItems.some(c=>c.data.cross_type==='death');
     const crossSt  = hasDeathCross ? 'sell' : 'buy';
     const allDays  = crossItems.filter(c=>c.data.est_days!=null).map(c=>c.data.est_days);
     const minDays  = allDays.length ? Math.min(...allDays) : null;
     const titleStr = minDays!=null ? `最快 ${minDays} 交易日後交叉` : `${crossItems.length} 組預測`;
+    const crossHtml = `<div class="text-slate-300 text-sm mb-2">偵測到 <strong style="color:${hasDeathCross?'#ef4444':'#10b981'}">${crossItems.length} 組</strong>均線交叉預測，詳細數據請前往專屬分析頁。</div>
+      <button onclick="switchTab('maanalysis')" class="text-xs px-3 py-1.5 rounded-lg font-bold" style="background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f680;">
+        <i class="fa-solid fa-wave-square mr-1 text-purple-400"></i>前往移動平均線分析 Tab →
+      </button>`;
     cards.push(makeCard('fa-solid fa-arrows-rotate','均線交叉預測',titleStr,crossSt,crossHtml,''));
   }
 
@@ -6424,10 +6395,10 @@ async function loadHotStocksSequential(onlyCodes) {
   _renderHotSkeleton(missing);
 
   // 逐支抓取（含重試），每抓到一支立即更新畫面
-  // CONCURRENCY：同時最多 4 支並行，避免後端過載
-  const CONCURRENCY = 4;
-  const SINGLE_TIMEOUT = 20000;  // 單支最長 20s（yfinance 偶有慢回應）
-  const MAX_RETRY = 2;
+  // CONCURRENCY：同時最多 8 支並行（提升速度）
+  const CONCURRENCY = 8;
+  const SINGLE_TIMEOUT = 12000;  // 單支最長 12s（加快顯示）
+  const MAX_RETRY = 1;  // 減少重試次數以加快整體速度
 
   const fetchOne = async (code) => {
     for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
@@ -6804,8 +6775,10 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       maCell(row.ma60, ma60Cls) + maCell(row.ma120, ma120Cls) + maCell(row.ma200, ma200Cls) +
       '<td class="py-2 px-3 text-center"><span class="' + mt[1] + '">' + mt[0] + '</span></td>';
   } else if (hotViewMode === 'invest') {
+    const _ratingClassMap = {'強力買進':'hot-rating-strong-buy','買進':'hot-rating-buy','持有':'hot-rating-hold','減碼':'hot-rating-reduce','賣出':'hot-rating-sell'};
+    const _ratingCls = _ratingClassMap[row.rating] || '';
     const ratingHtml = row.rating
-      ? '<span style="background:' + row.rating_bg + ';color:' + row.rating_color + ';border:1px solid ' + row.rating_color + '40;" class="px-2 py-0.5 rounded-full text-xs font-black">' + row.rating_icon + ' ' + row.rating + '</span>'
+      ? '<span class="hot-rating-badge ' + _ratingCls + '">' + row.rating_icon + ' ' + row.rating + '</span>'
       : '<span class="text-slate-500 text-xs">--</span>';
     const targetTypeLabel = { 'upside':'⬆', 'fair':'➡', 'downside':'⬇', 'none':'' };
     const targetCls = row.target_type === 'upside' ? 'up' : row.target_type === 'downside' ? 'down' : 'flat';
