@@ -3248,6 +3248,74 @@ function renderRecommendation(data) {
   const close = data.latest.close;
   const fmtScore = v => (v>=0?'+':'')+v;
 
+  // ── 技術面分數重算（對齊後端邏輯，必須在所有渲染之前）────────
+  const ma5=ind.ma5,ma20=ind.ma20,ma60=ind.ma60,macd=ind.macd,macdSig=ind.macd_signal,rsi=ind.rsi,k=ind.k,d=ind.d;
+  const techItems=[];
+  // ── 完全對齊後端 enhanced_generate_recommendation 邏輯重新計算技術面分數 ──
+  let _techScoreCalc = 0;
+  const _maAna = (data.technical||{}).ma_analysis || {};
+
+  // 1. 均線排列（array_score >= 3 → +2；>= 1 → +1；<= -3 → -2；<= -1 → -1）
+  if(_maAna.array&&_maAna.array.label){
+    const _arr=_maAna.array, _as=_arr.score||0;
+    const _arrS = _as>=3?2:_as>=1?1:_as<=-3?-2:_as<=-1?-1:0;
+    _techScoreCalc+=_arrS;
+    techItems.push(`均線${_arr.label}（${_arrS>0?'+'+_arrS:_arrS}）`);
+  }
+
+  // 2. 乖離率（由後端 bias_warn 傳來，前端用 ma_analysis 的 bias_warn 判斷）
+  const _biasWarn=_maAna.bias_warn||{};
+  if(_biasWarn.level==='overbought'||_biasWarn.level==='extreme_overbought'){
+    _techScoreCalc-=1; techItems.push(`乖離率${_biasWarn.text||'過高'}（-1）`);
+  } else if(_biasWarn.level==='oversold'||_biasWarn.level==='extreme_oversold'){
+    _techScoreCalc+=1; techItems.push(`乖離率${_biasWarn.text||'過低'}（+1）`);
+  }
+
+  // 3. 葛蘭碧（強力買訊 +2/則，強力賣訊 -2/則；中等 ±1，僅取第1則）
+  const _gran=_maAna.granville||[];
+  const _gStrongBuy =_gran.filter(g=>g.signal==='buy' &&g.strength==='strong');
+  const _gStrongSell=_gran.filter(g=>g.signal==='sell'&&g.strength==='strong');
+  const _gModBuy    =_gran.filter(g=>g.signal==='buy' &&g.strength==='moderate');
+  const _gModSell   =_gran.filter(g=>g.signal==='sell'&&g.strength==='moderate');
+  _gStrongBuy.forEach(g=>{ _techScoreCalc+=2; techItems.push(`葛蘭碧強力買訊：${g.name}（+2）`); });
+  _gStrongSell.forEach(g=>{ _techScoreCalc-=2; techItems.push(`葛蘭碧強力賣訊：${g.name}（-2）`); });
+  if(_gModBuy.length&&!_gStrongBuy.length){ _techScoreCalc+=1; techItems.push(`葛蘭碧買訊：${_gModBuy[0].name}（+1）`); }
+  if(_gModSell.length&&!_gStrongSell.length){ _techScoreCalc-=1; techItems.push(`葛蘭碧賣訊：${_gModSell[0].name}（-1）`); }
+
+  // 4. 交叉預測（10日內 ±2，10~20日 ±1）
+  const _c520=_maAna.cross_5_20||{}, _c2060=_maAna.cross_20_60||{};
+  if(_c520.cross_type==='death'){ const s=_c520.est_days<=10?-2:-1; _techScoreCalc+=s; techItems.push(`MA5/20 死亡交叉預警 ${_c520.est_days}日（${s}）`); }
+  if(_c520.cross_type==='golden'){ const s=_c520.est_days<=10?2:1; _techScoreCalc+=s; techItems.push(`MA5/20 黃金交叉預警 ${_c520.est_days}日（+${s}）`); }
+  if(_c2060.cross_type==='death'){ const s=_c2060.est_days<=10?-2:-1; _techScoreCalc+=s; techItems.push(`MA20/60 死亡交叉預警 ${_c2060.est_days}日（${s}）`); }
+  if(_c2060.cross_type==='golden'){ const s=_c2060.est_days<=10?2:1; _techScoreCalc+=s; techItems.push(`MA20/60 黃金交叉預警 ${_c2060.est_days}日（+${s}）`); }
+
+  // 5. MACD > 0 ±1
+  if(macd!=null){ const s=macd>0?1:-1; _techScoreCalc+=s; techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）'); }
+
+  // 6. MACD 黃金叉/死亡叉 ±1
+  if(macd!=null&&macdSig!=null){ const s=macd>macdSig?1:-1; _techScoreCalc+=s; techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）'); }
+
+  // 7. RSI（>70 超買 -1；<30 超賣 +1；中性不計分）
+  if(rsi!=null){ const s=rsi>70?-1:rsi<30?1:0; _techScoreCalc+=s; techItems.push(rsi>70?`RSI${rsi.toFixed(1)}超買（-1）`:rsi<30?`RSI${rsi.toFixed(1)}超賣（+1）`:`RSI${rsi.toFixed(1)}中性（0）`); }
+
+  // 8. KD（K<20且D<20 超賣 +1；K>80且D>80 超買 -1）
+  if(k!=null&&d!=null){ const s=k<20&&d<20?1:k>80&&d>80?-1:0; _techScoreCalc+=s; techItems.push(k<20&&d<20?`KD超賣（K=${k.toFixed(1)}）（+1）`:k>80&&d>80?`KD超買（K=${k.toFixed(1)}）（-1）`:`KD中性（K=${k.toFixed(1)}）（0）`); }
+
+  // 9. 支撐/壓力位置（pos_pct < 20 → +1；> 80 → -1）
+  if(rec.price_position!=null){ const s=rec.price_position<=20?1:rec.price_position>=80?-1:0; _techScoreCalc+=s; techItems.push(rec.price_position<=20?`接近支撐 ${rec.price_position}%（+1）`:rec.price_position>=80?`接近壓力 ${rec.price_position}%（-1）`:`位置中性 ${rec.price_position}%（0）`); }
+
+  // 覆蓋後端分數，確保說明文字與數字完全一致
+  rec.tech_score  = _techScoreCalc;
+  rec.total_score = _techScoreCalc + (rec.fund_score || 0);
+  // 重新判斷評級（與後端門檻一致：強力買進≥12 / 買進≥6 / 持有≥0 / 減碼≥-6 / 賣出<-6）
+  const _ts = rec.total_score;
+  if (_ts >= 12)      { rec.rating='強力買進'; rec.rating_color='#16a34a'; rec.rating_bg='#14532d'; rec.rating_icon='🚀'; }
+  else if (_ts >= 6)  { rec.rating='買進';     rec.rating_color='#2563eb'; rec.rating_bg='#1e3a8a'; rec.rating_icon='✅'; }
+  else if (_ts >= 0)  { rec.rating='持有';     rec.rating_color='#d97706'; rec.rating_bg='#78350f'; rec.rating_icon='⚖️'; }
+  else if (_ts >= -6) { rec.rating='減碼';     rec.rating_color='#ea580c'; rec.rating_bg='#7c2d12'; rec.rating_icon='⚠️'; }
+  else                { rec.rating='賣出';     rec.rating_color='#fbbf24'; rec.rating_bg='#7f1d1d'; rec.rating_icon='🔴'; }
+
+
   const ratingDisp = document.getElementById('rec-rating-display');
   ratingDisp.textContent = `${rec.rating_icon} ${rec.rating}`;
   ratingDisp.style.background = rec.rating_bg;
@@ -3343,29 +3411,7 @@ function renderRecommendation(data) {
     const pct=Math.round((score-(-maxS))/(maxS*2)*100);
     return `<div class="rounded-xl p-4 border border-slate-700 bg-slate-800/40"><div class="flex items-center justify-between mb-2"><div class="flex items-center gap-2"><i class="${icon}" style="color:${color};font-size:13px;"></i><span class="text-xs font-bold text-slate-400 uppercase tracking-wide">${title}</span></div><span class="font-black mono" style="color:${color}">${fmtScore(score)}</span></div><div class="progress-bar mb-2"><div class="progress-fill" style="width:${Math.max(2,pct)}%;background:${color};"></div></div><div class="text-xs text-slate-400 leading-relaxed">${desc}</div></div>`;
   }
-  const ma5=ind.ma5,ma20=ind.ma20,ma60=ind.ma60,macd=ind.macd,macdSig=ind.macd_signal,rsi=ind.rsi,k=ind.k,d=ind.d;
-  const techItems=[];
-  if(ma5&&ma20) techItems.push(ma5>ma20?'MA5>MA20（+1）':'MA5<MA20（-1）');
-  if(ma20&&ma60) techItems.push(ma20>ma60?'MA20>MA60（+1）':'MA20<MA60（-1）');
-  if(ma20) techItems.push(close>ma20?'價格>MA20（+1）':'價格<MA20（-1）');
-  if(macd!=null) techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）');
-  if(macd!=null&&macdSig!=null) techItems.push(macd>macdSig?'MACD黃金叉（+1）':'MACD死亡叉（-1）');
-  if(rsi!=null) techItems.push(rsi>70?'RSI超買（-1）':rsi<30?'RSI超賣（+1）':'RSI中性（0）');
-  if(k!=null&&d!=null) techItems.push(k<20?'KD超賣（+1）':k>80?'KD超買（-1）':'KD中性（0）');
-  if(rec.price_position!=null) techItems.push(rec.price_position<=20?'接近支撐（+1）':rec.price_position>=80?'接近壓力（-1）':'位置中性（0）');
-  // ▼ 強化版：均線排列 + 葛蘭碧 + 交叉預測
-  const _maAna = (data.technical||{}).ma_analysis || {};
-  if(_maAna.array&&_maAna.array.label) techItems.push(`均線${_maAna.array.label}（${_maAna.array.score>0?'+'+_maAna.array.score:_maAna.array.score}）`);
-  const _gran = _maAna.granville||[];
-  const _gBuy=_gran.filter(g=>g.signal==='buy'&&g.strength==='strong').length;
-  const _gSell=_gran.filter(g=>g.signal==='sell'&&g.strength==='strong').length;
-  if(_gBuy) techItems.push(`葛蘭碧強力買訊 ×${_gBuy}（+${_gBuy*2}）`);
-  if(_gSell) techItems.push(`葛蘭碧強力賣訊 ×${_gSell}（-${_gSell*2}）`);
-  const _c520=_maAna.cross_5_20||{}, _c2060=_maAna.cross_20_60||{};
-  if(_c520.cross_type==='death') techItems.push(`MA5/20 死亡交叉預警 ${_c520.est_days}日（${_c520.est_days<=10?'-2':'-1'}）`);
-  if(_c520.cross_type==='golden') techItems.push(`MA5/20 黃金交叉預警 ${_c520.est_days}日（${_c520.est_days<=10?'+2':'+1'}）`);
-  if(_c2060.cross_type==='death') techItems.push(`MA20/60 死亡交叉預警 ${_c2060.est_days}日（${_c2060.est_days<=10?'-2':'-1'}）`);
-  if(_c2060.cross_type==='golden') techItems.push(`MA20/60 黃金交叉預警 ${_c2060.est_days}日（${_c2060.est_days<=10?'+2':'+1'}）`);
+
   const f=data.fundamentals||{};
   const fundItems=[];
   if(f.pe_ratio) fundItems.push(f.pe_ratio<15?`P/E ${f.pe_ratio.toFixed(1)}x 低估（+1）`:f.pe_ratio>30?`P/E ${f.pe_ratio.toFixed(1)}x 高估（-1）`:`P/E ${f.pe_ratio.toFixed(1)}x 中性`);
