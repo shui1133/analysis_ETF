@@ -3949,10 +3949,17 @@ function drawCandleChartPeriod(data, period) {
 
 
   // 台股：紅漲綠跌
+  // ★ 修正：opens[i] 可能為 null（精簡快取格式只有 date/close），
+  //   改用前一根 close 作為 open 的 fallback，確保顏色判斷正確。
   const upClr   = 'rgba(239,68,68,0.92)';
   const downClr = 'rgba(22,163,74,0.92)';
-  const bodyColors = dates.map((_, i) => closes[i] >= opens[i] ? upClr : downClr);
-  const wickColors = dates.map((_, i) => closes[i] >= opens[i]
+  const effectiveOpens = opens.map((o, i) => {
+    if (o != null && !isNaN(o)) return o;
+    // fallback：用前一根 close（或當根 close）當 open
+    return (i > 0 && closes[i-1] != null) ? closes[i-1] : closes[i];
+  });
+  const bodyColors = dates.map((_, i) => closes[i] >= effectiveOpens[i] ? upClr : downClr);
+  const wickColors = dates.map((_, i) => closes[i] >= effectiveOpens[i]
     ? 'rgba(239,68,68,0.6)' : 'rgba(22,163,74,0.6)');
 
   // 根數越多 → K棒越細
@@ -3968,9 +3975,13 @@ function drawCandleChartPeriod(data, period) {
         {
           label: 'OHLC',
           data:  dates.map((_, i) => {
-            const o = opens[i]  ?? closes[i];
-            const c = closes[i] ?? opens[i];
-            if (o == null || c == null) return null;
+            // ★ 修正：使用 effectiveOpens（已做 null/NaN fallback），
+            //   確保即使快取只有 date/close 格式，K棒實體仍能正常渲染。
+            const o = effectiveOpens[i];
+            const c = closes[i];
+            if (o == null || c == null || isNaN(o) || isNaN(c)) return null;
+            // 若 o === c（精簡格式 fallback），給一個極小的最低高度讓 bar 可見
+            if (o === c) return [c * 0.9995, c * 1.0005];
             return [Math.min(o, c), Math.max(o, c)];
           }),
           backgroundColor: bodyColors,
@@ -4099,9 +4110,13 @@ function drawVolumeChartPeriod(data, period) {
   const vols   = ch.volumes.slice(offset);
   const closes = ch.closes.slice(offset);
   const opens  = ch.opens.slice(offset);
-  // 台股紅漲綠跌：以當根K棒 close vs open 判斷
+  // ★ 修正：台股紅漲綠跌；open 可能為 null（精簡快取），改用前根 close 做 fallback
+  const effectiveOpensVol = opens.map((o, i) => {
+    if (o != null && !isNaN(o)) return o;
+    return (i > 0 && closes[i-1] != null) ? closes[i-1] : closes[i];
+  });
   const bgColors = vols.map((_, i) =>
-    closes[i] >= opens[i] ? 'rgba(239,68,68,.75)' : 'rgba(22,163,74,.75)');
+    closes[i] >= effectiveOpensVol[i] ? 'rgba(239,68,68,.75)' : 'rgba(22,163,74,.75)');
 
   // 成交量全為 0 時顯示提示訊息
   const hasVol = vols.some(v => v > 0);
