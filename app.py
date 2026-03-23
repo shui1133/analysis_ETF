@@ -967,43 +967,62 @@ def get_stock_analysis(ticker):
             if len(ohlcv_cached) >= 20:
                 print(f"  [分析模式] 取得 {ticker} 完整資料...")
                 print(f"  [L2 GitHub] {ticker} 命中快取 ({len(ohlcv_rows)} 筆)")
+                # 檢查 info 是否有基本面關鍵欄位，若缺則標記需 L3 補充
+                _info_ok = bool(info_cache and any(
+                    info_cache.get(k) for k in ('pe_ratio', 'pb_ratio', 'roe', 'eps', 'profit_margin')
+                ))
                 raw = {
-                    'ohlcv':         ohlcv_cached,
-                    'indicators':    calc_technical_indicators(ohlcv_cached),
-                    'dividend_data': div_rows or [],
-                    'info':          info_cache or {},
-                    'name':          ticker,
-                    'source':        'local/github',
+                    'ohlcv':            ohlcv_cached,
+                    'indicators':       calc_technical_indicators(ohlcv_cached),
+                    'dividend_data':    div_rows or [],
+                    'info':             info_cache or {},
+                    'name':             ticker,
+                    'source':           'local/github',
+                    '_info_incomplete': not _info_ok,
                 }
     except Exception as _e_cache:
         print(f"  [{ticker}] L1/L2 快取讀取失敗，降級至 yfinance: {_e_cache}")
         raw = None
 
-    # ── L3：yfinance 網路抓取（僅在快取未命中時）─────────────────────────────
-    if not raw or not raw.get('ohlcv'):
+    # ── L3：yfinance 補充（ohlcv 未命中，或 info 不完整時僅補基本面）──────────
+    _only_info_supplement = bool(raw and raw.get('ohlcv') and raw.get('_info_incomplete'))
+    if not raw or not raw.get('ohlcv') or _only_info_supplement:
         try:
             fetcher = ETFDataFetcher(output_dir=DATA_DIR)
             MAX_RETRY = 3
+            _yf_raw = None
             for attempt in range(1, MAX_RETRY + 1):
                 try:
-                    raw = fetcher.fetch_stock_analysis(ticker)
-                    if raw and raw.get('ohlcv'):
-                        break   # 成功，跳出重試
+                    _yf_raw = fetcher.fetch_stock_analysis(ticker)
+                    if _yf_raw and _yf_raw.get('ohlcv'):
+                        break
                     print(f"  [{ticker}] 第{attempt}次取得資料為空，{'重試...' if attempt < MAX_RETRY else '放棄'}")
                 except Exception as e_retry:
                     last_exc = e_retry
                     print(f"  [{ticker}] 第{attempt}次例外: {e_retry}，{'重試...' if attempt < MAX_RETRY else '放棄'}")
                 if attempt < MAX_RETRY:
-                    time.sleep(0.5 * attempt)   # 退讓等待
+                    time.sleep(0.5 * attempt)
 
-            # 抓到後存入本機 + GitHub，下次 L1/L2 可命中
-            if raw and raw.get('ohlcv'):
+            if _yf_raw and _yf_raw.get('ohlcv'):
+                if _only_info_supplement:
+                    # 只補 info，保留 ohlcv 快取（不重新下載價格）
+                    if _yf_raw.get('info'):
+                        raw['info'] = _yf_raw['info']
+                    if _yf_raw.get('dividend_data'):
+                        raw['dividend_data'] = _yf_raw['dividend_data']
+                    raw.pop('_info_incomplete', None)
+                    print(f"  [{ticker}] 基本面補充完成（保留 ohlcv 快取）")
+                else:
+                    raw = _yf_raw
+
+                # 存入本機 + GitHub，下次 L1/L2 可命中
                 try:
                     from github_cache import (local_save_price, local_save_dividend,
                                               local_save_fundamental, gh_save_price,
                                               gh_save_dividend, gh_save_fundamental)
-                    local_save_price(DATA_DIR, ticker, raw['ohlcv'])
-                    gh_save_price(ticker, raw['ohlcv'])
+                    if not _only_info_supplement:
+                        local_save_price(DATA_DIR, ticker, raw['ohlcv'])
+                        gh_save_price(ticker, raw['ohlcv'])
                     if raw.get('dividend_data'):
                         local_save_dividend(DATA_DIR, ticker, raw['dividend_data'])
                         gh_save_dividend(ticker, raw['dividend_data'])
@@ -1143,8 +1162,11 @@ def get_stock_analysis(ticker):
         offset      = len(ohlcv) - chart_len   # 對齊指標陣列（指標與全量 ohlcv 等長）
 
         def to_lots(v):
-            """股 → 張（÷1000，至少1張）"""
-            return max(1, round(v / 1000)) if v else 0
+            """股 → 張（÷1000，至少1張）
+            若 v < 1000 視為已換算過的張數，直接回傳，避免二次 ÷1000"""
+            if not v:
+                return 0
+            return max(1, round(v / 1000)) if v >= 1000 else int(v)
 
         def slice_ind(key):
             lst = indicators.get(key, [])
