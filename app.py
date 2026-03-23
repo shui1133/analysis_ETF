@@ -561,7 +561,7 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
     annual_div = 0.0
     if divs:
         one_yr_ago = (pd.Timestamp.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
-        annual_div = sum(d.get('dividend', 0) for d in divs if d.get('date', '') >= one_yr_ago)
+        annual_div = sum(float(d.get('dividend', 0) or 0) for d in divs if d.get('date', '') >= one_yr_ago)
     div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
 
     info = raw.get('info', {})
@@ -1030,14 +1030,35 @@ def get_stock_analysis(ticker):
         divs       = raw.get('dividend_data', [])
 
         # ── 若 yfinance 缺少基本面資料，從 TWSE/MOPS 補充 ──────
+        # 注意：從 GitHub 快取讀回的欄位可能是 0 或 ''（非 None），
+        # 因此用 in (None, '', 0) 判斷「有意義的值是否存在」。
+        # 若來自本機/GitHub 快取且基本面欄位大多已有值，不必補充。
+        def _has_val(v):
+            return v not in (None, '', 0)
+
         needs_supplement = (
-            info.get('pe_ratio')      is None or
-            info.get('pb_ratio')      is None or
-            info.get('eps')           is None or
-            info.get('roe')           is None or
-            info.get('profit_margin') is None or
+            not _has_val(info.get('pe_ratio'))      or
+            not _has_val(info.get('pb_ratio'))      or
+            not _has_val(info.get('eps'))           or
+            not _has_val(info.get('roe'))           or
+            not _has_val(info.get('profit_margin')) or
             not info.get('description')
         )
+        # ★ 若資料來自本機/GitHub 快取且至少有 pe/pb/eps 其中兩項，跳過高延遲的 TWSE 補充
+        _cache_source = raw.get('source', '')
+        if _cache_source == 'local/github':
+            _filled = sum(1 for k in ('pe_ratio', 'pb_ratio', 'eps', 'roe')
+                          if _has_val(info.get(k)))
+            if _filled >= 2:
+                needs_supplement = False
+        # ★ 若資料來自本機/GitHub 快取且至少有 pe/pb/eps 其中兩項，跳過高延遲的 TWSE 補充
+        _cache_source = raw.get('source', '')
+        if _cache_source == 'local/github':
+            _filled = sum(1 for k in ('pe_ratio', 'pb_ratio', 'eps', 'roe')
+                          if _has_val(info.get(k)))
+            if _filled >= 2:
+                needs_supplement = False
+
         if needs_supplement:
             try:
                 twse_extra = _fetch_twse_fundamentals(ticker)
@@ -1061,7 +1082,7 @@ def get_stock_analysis(ticker):
         annual_div = 0
         if divs:
             one_yr_ago = (pd.Timestamp.now() - pd.DateOffset(years=1)).strftime('%Y-%m-%d')
-            annual_div = sum(d['dividend'] for d in divs if d['date'] >= one_yr_ago)
+            annual_div = sum(float(d.get('dividend', 0) or 0) for d in divs if d.get('date', '') >= one_yr_ago)
         div_yield = round(annual_div / last['close'] * 100, 2) if last['close'] and annual_div else None
 
         # 若 yfinance 配息資料為空，改用 TWSE 殖利率備援值
@@ -1458,7 +1479,7 @@ def _fetch_twse_fundamentals(ticker: str) -> dict:
             date_str = ts.strftime('%Y%m%d')
             url = (f'https://www.twse.com.tw/exchangeReport/BWIBBU_d'
                    f'?response=json&date={date_str}&stockNo={ticker}')
-            r = _req.get(url, headers=headers, timeout=10)
+            r = _req.get(url, headers=headers, timeout=10, verify=False)
             if not r.ok:
                 continue
             jd = r.json()
@@ -1486,7 +1507,7 @@ def _fetch_twse_fundamentals(ticker: str) -> dict:
             date_fmt = pd.Timestamp.now().strftime('%Y/%m/%d')
             url2 = (f'https://www.tpex.org.tw/web/stock/aftertrading/peratio_result/'
                     f'pera_result.php?l=zh-tw&o=json&d={date_fmt}&s=0,asc&stkno={ticker}')
-            r2 = _req.get(url2, headers=headers, timeout=10)
+            r2 = _req.get(url2, headers=headers, timeout=10, verify=False)
             if r2.ok:
                 jd2 = r2.json()
                 for row in jd2.get('aaData', []):
@@ -1614,7 +1635,7 @@ def _fetch_twse_fundamentals(ticker: str) -> dict:
     if 'description' not in result:
         try:
             url_co = f'https://www.twse.com.tw/zh/api/basic/company?stockNo={ticker}'
-            r_co = _req.get(url_co, headers=headers, timeout=8)
+            r_co = _req.get(url_co, headers=headers, timeout=8, verify=False)
             if r_co.ok:
                 jco = r_co.json()
                 # 嘗試從公司資訊建構簡短描述
