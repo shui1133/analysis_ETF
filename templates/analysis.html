@@ -6541,8 +6541,8 @@ async function loadHotStocksSequential(onlyCodes) {
   // 逐支抓取（含重試），每抓到一支立即更新畫面
   // CONCURRENCY：同時最多 8 支並行（提升速度）
   const CONCURRENCY = 8;
-  const SINGLE_TIMEOUT = 12000;  // 單支最長 12s（加快顯示）
-  const MAX_RETRY = 1;  // 減少重試次數以加快整體速度
+  const SINGLE_TIMEOUT = 25000;  // 單支最長 25s（L1/L2 快取命中時 <1s；L3 yfinance 最長約 20s）
+  const MAX_RETRY = 2;  // L2 快取命中後幾乎不需重試；L3 yfinance 給一次重試機會
 
   const fetchOne = async (code) => {
     for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {

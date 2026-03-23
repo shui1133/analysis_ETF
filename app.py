@@ -924,23 +924,99 @@ def get_stock_analysis(ticker):
             return jsonify({'status': 'success', 'data': cached_data})
         # raw 格式（無 chart.volumes）→ 繼續往下重新組裝完整 data_out
 
+    # ── ★ L1/L2：cache_mgr 三層快取（本機 + GitHub，不觸發 yfinance）──────────
+    # 與 _fetch_one_hot 相同邏輯，避免熱門股票頁每支都走 yfinance 造成 timeout
+    raw = None
+    last_exc = None
     try:
-        fetcher = ETFDataFetcher(output_dir=DATA_DIR)
-        raw = None
-        last_exc = None
-        MAX_RETRY = 3
-        for attempt in range(1, MAX_RETRY + 1):
-            try:
-                raw = fetcher.fetch_stock_analysis(ticker)
-                if raw and raw.get('ohlcv'):
-                    break   # 成功，跳出重試
-                print(f"  [{ticker}] 第{attempt}次取得資料為空，{'重試...' if attempt < MAX_RETRY else '放棄'}")
-            except Exception as e_retry:
-                last_exc = e_retry
-                print(f"  [{ticker}] 第{attempt}次例外: {e_retry}，{'重試...' if attempt < MAX_RETRY else '放棄'}")
-            if attempt < MAX_RETRY:
-                time.sleep(0.5 * attempt)   # 退讓等待
+        ohlcv_rows = cache_mgr.get_price(ticker, fetcher=None)
+        div_rows   = cache_mgr.get_dividend(ticker, fetcher=None)
+        info_cache = cache_mgr.get_fundamental(ticker, fetcher=None)
 
+        if ohlcv_rows and len(ohlcv_rows) >= 20:
+            def _norm_cache_ohlcv(rows):
+                result = []
+                for r in rows:
+                    date_val  = r.get('date') or r.get('日期') or ''
+                    close_val = r.get('close') or r.get('Close') or r.get('收盤價')
+                    open_val  = r.get('open')  or r.get('Open')  or r.get('開盤價')
+                    high_val  = r.get('high')  or r.get('High')  or r.get('最高價')
+                    low_val   = r.get('low')   or r.get('Low')   or r.get('最低價')
+                    vol_val   = r.get('volume') or r.get('Volume') or r.get('成交量') or 0
+                    if not close_val:
+                        continue
+                    try:
+                        try:
+                            raw_vol = float(vol_val) if vol_val else 0.0
+                        except (ValueError, TypeError):
+                            raw_vol = 0.0
+                        lot_vol = max(1, round(raw_vol / 1000)) if raw_vol >= 10000 else int(raw_vol)
+                        result.append({
+                            'date':   str(date_val)[:10],
+                            'open':   float(open_val)  if open_val  else float(close_val),
+                            'high':   float(high_val)  if high_val  else float(close_val),
+                            'low':    float(low_val)   if low_val   else float(close_val),
+                            'close':  float(close_val),
+                            'volume': lot_vol,
+                        })
+                    except (ValueError, TypeError):
+                        continue
+                return result
+
+            ohlcv_cached = _norm_cache_ohlcv(ohlcv_rows)
+            if len(ohlcv_cached) >= 20:
+                print(f"  [分析模式] 取得 {ticker} 完整資料...")
+                print(f"  [L2 GitHub] {ticker} 命中快取 ({len(ohlcv_rows)} 筆)")
+                raw = {
+                    'ohlcv':         ohlcv_cached,
+                    'indicators':    calc_technical_indicators(ohlcv_cached),
+                    'dividend_data': div_rows or [],
+                    'info':          info_cache or {},
+                    'name':          ticker,
+                    'source':        'local/github',
+                }
+    except Exception as _e_cache:
+        print(f"  [{ticker}] L1/L2 快取讀取失敗，降級至 yfinance: {_e_cache}")
+        raw = None
+
+    # ── L3：yfinance 網路抓取（僅在快取未命中時）─────────────────────────────
+    if not raw or not raw.get('ohlcv'):
+        try:
+            fetcher = ETFDataFetcher(output_dir=DATA_DIR)
+            MAX_RETRY = 3
+            for attempt in range(1, MAX_RETRY + 1):
+                try:
+                    raw = fetcher.fetch_stock_analysis(ticker)
+                    if raw and raw.get('ohlcv'):
+                        break   # 成功，跳出重試
+                    print(f"  [{ticker}] 第{attempt}次取得資料為空，{'重試...' if attempt < MAX_RETRY else '放棄'}")
+                except Exception as e_retry:
+                    last_exc = e_retry
+                    print(f"  [{ticker}] 第{attempt}次例外: {e_retry}，{'重試...' if attempt < MAX_RETRY else '放棄'}")
+                if attempt < MAX_RETRY:
+                    time.sleep(0.5 * attempt)   # 退讓等待
+
+            # 抓到後存入本機 + GitHub，下次 L1/L2 可命中
+            if raw and raw.get('ohlcv'):
+                try:
+                    from github_cache import (local_save_price, local_save_dividend,
+                                              local_save_fundamental, gh_save_price,
+                                              gh_save_dividend, gh_save_fundamental)
+                    local_save_price(DATA_DIR, ticker, raw['ohlcv'])
+                    gh_save_price(ticker, raw['ohlcv'])
+                    if raw.get('dividend_data'):
+                        local_save_dividend(DATA_DIR, ticker, raw['dividend_data'])
+                        gh_save_dividend(ticker, raw['dividend_data'])
+                    if raw.get('info'):
+                        local_save_fundamental(DATA_DIR, ticker, raw['info'])
+                        gh_save_fundamental(ticker, raw['info'])
+                    print(f"  [{ticker}] yfinance 成功，已存入本機/GitHub 快取")
+                except Exception as e_save:
+                    print(f"  [{ticker}] 快取存檔失敗（不影響回應）: {e_save}")
+        except Exception as _e_yf:
+            last_exc = _e_yf
+
+    try:
         if not raw or not raw.get('ohlcv'):
             err_msg = str(last_exc) if last_exc else f'無法取得 {ticker} 資料，請確認股票代碼正確（台灣上市如：2330、00878）'
             return jsonify({
