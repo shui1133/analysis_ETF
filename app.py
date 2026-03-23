@@ -80,7 +80,15 @@ print(f"資料目錄: {DATA_DIR}")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # 三層快取管理器（本機 Storage → GitHub → yfinance）
-cache_mgr = CacheManager(data_dir=DATA_DIR)
+# ★ 保護：若 CacheManager.__init__ 內有網路呼叫，加 try/except 防止阻塞 worker
+try:
+    cache_mgr = CacheManager(data_dir=DATA_DIR)
+except Exception as _cm_err:
+    print(f"  [WARNING] CacheManager 初始化失敗（不影響啟動）: {_cm_err}")
+    class _DummyCache:
+        def __getattr__(self, name):
+            return lambda *a, **kw: None
+    cache_mgr = _DummyCache()
 
 # 全域快取
 cached_results    = {}
@@ -95,7 +103,7 @@ def _background_warmup():
     不阻塞 gunicorn 健康檢查，失敗也不影響正常服務。
     """
     import time as _t
-    _t.sleep(5)   # 等 gunicorn 完全就緒
+    _t.sleep(20)   # ★ 延長等待：給 gunicorn health check 充足時間通過
     try:
         from github_cache import (GitHubCache, local_save_price,
                                   local_save_dividend, local_save_fundamental,
@@ -126,6 +134,7 @@ def _background_warmup():
                 info = gh.load_fundamental(tk)
                 if info:
                     local_save_fundamental(DATA_DIR, tk, info)
+                _t.sleep(0.05)   # ★ 每次請求間隔，避免 rate limit
             except Exception:
                 pass
         print(f"  [Warmup] ✅ 預熱完成，命中 {hit}/{len(tickers)} 支")
