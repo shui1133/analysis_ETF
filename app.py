@@ -1160,12 +1160,18 @@ def get_stock_analysis(ticker):
         chart_len   = len(chart_ohlcv)
         offset      = len(ohlcv) - chart_len   # 對齊指標陣列（指標與全量 ohlcv 等長）
 
+        # 判斷 ohlcv 的 volume 單位：
+        # - local/github 快取路徑：_norm_cache_ohlcv 已換算為張，直接用整數
+        # - yfinance 路徑：data_fetcher 回傳股數，需 ÷1000
+        _src_is_cached = raw.get('source', '') == 'local/github'
+
         def to_lots(v):
-            """股 → 張（÷1000，至少1張）
-            若 v < 1000 視為已換算過的張數，直接回傳，避免二次 ÷1000"""
+            """stock → lot（÷1000 only for yfinance raw data）"""
             if not v:
                 return 0
-            return max(1, round(v / 1000)) if v >= 1000 else int(v)
+            if _src_is_cached:
+                return int(v)   # 快取已換算為張，直接回傳
+            return max(1, round(v / 1000)) if v else 0
 
         def slice_ind(key):
             lst = indicators.get(key, [])
