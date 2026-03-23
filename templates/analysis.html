@@ -6340,7 +6340,7 @@ async function reloadHotStocks() {
 // ── 強制從 yfinance 取得最新股價（熱門股票/ETF 整批）────────────
 async function forceRefreshHotStocks() {
   const btn = document.getElementById('btnForceRefreshHot');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中...'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中 0/...'; }
 
   const codes = hotStockList
     .map(s => s.code)
@@ -6351,56 +6351,85 @@ async function forceRefreshHotStocks() {
     return;
   }
 
+  // 顯示進度條
+  const progressBar  = document.getElementById('hotProgressBar');
+  const progressText = document.getElementById('hotProgressText');
+  const progressCount= document.getElementById('hotProgressCount');
+  const progressWrap = progressBar?.closest('.mb-3');
+  if (progressWrap) progressWrap.classList.remove('hidden');
+
+  let done = 0;
+  const total = codes.length;
+
+  function _updateProgress() {
+    const pct = Math.round(done / total * 100);
+    if (progressBar)  progressBar.style.width = pct + '%';
+    if (progressText) progressText.textContent = `更新股價中 ${done}/${total}`;
+    if (progressCount)progressCount.textContent = done + ' / ' + total;
+    if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中 ${done}/${total}...`;
+  }
+
   try {
-    // 每次最多批次 10 支（後端限制），分批送出
-    const CHUNK = 10;
-    let done = 0;
-    for (let i = 0; i < codes.length; i += CHUNK) {
-      const chunk = codes.slice(i, i + CHUNK);
-      if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中 ${Math.min(i + CHUNK, codes.length)}/${codes.length}...`;
-      try {
-        const r = await fetch('/api/force_refresh_price', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tickers: chunk }),
-          signal: AbortSignal.timeout(60000),
-        });
-        if (r.ok) {
-          const d = await r.json();
-          // ★ 修正：重取完整資料並存入 IDB，下次開頁直接命中快取
-          for (const code of chunk) {
-            if (d.results?.[code]?.status === 'success') {
-              try {
-                const r2 = await fetch('/api/stock_analysis/' + code,
-                                       { signal: AbortSignal.timeout(15000) });
-                const d2 = await r2.json();
-                if (d2.status === 'success' && d2.data) {
-                  hotStockData[code] = d2.data;
-                  await hotCacheSave(code, d2.data);   // 存 IDB + localStorage
-                } else {
-                  delete hotStockData[code];
+    // 逐支呼叫 /api/force_refresh_price（單支，避免 Render 30s 批次逾時）
+    // 然後立即呼叫 /api/stock_analysis 取得完整資料並更新畫面
+    const CONCUR = 3;   // 同時最多 3 支，避免 Render 過載
+    const sem = { count: 0 };
+
+    await new Promise(resolve => {
+      let idx = 0, finished = 0;
+      if (codes.length === 0) { resolve(); return; }
+
+      const next = () => {
+        while (sem.count < CONCUR && idx < codes.length) {
+          const code = codes[idx++];
+          sem.count++;
+
+          (async () => {
+            try {
+              // 步驟1：force refresh 單支（後端清除快取並存最新價）
+              const r1 = await fetch('/api/force_refresh_price', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker: code }),
+                signal: AbortSignal.timeout(25000),
+              });
+              if (r1.ok) {
+                const d1 = await r1.json();
+                if (d1.results?.[code]?.status === 'success') {
+                  // 步驟2：取得完整分析資料（走 L2 快取，通常 <1s）
+                  try {
+                    const r2 = await fetch('/api/stock_analysis/' + code,
+                                           { signal: AbortSignal.timeout(20000) });
+                    const d2 = await r2.json();
+                    if (d2.status === 'success' && d2.data) {
+                      hotStockData[code] = d2.data;
+                      await hotCacheSave(code, d2.data);
+                      renderHotTable();   // 立即更新畫面
+                    }
+                  } catch (_e2) { /* 靜默忽略，下次重載會補上 */ }
                 }
-              } catch (_e) {
-                delete hotStockData[code];
               }
-              done++;
+            } catch (_e1) {
+              console.warn(`[forceRefresh] ${code} 失敗:`, _e1.message);
             }
-          }
+            done++;
+            _updateProgress();
+            sem.count--;
+            finished++;
+            if (finished === codes.length) resolve();
+            else next();
+          })();
         }
-      } catch (chunkErr) {
-        console.warn('[forceRefresh] chunk 失敗:', chunkErr);
-      }
-    }
-    // 清除快取並重新載入表格
-    await hotCacheClear();
-    hotStockData = {};
-    hotLoadAbort = false;
-    loadHotStocksSequential();
+      };
+      next();
+    });
+
     console.log(`[forceRefresh] 完成，成功更新 ${done}/${codes.length} 支`);
   } catch (e) {
     console.error('[forceRefreshHotStocks]', e);
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-bolt"></i>取得最新股價'; }
+    if (progressWrap) setTimeout(() => progressWrap.classList.add('hidden'), 3000);
   }
 }
 
@@ -6513,7 +6542,18 @@ async function loadHotStocksSequential(onlyCodes) {
   for (const s of targetList) {
     if (hotStockData[s.code] !== undefined) continue;
     const cached = await hotCacheLoad(s.code);
-    if (cached) { hotStockData[s.code] = cached; _cacheHits++; }
+    if (cached) {
+      // 驗證快取資料格式是否可供 calcHotRow 使用
+      const testRow = calcHotRow(s.code, cached);
+      if (testRow && testRow.close) {
+        hotStockData[s.code] = cached;
+        _cacheHits++;
+      } else {
+        // 快取格式不符（舊格式或損壞），清除後重新抓取
+        console.warn(`[Cache] ${s.code} 快取格式不符，清除重抓`);
+        await hotCacheClear();
+      }
+    }
   }
   if (_cacheHits > 0) {
     renderHotTable();
