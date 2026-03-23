@@ -53,7 +53,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 .hot-rating-buy      {background:#1e3a8a;color:#93c5fd;border:1px solid #2563eb60;}
 .hot-rating-hold     {background:#78350f;color:#fde68a;border:1px solid #d9770660;}
 .hot-rating-reduce   {background:#7c2d12;color:#fdba74;border:1px solid #ea580c60;}
-.hot-rating-sell     {background:#7f1d1d;color:#fca5a5;border:1px solid #dc262660;}
+.hot-rating-sell     {background:#7f1d1d;color:#fde047;border:1px solid #dc262660;}
 
 /* 信號標籤 */
 .signal-tag{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;margin:2px;}
@@ -1549,43 +1549,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
       <!-- ② 葛蘭碧八大法則說明（K線圖下方） -->
 
-      <!-- ② MA60 多空環境判斷 -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-compass text-blue-400"></i>MA60 多空環境判斷
-          <span class="text-slate-400 text-sm font-normal">— 60日線決定操作方向</span>
-        </h3>
-        <p class="text-xs text-slate-400 leading-relaxed mb-4">
-          使用 <strong class="text-blue-300">60日均線（季線）</strong>判斷目前是多頭還是空頭環境，確認大方向後，再用 MA20 搭配葛蘭碧八大法則找進出點。
-        </p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <div class="rounded-xl p-4 border" style="background:rgba(16,185,129,0.07);border-color:#10b98160">
-            <div class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-up"></i> 多頭環境（MA60 向上）</div>
-            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
-              <li>• 股價站上 MA60 且 MA60 斜率向上 → 多頭格局</li>
-              <li>• 此環境優先找①②③④買進訊號</li>
-              <li>• 遇⑤⑦賣出訊號可視為「減碼」而非「做空」</li>
-              <li>• 逢回測 MA60 附近且守穩 → 進場加碼機會</li>
-            </ul>
-          </div>
-          <div class="rounded-xl p-4 border" style="background:rgba(239,68,68,0.07);border-color:#ef444460">
-            <div class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-down"></i> 空頭環境（MA60 向下）</div>
-            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
-              <li>• 股價跌破 MA60 且 MA60 斜率向下 → 空頭格局</li>
-              <li>• 此環境優先找⑤⑥⑦⑧賣出訊號</li>
-              <li>• 遇①④買進訊號應謹慎，多為「短線反彈」</li>
-              <li>• 反彈至 MA60 附近遇壓 → 減碼或觀望</li>
-            </ul>
-          </div>
-        </div>
-        <!-- MA60 即時判斷（由JS填入） -->
-        <div id="gran-ma60-env" class="rounded-xl p-4 border border-slate-700 text-sm text-slate-400">
-          請先查詢個股以顯示 MA60 多空環境。
-        </div>
-      </div>
-
-
-
       <!-- ② MA20 葛蘭碧八大法則進出 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
@@ -1644,6 +1607,43 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           </div>
         </div>
       </div>
+
+
+      <!-- ② MA60 多空環境判斷 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-compass text-blue-400"></i>MA60 多空環境判斷
+          <span class="text-slate-400 text-sm font-normal">— 60日線決定操作方向</span>
+        </h3>
+        <p class="text-xs text-slate-400 leading-relaxed mb-4">
+          使用 <strong class="text-blue-300">60日均線（季線）</strong>判斷目前是多頭還是空頭環境，確認大方向後，再用 MA20 搭配葛蘭碧八大法則找進出點。
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div class="rounded-xl p-4 border" style="background:rgba(16,185,129,0.07);border-color:#10b98160">
+            <div class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-up"></i> 多頭環境（MA60 向上）</div>
+            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
+              <li>• 股價站上 MA60 且 MA60 斜率向上 → 多頭格局</li>
+              <li>• 此環境優先找①②③④買進訊號</li>
+              <li>• 遇⑤⑦賣出訊號可視為「減碼」而非「做空」</li>
+              <li>• 逢回測 MA60 附近且守穩 → 進場加碼機會</li>
+            </ul>
+          </div>
+          <div class="rounded-xl p-4 border" style="background:rgba(239,68,68,0.07);border-color:#ef444460">
+            <div class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-down"></i> 空頭環境（MA60 向下）</div>
+            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
+              <li>• 股價跌破 MA60 且 MA60 斜率向下 → 空頭格局</li>
+              <li>• 此環境優先找⑤⑥⑦⑧賣出訊號</li>
+              <li>• 遇①④買進訊號應謹慎，多為「短線反彈」</li>
+              <li>• 反彈至 MA60 附近遇壓 → 減碼或觀望</li>
+            </ul>
+          </div>
+        </div>
+        <!-- MA60 即時判斷（由JS填入） -->
+        <div id="gran-ma60-env" class="rounded-xl p-4 border border-slate-700 text-sm text-slate-400">
+          請先查詢個股以顯示 MA60 多空環境。
+        </div>
+      </div>
+
 
 
       <!-- ③ 目前訊號（MA60環境 + MA20訊號） -->
