@@ -1527,9 +1527,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <!-- ═══ Tab: 葛蘭碧八大法則 ═══════════════════════════════════════ -->
     <div id="panel-granville" class="hidden space-y-4">
 
-
-      <!-- ③ 目前訊號（MA60環境 + MA20訊號） -->
-      <!-- ④ K線圖 -->
+      <!-- ① K線圖（最上方） -->
       <div class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h3 class="font-bold text-sm text-white">葛蘭碧訊號 K線圖</h3>
@@ -1549,9 +1547,9 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
       </div>
 
+      <!-- ② 葛蘭碧八大法則說明（K線圖下方） -->
 
-
-      <!-- ① MA60 多空環境判斷 -->
+      <!-- ② MA60 多空環境判斷 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
           <i class="fa-solid fa-compass text-blue-400"></i>MA60 多空環境判斷
@@ -1660,8 +1658,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       </div>
 
 
-      <!-- ④ K線圖 -->
-      <!-- ⑥ 詳細訊號解析 -->
+      <!-- ④ 詳細訊號解析 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
           <i class="fa-solid fa-magnifying-glass text-blue-400"></i>詳細訊號解析
@@ -7822,22 +7819,15 @@ function _drawGranCandleChart(data, period) {
         y: {
           ticks:{ color:'#94a3b8', font:{size:9} },
           grid:{color:'#1e293b'},
-          afterDataLimits(scale) {
-            // ★ 自動縮放：以最高值上方10%、最低值下方10% 為 Y 軸範圍
+          // ★ 直接以最低價×0.9為下界、最高價×1.1為上界，確保K線不壓縮在中央
+          ...((() => {
             const visibleLows  = lows.filter(v => v != null);
             const visibleHighs = highs.filter(v => v != null);
             if (visibleLows.length && visibleHighs.length) {
-              const dataMin = Math.min(...visibleLows);
-              const dataMax = Math.max(...visibleHighs);
-              scale.min = dataMin * 0.90;
-              scale.max = dataMax * 1.10;
-            } else {
-              const range = scale.max - scale.min;
-              const mid   = (scale.max + scale.min) / 2;
-              scale.min = mid * 0.90;
-              scale.max = mid * 1.10;
+              return { min: Math.min(...visibleLows) * 0.9, max: Math.max(...visibleHighs) * 1.1 };
             }
-          }
+            return {};
+          })())
         }
       }
     }
