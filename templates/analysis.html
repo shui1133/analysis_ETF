@@ -1335,8 +1335,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
 
         <!-- 均線走勢圖（近120日） -->
-        <div style="height:280px;position:relative;">
-          <canvas id="maChart2"></canvas>
+        <div style="height:280px;position:relative;width:100%;">
+          <canvas id="maChart2" style="display:block;"></canvas>
         </div>
         <p class="text-xs text-slate-500 mt-2">
           <i class="fa-solid fa-circle-info mr-1"></i>
@@ -3711,9 +3711,20 @@ function buildPeriodChartData(rawData, period) {
     volume: daily.volumes[i],
   }));
 
-  // 月線/季線/半年線/年線 → 按日曆分組，確保每根 K 棒對齊自然週期
+  // 週線：按自然週分組（ISO week），避免固定5天導致空白
   let agg;
-  if (period === 'Y') {
+  if (period === 'W') {
+    agg = aggregateByCalendar(dailyOHLCV, d => {
+      const dt = new Date(d);
+      // 取得 ISO 週號（週一開始）
+      const tmp = new Date(dt);
+      tmp.setHours(0,0,0,0);
+      tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
+      const yearStart = new Date(tmp.getFullYear(), 0, 1);
+      const week = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+      return `${tmp.getFullYear()}-W${String(week).padStart(2,'0')}`;
+    });
+  } else if (period === 'Y') {
     agg = aggregateByCalendar(dailyOHLCV, d => d.substring(0, 4));
   } else if (period === '6M') {
     agg = aggregateByCalendar(dailyOHLCV, d => {
@@ -7247,12 +7258,24 @@ function renderMAAnalysisTab(data) {
   const maOff = closes.length - maLen;
   const maDts = dates.slice(-maLen);
   const maCls = closes.slice(-maLen);
-  const getMA = key => {
-    const arr = chart[key] || [];
-    return arr.length >= maOff + maLen ? arr.slice(maOff, maOff + maLen) : arr.slice(-maLen);
+
+  // 計算各期均線（優先從 chart 取預算陣列，沒有則從 closes 自行計算）
+  const _sma = (period) => {
+    const key = 'ma' + period;
+    const stored = chart[key];
+    if (stored && stored.length > 0) {
+      return stored.length >= maOff + maLen ? stored.slice(maOff, maOff + maLen) : stored.slice(-maLen);
+    }
+    // 自行計算：用全部 closes 計算後取後 maLen 筆
+    return smaSimple(closes, period).slice(-maLen);
   };
-  const ma5arr  = getMA('ma5');
-  const ma20arr = getMA('ma20');
+  const getMA = key => {
+    // key 格式如 'ma5', 'ma20', ...
+    const period = parseInt(key.replace('ma', ''));
+    return _sma(period);
+  };
+  const ma5arr  = _sma(5);
+  const ma20arr = _sma(20);
 
   // ── 計算黃金/死亡交叉點 ──
   const maGoldenPts = new Array(maCls.length).fill(null);
@@ -7675,6 +7698,12 @@ function _drawGranCandleChart(data, period) {
   const barPct  = n <= 30 ? Math.min(0.92, 0.75*2.2) : n <= 60 ? Math.min(0.92, 0.65*2.2) : n <= 120 ? Math.min(0.88, 0.55*2.2) : Math.min(0.82, 0.45*2.2);
   const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;
 
+  // ── 預先計算 Y 軸範圍（只基於 K 棒的 high/low，不受訊號標記影響）──
+  const validLows  = lows.filter(v => v != null && isFinite(v));
+  const validHighs = highs.filter(v => v != null && isFinite(v));
+  const yMin = validLows.length  ? Math.min(...validLows)  * 0.9 : undefined;
+  const yMax = validHighs.length ? Math.max(...validHighs) * 1.1 : undefined;
+
   granCandleChart = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -7744,7 +7773,8 @@ function _drawGranCandleChart(data, period) {
           const isBuy = gl.type === 'buy';
           ds.data.forEach((val, i) => {
             if (val == null) return;
-            const x = xScale.getPixelForIndex(i);
+            // Chart.js v4: 用 getPixelForValue 取得 x 座標（category 軸用 index）
+            const x = xScale.getPixelForValue(i);
             const y = yScale.getPixelForValue(val);
             // 三角形高度約 11px，號碼顯示在三角形正外側
             const offsetY = isBuy ? -22 : 22;
@@ -7757,7 +7787,11 @@ function _drawGranCandleChart(data, period) {
             const tw = ctx2.measureText(label).width + 4;
             ctx2.fillStyle = 'rgba(15,23,42,0.72)';
             ctx2.beginPath();
-            ctx2.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
+            if (ctx2.roundRect) {
+              ctx2.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
+            } else {
+              ctx2.rect(x - tw/2, y + offsetY - 7, tw, 14);
+            }
             ctx2.fill();
             // 文字顏色與訊號一致
             ctx2.fillStyle = gl.color;
@@ -7819,15 +7853,12 @@ function _drawGranCandleChart(data, period) {
         y: {
           ticks:{ color:'#94a3b8', font:{size:9} },
           grid:{color:'#1e293b'},
-          // ★ 直接以最低價×0.9為下界、最高價×1.1為上界，確保K線不壓縮在中央
-          ...((() => {
-            const visibleLows  = lows.filter(v => v != null);
-            const visibleHighs = highs.filter(v => v != null);
-            if (visibleLows.length && visibleHighs.length) {
-              return { min: Math.min(...visibleLows) * 0.9, max: Math.max(...visibleHighs) * 1.1 };
-            }
-            return {};
-          })())
+          afterDataLimits(scale) {
+            // ★ Y軸：最低價×0.9為下界、最高價×1.1為上界，確保K線充滿畫面
+            // 強制覆蓋 Chart.js 自動計算（包含訊號三角形）的範圍
+            if (yMin !== undefined) scale.min = yMin;
+            if (yMax !== undefined) scale.max = yMax;
+          }
         }
       }
     }
