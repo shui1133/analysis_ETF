@@ -53,7 +53,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 .hot-rating-buy      {background:#1e3a8a;color:#93c5fd;border:1px solid #2563eb60;}
 .hot-rating-hold     {background:#78350f;color:#fde68a;border:1px solid #d9770660;}
 .hot-rating-reduce   {background:#7c2d12;color:#fdba74;border:1px solid #ea580c60;}
-.hot-rating-sell     {background:#7f1d1d;color:#fca5a5;border:1px solid #dc262660;}
+.hot-rating-sell     {background:#7f1d1d;color:#fde047;border:1px solid #dc262660;}
 
 /* 信號標籤 */
 .signal-tag{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;margin:2px;}
@@ -1335,8 +1335,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
 
         <!-- 均線走勢圖（近120日） -->
-        <div style="height:280px;position:relative;">
-          <canvas id="maChart2"></canvas>
+        <div style="height:280px;position:relative;width:100%;">
+          <canvas id="maChart2" style="display:block;"></canvas>
         </div>
         <p class="text-xs text-slate-500 mt-2">
           <i class="fa-solid fa-circle-info mr-1"></i>
@@ -1527,9 +1527,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <!-- ═══ Tab: 葛蘭碧八大法則 ═══════════════════════════════════════ -->
     <div id="panel-granville" class="hidden space-y-4">
 
-
-      <!-- ③ 目前訊號（MA60環境 + MA20訊號） -->
-      <!-- ④ K線圖 -->
+      <!-- ① K線圖（最上方） -->
       <div class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h3 class="font-bold text-sm text-white">葛蘭碧訊號 K線圖</h3>
@@ -1549,44 +1547,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
       </div>
 
-
-
-      <!-- ① MA60 多空環境判斷 -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-compass text-blue-400"></i>MA60 多空環境判斷
-          <span class="text-slate-400 text-sm font-normal">— 60日線決定操作方向</span>
-        </h3>
-        <p class="text-xs text-slate-400 leading-relaxed mb-4">
-          使用 <strong class="text-blue-300">60日均線（季線）</strong>判斷目前是多頭還是空頭環境，確認大方向後，再用 MA20 搭配葛蘭碧八大法則找進出點。
-        </p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <div class="rounded-xl p-4 border" style="background:rgba(16,185,129,0.07);border-color:#10b98160">
-            <div class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-up"></i> 多頭環境（MA60 向上）</div>
-            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
-              <li>• 股價站上 MA60 且 MA60 斜率向上 → 多頭格局</li>
-              <li>• 此環境優先找①②③④買進訊號</li>
-              <li>• 遇⑤⑦賣出訊號可視為「減碼」而非「做空」</li>
-              <li>• 逢回測 MA60 附近且守穩 → 進場加碼機會</li>
-            </ul>
-          </div>
-          <div class="rounded-xl p-4 border" style="background:rgba(239,68,68,0.07);border-color:#ef444460">
-            <div class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-down"></i> 空頭環境（MA60 向下）</div>
-            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
-              <li>• 股價跌破 MA60 且 MA60 斜率向下 → 空頭格局</li>
-              <li>• 此環境優先找⑤⑥⑦⑧賣出訊號</li>
-              <li>• 遇①④買進訊號應謹慎，多為「短線反彈」</li>
-              <li>• 反彈至 MA60 附近遇壓 → 減碼或觀望</li>
-            </ul>
-          </div>
-        </div>
-        <!-- MA60 即時判斷（由JS填入） -->
-        <div id="gran-ma60-env" class="rounded-xl p-4 border border-slate-700 text-sm text-slate-400">
-          請先查詢個股以顯示 MA60 多空環境。
-        </div>
-      </div>
-
-
+      <!-- ② 葛蘭碧八大法則說明（K線圖下方） -->
 
       <!-- ② MA20 葛蘭碧八大法則進出 -->
       <div class="card p-5">
@@ -1648,6 +1609,43 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       </div>
 
 
+      <!-- ② MA60 多空環境判斷 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-compass text-blue-400"></i>MA60 多空環境判斷
+          <span class="text-slate-400 text-sm font-normal">— 60日線決定操作方向</span>
+        </h3>
+        <p class="text-xs text-slate-400 leading-relaxed mb-4">
+          使用 <strong class="text-blue-300">60日均線（季線）</strong>判斷目前是多頭還是空頭環境，確認大方向後，再用 MA20 搭配葛蘭碧八大法則找進出點。
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div class="rounded-xl p-4 border" style="background:rgba(16,185,129,0.07);border-color:#10b98160">
+            <div class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-up"></i> 多頭環境（MA60 向上）</div>
+            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
+              <li>• 股價站上 MA60 且 MA60 斜率向上 → 多頭格局</li>
+              <li>• 此環境優先找①②③④買進訊號</li>
+              <li>• 遇⑤⑦賣出訊號可視為「減碼」而非「做空」</li>
+              <li>• 逢回測 MA60 附近且守穩 → 進場加碼機會</li>
+            </ul>
+          </div>
+          <div class="rounded-xl p-4 border" style="background:rgba(239,68,68,0.07);border-color:#ef444460">
+            <div class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1"><i class="fa-solid fa-circle-down"></i> 空頭環境（MA60 向下）</div>
+            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
+              <li>• 股價跌破 MA60 且 MA60 斜率向下 → 空頭格局</li>
+              <li>• 此環境優先找⑤⑥⑦⑧賣出訊號</li>
+              <li>• 遇①④買進訊號應謹慎，多為「短線反彈」</li>
+              <li>• 反彈至 MA60 附近遇壓 → 減碼或觀望</li>
+            </ul>
+          </div>
+        </div>
+        <!-- MA60 即時判斷（由JS填入） -->
+        <div id="gran-ma60-env" class="rounded-xl p-4 border border-slate-700 text-sm text-slate-400">
+          請先查詢個股以顯示 MA60 多空環境。
+        </div>
+      </div>
+
+
+
       <!-- ③ 目前訊號（MA60環境 + MA20訊號） -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
@@ -1660,8 +1658,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       </div>
 
 
-      <!-- ④ K線圖 -->
-      <!-- ⑥ 詳細訊號解析 -->
+      <!-- ④ 詳細訊號解析 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
           <i class="fa-solid fa-magnifying-glass text-blue-400"></i>詳細訊號解析
@@ -3714,9 +3711,20 @@ function buildPeriodChartData(rawData, period) {
     volume: daily.volumes[i],
   }));
 
-  // 月線/季線/半年線/年線 → 按日曆分組，確保每根 K 棒對齊自然週期
+  // 週線：按自然週分組（ISO week），避免固定5天導致空白
   let agg;
-  if (period === 'Y') {
+  if (period === 'W') {
+    agg = aggregateByCalendar(dailyOHLCV, d => {
+      const dt = new Date(d);
+      // 取得 ISO 週號（週一開始）
+      const tmp = new Date(dt);
+      tmp.setHours(0,0,0,0);
+      tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
+      const yearStart = new Date(tmp.getFullYear(), 0, 1);
+      const week = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+      return `${tmp.getFullYear()}-W${String(week).padStart(2,'0')}`;
+    });
+  } else if (period === 'Y') {
     agg = aggregateByCalendar(dailyOHLCV, d => d.substring(0, 4));
   } else if (period === '6M') {
     agg = aggregateByCalendar(dailyOHLCV, d => {
@@ -6446,7 +6454,8 @@ async function forceRefreshCurrentStock() {
     });
     const d = await r.json();
     if (d.results?.[ticker]?.status === 'success') {
-      // 清除記憶體快取，重新載入個股完整資料
+      // 清除記憶體快取 + IDB，強制走後端重新取得（確保 volume 單位正確）
+      delete _stockDataCache[ticker];
       await hotCacheClear();
       await loadStock(ticker);
       // ★ 修正：把剛取得的最新資料存入 IDB + localStorage，下次開頁免重打 API
@@ -6533,8 +6542,8 @@ async function loadHotStocksSequential(onlyCodes) {
   // 逐支抓取（含重試），每抓到一支立即更新畫面
   // CONCURRENCY：同時最多 8 支並行（提升速度）
   const CONCURRENCY = 8;
-  const SINGLE_TIMEOUT = 12000;  // 單支最長 12s（加快顯示）
-  const MAX_RETRY = 1;  // 減少重試次數以加快整體速度
+  const SINGLE_TIMEOUT = 25000;  // 單支最長 25s（L1/L2 快取命中時 <1s；L3 yfinance 最長約 20s）
+  const MAX_RETRY = 2;  // L2 快取命中後幾乎不需重試；L3 yfinance 給一次重試機會
 
   const fetchOne = async (code) => {
     for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
@@ -7250,12 +7259,24 @@ function renderMAAnalysisTab(data) {
   const maOff = closes.length - maLen;
   const maDts = dates.slice(-maLen);
   const maCls = closes.slice(-maLen);
-  const getMA = key => {
-    const arr = chart[key] || [];
-    return arr.length >= maOff + maLen ? arr.slice(maOff, maOff + maLen) : arr.slice(-maLen);
+
+  // 計算各期均線（優先從 chart 取預算陣列，沒有則從 closes 自行計算）
+  const _sma = (period) => {
+    const key = 'ma' + period;
+    const stored = chart[key];
+    if (stored && stored.length > 0) {
+      return stored.length >= maOff + maLen ? stored.slice(maOff, maOff + maLen) : stored.slice(-maLen);
+    }
+    // 自行計算：用全部 closes 計算後取後 maLen 筆
+    return smaSimple(closes, period).slice(-maLen);
   };
-  const ma5arr  = getMA('ma5');
-  const ma20arr = getMA('ma20');
+  const getMA = key => {
+    // key 格式如 'ma5', 'ma20', ...
+    const period = parseInt(key.replace('ma', ''));
+    return _sma(period);
+  };
+  const ma5arr  = _sma(5);
+  const ma20arr = _sma(20);
 
   // ── 計算黃金/死亡交叉點 ──
   const maGoldenPts = new Array(maCls.length).fill(null);
@@ -7678,6 +7699,12 @@ function _drawGranCandleChart(data, period) {
   const barPct  = n <= 30 ? Math.min(0.92, 0.75*2.2) : n <= 60 ? Math.min(0.92, 0.65*2.2) : n <= 120 ? Math.min(0.88, 0.55*2.2) : Math.min(0.82, 0.45*2.2);
   const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;
 
+  // ── 預先計算 Y 軸範圍（只基於 K 棒的 high/low，不受訊號標記影響）──
+  const validLows  = lows.filter(v => v != null && isFinite(v));
+  const validHighs = highs.filter(v => v != null && isFinite(v));
+  const yMin = validLows.length  ? Math.min(...validLows)  * 0.9 : undefined;
+  const yMax = validHighs.length ? Math.max(...validHighs) * 1.1 : undefined;
+
   granCandleChart = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -7747,7 +7774,8 @@ function _drawGranCandleChart(data, period) {
           const isBuy = gl.type === 'buy';
           ds.data.forEach((val, i) => {
             if (val == null) return;
-            const x = xScale.getPixelForIndex(i);
+            // Chart.js v4: 用 getPixelForValue 取得 x 座標（category 軸用 index）
+            const x = xScale.getPixelForValue(i);
             const y = yScale.getPixelForValue(val);
             // 三角形高度約 11px，號碼顯示在三角形正外側
             const offsetY = isBuy ? -22 : 22;
@@ -7760,7 +7788,11 @@ function _drawGranCandleChart(data, period) {
             const tw = ctx2.measureText(label).width + 4;
             ctx2.fillStyle = 'rgba(15,23,42,0.72)';
             ctx2.beginPath();
-            ctx2.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
+            if (ctx2.roundRect) {
+              ctx2.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
+            } else {
+              ctx2.rect(x - tw/2, y + offsetY - 7, tw, 14);
+            }
             ctx2.fill();
             // 文字顏色與訊號一致
             ctx2.fillStyle = gl.color;
@@ -7823,20 +7855,10 @@ function _drawGranCandleChart(data, period) {
           ticks:{ color:'#94a3b8', font:{size:9} },
           grid:{color:'#1e293b'},
           afterDataLimits(scale) {
-            // ★ 自動縮放：以最高值上方10%、最低值下方10% 為 Y 軸範圍
-            const visibleLows  = lows.filter(v => v != null);
-            const visibleHighs = highs.filter(v => v != null);
-            if (visibleLows.length && visibleHighs.length) {
-              const dataMin = Math.min(...visibleLows);
-              const dataMax = Math.max(...visibleHighs);
-              scale.min = dataMin * 0.90;
-              scale.max = dataMax * 1.10;
-            } else {
-              const range = scale.max - scale.min;
-              const mid   = (scale.max + scale.min) / 2;
-              scale.min = mid * 0.90;
-              scale.max = mid * 1.10;
-            }
+            // ★ Y軸：最低價×0.9為下界、最高價×1.1為上界，確保K線充滿畫面
+            // 強制覆蓋 Chart.js 自動計算（包含訊號三角形）的範圍
+            if (yMin !== undefined) scale.min = yMin;
+            if (yMax !== undefined) scale.max = yMax;
           }
         }
       }
