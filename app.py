@@ -967,7 +967,6 @@ def get_stock_analysis(ticker):
             if len(ohlcv_cached) >= 20:
                 print(f"  [分析模式] 取得 {ticker} 完整資料...")
                 print(f"  [L2 GitHub] {ticker} 命中快取 ({len(ohlcv_rows)} 筆)")
-                # 檢查 info 是否有基本面關鍵欄位，若缺則標記需 L3 補充
                 _info_ok = bool(info_cache and any(
                     info_cache.get(k) for k in ('pe_ratio', 'pb_ratio', 'roe', 'eps', 'profit_margin')
                 ))
@@ -1919,7 +1918,7 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
         _color  = '#ea580c'; _bg = '#7c2d12'; _icon = '⚠️'
     else:
         _rating = '賣出'
-        _color  = '#dc2626'; _bg = '#7f1d1d'; _icon = '🔴'
+        _color  = '#fbbf24'; _bg = '#7f1d1d'; _icon = '🔴'
     rec['rating']       = _rating
     rec['rating_color'] = _color
     rec['rating_bg']    = _bg

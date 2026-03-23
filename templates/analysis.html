@@ -6454,7 +6454,8 @@ async function forceRefreshCurrentStock() {
     });
     const d = await r.json();
     if (d.results?.[ticker]?.status === 'success') {
-      // 清除記憶體快取，重新載入個股完整資料
+      // 清除記憶體快取 + IDB，強制走後端重新取得（確保 volume 單位正確）
+      delete _stockDataCache[ticker];
       await hotCacheClear();
       await loadStock(ticker);
       // ★ 修正：把剛取得的最新資料存入 IDB + localStorage，下次開頁免重打 API
