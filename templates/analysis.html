@@ -1468,13 +1468,44 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <i class="fa-solid fa-arrows-cross text-yellow-400"></i>均線交叉分析
           <span class="text-slate-400 text-sm font-normal">— 黃金交叉 / 死亡交叉 / 預估到達天數</span>
         </h3>
+        <!-- 交叉定義說明 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div class="rounded-xl p-3 border" style="background:rgba(251,191,36,0.07);border-color:#fbbf2440">
+            <div class="flex items-center gap-2 mb-1">
+              <span style="color:#fbbf24">★</span>
+              <span class="font-bold text-sm" style="color:#fbbf24">黃金交叉 — 買入訊號</span>
+            </div>
+            <div class="text-xs text-slate-300 leading-relaxed">MA5 由下往上穿越 MA20，代表短線動能轉強、趨勢可能由空轉多。兩均線皆向上時訊號最強，建議搭配成交量確認，逢低分批買進。</div>
+          </div>
+          <div class="rounded-xl p-3 border" style="background:rgba(244,63,94,0.07);border-color:#f43f5e40">
+            <div class="flex items-center gap-2 mb-1">
+              <span style="color:#f43f5e">✕</span>
+              <span class="font-bold text-sm" style="color:#f43f5e">死亡交叉 — 賣出訊號</span>
+            </div>
+            <div class="text-xs text-slate-300 leading-relaxed">MA5 由上往下穿越 MA20，代表短線動能轉弱、趨勢可能由多轉空。兩均線皆向下時訊號最強，建議逐步減碼，嚴格執行停損。</div>
+          </div>
+        </div>
         <div class="flex flex-wrap gap-3 text-xs text-slate-400 mb-3">
-          <span><span style="display:inline-block;width:10px;height:10px;background:#fbbf24;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#fbbf24">★ 黃金交叉</span>：MA5 上穿 MA20，短線買入訊號</span>
-          <span><span style="display:inline-block;width:10px;height:10px;background:#f43f5e;border-radius:50%;margin-right:4px;vertical-align:middle"></span><span style="color:#f43f5e">✕ 死亡交叉</span>：MA5 下穿 MA20，短線賣出訊號</span>
           <span class="text-slate-500">⚠ 標示表示預計 ≤10 個交易日即將到達</span>
         </div>
         <div id="maCrossSection" class="space-y-2">
           <div class="text-slate-400 text-sm">載入中...</div>
+        </div>
+        <!-- 歷史交叉紀錄 -->
+        <div class="mt-4">
+          <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+            <i class="fa-solid fa-clock-rotate-left"></i> 近期交叉歷史記錄
+          </div>
+          <div id="maCrossHistoryList" class="space-y-1">
+            <div class="text-slate-500 text-xs">載入中...</div>
+          </div>
+        </div>
+        <!-- 預估死亡交叉日期 -->
+        <div id="maDeathCrossPredictBox" class="hidden mt-4 rounded-xl p-4 border" style="background:rgba(244,63,94,0.08);border-color:#f43f5e50">
+          <div class="font-bold text-sm mb-2" style="color:#f43f5e">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i>死亡交叉預測
+          </div>
+          <div id="maDeathCrossPredictContent" class="text-slate-300 text-sm"></div>
         </div>
       </div>
 
@@ -1621,7 +1652,46 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
       </div>
 
-      <!-- ⑤ 詳細訊號解析 -->
+      <!-- ⑤ 均線交叉歷史記錄 & 意義說明 -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-arrows-cross text-yellow-400"></i>均線交叉歷史
+          <span class="text-slate-400 text-sm font-normal">— 過去發生的黃金交叉 / 死亡交叉及其意義</span>
+        </h3>
+        <!-- 交叉說明卡片 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div class="rounded-xl p-4 border" style="background:rgba(251,191,36,0.07);border-color:#fbbf2450">
+            <div class="flex items-center gap-2 mb-2">
+              <span style="color:#fbbf24;font-size:18px">★</span>
+              <span class="font-black text-sm" style="color:#fbbf24">黃金交叉（Golden Cross）</span>
+            </div>
+            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
+              <li>• <strong class="text-white">定義：</strong>短期均線（MA5）由下往上穿越長期均線（MA20）</li>
+              <li>• <strong class="text-white">意義：</strong>短線動能增強，趨勢由空轉多，為買入或加碼訊號</li>
+              <li>• <strong class="text-white">強度：</strong>兩條均線皆向上時訊號最強；MA60 多頭環境下可信度更高</li>
+              <li>• <strong class="text-white">注意：</strong>配合成交量放大確認，避免假突破</li>
+            </ul>
+          </div>
+          <div class="rounded-xl p-4 border" style="background:rgba(244,63,94,0.07);border-color:#f43f5e50">
+            <div class="flex items-center gap-2 mb-2">
+              <span style="color:#f43f5e;font-size:18px">✕</span>
+              <span class="font-black text-sm" style="color:#f43f5e">死亡交叉（Death Cross）</span>
+            </div>
+            <ul class="text-xs text-slate-300 space-y-1 leading-relaxed">
+              <li>• <strong class="text-white">定義：</strong>短期均線（MA5）由上往下穿越長期均線（MA20）</li>
+              <li>• <strong class="text-white">意義：</strong>短線動能轉弱，趨勢由多轉空，為賣出或減碼訊號</li>
+              <li>• <strong class="text-white">強度：</strong>兩條均線皆向下時訊號最強；MA60 空頭環境下可信度更高</li>
+              <li>• <strong class="text-white">注意：</strong>交叉後量縮反彈可視為空頭確認，量增則需重新評估</li>
+            </ul>
+          </div>
+        </div>
+        <!-- 歷史交叉記錄（由 JS 填入） -->
+        <div id="granCrossHistoryList" class="space-y-2">
+          <div class="text-slate-400 text-sm">請先查詢個股以顯示交叉歷史記錄。</div>
+        </div>
+      </div>
+
+      <!-- ⑥ 詳細訊號解析 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
           <i class="fa-solid fa-magnifying-glass text-blue-400"></i>詳細訊號解析
@@ -1643,7 +1713,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
       </div>
 
-      <!-- ⑥ 操作建議摘要 -->
+      <!-- ⑦ 操作建議摘要 -->
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
           <i class="fa-solid fa-clipboard-check text-green-400"></i>葛蘭碧操作建議
@@ -7298,7 +7368,7 @@ function renderMAAnalysisTab(data) {
                   // 黃金交叉：金色方塊＋文字
                   if (label === '黃金交叉') return { text:'★ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#fbbf24' };
                   // 死亡交叉：紅色方塊＋文字
-                  if (label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#94a3b8' };
+                  if (label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#f43f5e' };
                   // 超買賣出參考：橘色方塊
                   if (label === '超買賣出參考') return { text:'▼ 超買賣出', fillStyle:'rgba(239,68,68,0.85)', strokeStyle:'#ef4444', lineWidth:1, datasetIndex:i, hidden:false, fontColor:'#94a3b8' };
                   // 超賣買入參考：綠色方塊
@@ -7377,6 +7447,90 @@ function renderMAAnalysisTab(data) {
     };
     const html = mkCross(cross520,'MA5','MA20') + mkCross(cross2060,'MA20','MA60');
     crossSect.innerHTML = html || '<div class="rounded-xl p-4 border border-slate-700 text-slate-400 text-sm">目前無交叉訊號預測。均線走勢平穩，請持續觀察。</div>';
+  }
+
+  // ── 近期交叉歷史記錄 ──
+  const histEl = document.getElementById('maCrossHistoryList');
+  if (histEl && ma5arr.length > 1) {
+    const histItems = [];
+    for (let i = 1; i < ma5arr.length; i++) {
+      if (!ma5arr[i] || !ma20arr[i] || !ma5arr[i-1] || !ma20arr[i-1]) continue;
+      const isGolden = ma5arr[i-1] <= ma20arr[i-1] && ma5arr[i] > ma20arr[i];
+      const isDeath  = ma5arr[i-1] >= ma20arr[i-1] && ma5arr[i] < ma20arr[i];
+      if (isGolden || isDeath) {
+        histItems.push({ date: maDts[i] || '', type: isGolden ? 'golden' : 'death',
+          ma5: ma5arr[i], ma20: ma20arr[i] });
+      }
+    }
+    if (histItems.length === 0) {
+      histEl.innerHTML = '<div class="text-slate-500 text-xs">近120日內無交叉記錄。</div>';
+    } else {
+      const recent = histItems.slice(-8).reverse();
+      histEl.innerHTML = recent.map(item => {
+        const isG = item.type === 'golden';
+        const col = isG ? '#fbbf24' : '#f43f5e';
+        const bg  = isG ? 'rgba(251,191,36,0.06)' : 'rgba(244,63,94,0.06)';
+        const icon = isG ? '★ 黃金交叉' : '✕ 死亡交叉';
+        const sig  = isG ? '短線動能轉強，買入訊號' : '短線動能轉弱，賣出訊號';
+        return `<div class="flex items-center gap-3 rounded-lg px-3 py-2 border" style="background:${bg};border-color:${col}30">
+          <span class="font-bold text-xs" style="color:${col};min-width:70px">${icon}</span>
+          <span class="mono text-xs text-slate-400">${item.date ? item.date.slice(0,10) : '--'}</span>
+          <span class="text-xs text-slate-400">MA5: ${item.ma5.toFixed(1)} / MA20: ${item.ma20.toFixed(1)}</span>
+          <span class="text-xs text-slate-500 ml-auto">${sig}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── 死亡交叉預測（何時 MA5 可能下穿 MA20）──
+  const deathPredBox = document.getElementById('maDeathCrossPredictBox');
+  const deathPredContent = document.getElementById('maDeathCrossPredictContent');
+  if (deathPredBox && deathPredContent) {
+    const c520  = maAna.cross_5_20  || {};
+    const c2060 = maAna.cross_20_60 || {};
+    const predLines = [];
+    const buildPredLine = (obj, shortLabel, longLabel) => {
+      if (!obj || !obj.type || obj.type === 'none') return null;
+      const td = obj.days_to_cross != null ? obj.days_to_cross : (obj.est_days != null ? obj.est_days : null);
+      const cd = obj.est_calendar_days != null ? obj.est_calendar_days : null;
+      const isBuy = obj.type === 'golden';
+      const crossType = isBuy ? '黃金交叉' : '死亡交叉';
+      // 預估到達日期
+      let dateStr = '';
+      if (cd != null) {
+        const est = new Date();
+        est.setDate(est.getDate() + cd);
+        dateStr = est.toLocaleDateString('zh-TW', {year:'numeric',month:'2-digit',day:'2-digit'});
+      }
+      return { isBuy, shortLabel, longLabel, crossType, td, cd, dateStr,
+        price: obj.price_at_cross || obj.est_price || null,
+        conf: obj.confidence_pct != null ? obj.confidence_pct : (obj.confidence != null ? Math.round(obj.confidence*100) : null) };
+    };
+    const p1 = buildPredLine(c520,'MA5','MA20');
+    const p2 = buildPredLine(c2060,'MA20','MA60');
+    [p1, p2].forEach(p => {
+      if (!p) return;
+      const col   = p.isBuy ? '#fbbf24' : '#f43f5e';
+      const icon  = p.isBuy ? '★ 黃金交叉' : '✕ 死亡交叉';
+      const urgency = p.td != null && p.td <= 10 ? '<span style="color:#f97316">⚠ 緊急！</span>' : '';
+      const daysStr = p.td != null ? `預計 <strong style="color:${col}">${p.td} 個交易日</strong>（約 ${p.cd||'?'} 自然日）後` : '';
+      const dateStr = p.dateStr ? `，預估到達日期：<strong style="color:${col}">${p.dateStr}</strong>` : '';
+      const priceStr = p.price != null ? `；預測交叉價格：<span class="mono font-bold" style="color:${col}">${p.price.toFixed(2)}</span>` : '';
+      const confStr = p.conf != null ? `（信心度 ${p.conf}%）` : '';
+      predLines.push(`<div class="mb-2 text-sm">
+        ${urgency}<span class="font-bold" style="color:${col}">${icon}（${p.shortLabel}/${p.longLabel}）</span>：
+        ${daysStr}${dateStr}${priceStr} ${confStr}
+        <div class="text-xs text-slate-400 mt-1">${p.isBuy ? '均線趨勢轉多，動能回升，可考慮逢低布局。' : '均線趨勢轉弱，注意風險，建議提前規劃減碼。'}</div>
+      </div>`);
+    });
+    if (predLines.length > 0) {
+      deathPredBox.classList.remove('hidden');
+      deathPredBox.style.borderColor = predLines.some(l => l.includes('死亡交叉')) ? '#f43f5e50' : '#fbbf2450';
+      deathPredBox.style.background  = predLines.some(l => l.includes('死亡交叉')) ? 'rgba(244,63,94,0.08)' : 'rgba(251,191,36,0.08)';
+      deathPredContent.innerHTML = predLines.join('') + `<div class="text-xs text-slate-500 mt-2">* 預測基於均線斜率延伸，實際走勢受市場影響可能提前或延後。</div>`;
+    } else {
+      deathPredBox.classList.add('hidden');
+    }
   }
 }
 
@@ -7504,6 +7658,48 @@ function renderGranvilleTab(data) {
 
   // ── K 線圖 ──
   _drawGranCandleChart(data, granCurrentPeriod);
+
+  // ── 交叉歷史記錄（填入 granCrossHistoryList）──
+  const granCrossEl = document.getElementById('granCrossHistoryList');
+  if (granCrossEl) {
+    const ch = data.chart || {};
+    const closes5  = ch.closes || [];
+    const ma5full  = ch.ma5    || [];
+    const ma20full = ch.ma20   || [];
+    const datesAll = ch.dates  || [];
+    const n = Math.min(closes5.length, ma5full.length, ma20full.length);
+    const lookback = Math.min(n, 120); // 近120日
+    const offset = n - lookback;
+    const crossHistory = [];
+    for (let i = offset + 1; i < n; i++) {
+      const s = ma5full[i], l = ma20full[i], sp = ma5full[i-1], lp = ma20full[i-1];
+      if (!s || !l || !sp || !lp) continue;
+      if (sp <= lp && s > l) crossHistory.push({ date: datesAll[i] || '', type:'golden', ma5:s, ma20:l });
+      else if (sp >= lp && s < l) crossHistory.push({ date: datesAll[i] || '', type:'death', ma5:s, ma20:l });
+    }
+    if (crossHistory.length === 0) {
+      granCrossEl.innerHTML = '<div class="text-slate-500 text-xs">近120日內無黃金交叉或死亡交叉記錄。</div>';
+    } else {
+      const recent = crossHistory.slice(-10).reverse();
+      granCrossEl.innerHTML = recent.map(item => {
+        const isG = item.type === 'golden';
+        const col = isG ? '#fbbf24' : '#f43f5e';
+        const bg  = isG ? 'rgba(251,191,36,0.06)' : 'rgba(244,63,94,0.06)';
+        const icon = isG ? '★ 黃金交叉' : '✕ 死亡交叉';
+        const meaning = isG
+          ? 'MA5 上穿 MA20，短線動能轉強，為買入訊號；搭配 MA60 多頭環境時可信度更高'
+          : 'MA5 下穿 MA20，短線動能轉弱，為賣出訊號；搭配 MA60 空頭環境時需提防趨勢持續下行';
+        return `<div class="rounded-lg p-3 border mb-2" style="background:${bg};border-color:${col}30">
+          <div class="flex flex-wrap items-center gap-3 mb-1">
+            <span class="font-bold text-sm" style="color:${col}">${icon}</span>
+            <span class="mono text-xs text-slate-400">${item.date ? item.date.slice(0,10) : '--'}</span>
+            <span class="text-xs text-slate-400">MA5: <span class="font-bold" style="color:${col}">${item.ma5.toFixed(2)}</span> ／ MA20: <span class="font-bold" style="color:${col}">${item.ma20.toFixed(2)}</span></span>
+          </div>
+          <div class="text-xs text-slate-400 leading-relaxed">${meaning}</div>
+        </div>`;
+      }).join('');
+    }
+  }
 }
 
 function _drawGranCandleChart(data, period) {
@@ -7689,10 +7885,22 @@ function _drawGranCandleChart(data, period) {
           ticks:{ color:'#94a3b8', font:{size:9} },
           grid:{color:'#1e293b'},
           afterDataLimits(scale) {
-            const range = scale.max - scale.min;
-            const pad = range * 0.08;
-            scale.min = scale.min - pad;
-            scale.max = scale.max + pad;
+            // ★ 自動縮放：只根據可見K棒的 high/low 計算，避免Y軸過大
+            const visibleLows  = lows.filter(v => v != null);
+            const visibleHighs = highs.filter(v => v != null);
+            if (visibleLows.length && visibleHighs.length) {
+              const dataMin = Math.min(...visibleLows);
+              const dataMax = Math.max(...visibleHighs);
+              const range = dataMax - dataMin;
+              const pad = range * 0.10;
+              scale.min = dataMin - pad;
+              scale.max = dataMax + pad;
+            } else {
+              const range = scale.max - scale.min;
+              const pad = range * 0.08;
+              scale.min = scale.min - pad;
+              scale.max = scale.max + pad;
+            }
           }
         }
       }
