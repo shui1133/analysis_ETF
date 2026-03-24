@@ -277,13 +277,19 @@ class ETFDataFetcher:
         if yf_data and yf_data.get('price_data'):
             print(f"✓ yfinance 成功，{len(yf_data['price_data'])} 筆")
             self._save_data(ticker, yf_data)
-            # ★ 寫入 GitHub 快取
+            # ★ GitHub 快取寫入改背景，不阻塞回測請求
             if _gh_cache and _gh_cache.enabled:
-                try:
-                    _gh_cache.save_price(ticker, yf_data['price_data'])
-                    _gh_cache.save_dividend(ticker, yf_data.get('dividend_data', []))
-                except Exception as e_gh:
-                    print(f"  [GitHubCache] 寫入失敗（非致命）: {e_gh}")
+                _p = yf_data['price_data']
+                _d = yf_data.get('dividend_data', [])
+                _t = ticker
+                def _bg_w(_tk=_t, _pd=_p, _dd=_d):
+                    try:
+                        _gh_cache.save_price(_tk, _pd)
+                        _gh_cache.save_dividend(_tk, _dd)
+                    except Exception as _e:
+                        print(f"  [GitHubCache] {_tk} 背景寫入失敗: {_e}")
+                import threading as _th
+                _th.Thread(target=_bg_w, daemon=True).start()
             return yf_data
 
         # 2. GitHub ETF 備援（原有邏輯）
@@ -545,10 +551,17 @@ class ETFDataFetcher:
                 except Exception:
                     pass
 
-                # 基本資訊
+                # 基本資訊（加 futures timeout 保護，避免 tk.info 卡住 worker）
                 info = {}
                 try:
-                    raw = tk.info or {}
+                    from concurrent.futures import ThreadPoolExecutor as _TPE, TimeoutError as _TE
+                    def _get_info():
+                        return tk.info or {}
+                    with _TPE(max_workers=1) as _ex:
+                        try:
+                            raw = _ex.submit(_get_info).result(timeout=10)
+                        except (_TE, Exception):
+                            raw = {}
                     info = {
                         'name':           raw.get('longName') or raw.get('shortName', ticker),
                         'sector':         raw.get('sector', ''),
@@ -590,14 +603,23 @@ class ETFDataFetcher:
                 print(f"  ✓ yfinance ({yf_ticker}) 分析資料成功：{len(ohlcv)} 筆")
                 self._save_data(ticker, result)
 
-                # ★ 寫入 GitHub 快取（持久化）
+                # ★ GitHub 快取寫入改為背景執行緒，不阻塞 HTTP response
                 if _gh_cache and _gh_cache.enabled:
-                    try:
-                        _gh_cache.save_price(ticker, ohlcv)
-                        _gh_cache.save_dividend(ticker, dividend_data)
-                        _gh_cache.save_fundamental(ticker, info)
-                    except Exception as e_gh:
-                        print(f"  [GitHubCache] 寫入失敗（非致命）: {e_gh}")
+                    _ohlcv_snap  = ohlcv
+                    _div_snap    = dividend_data
+                    _info_snap   = info
+                    _ticker_snap = ticker
+                    def _bg_gh_write(_t=_ticker_snap, _o=_ohlcv_snap,
+                                     _d=_div_snap, _i=_info_snap):
+                        try:
+                            _gh_cache.save_price(_t, _o)
+                            _gh_cache.save_dividend(_t, _d)
+                            _gh_cache.save_fundamental(_t, _i)
+                            print(f"  [GitHubCache] {_t} 背景寫入完成")
+                        except Exception as _eg:
+                            print(f"  [GitHubCache] {_t} 背景寫入失敗（非致命）: {_eg}")
+                    import threading as _th
+                    _th.Thread(target=_bg_gh_write, daemon=True).start()
 
                 # 回填 L1 記憶體快取
                 mem_cache[ticker] = result

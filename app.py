@@ -869,20 +869,28 @@ def _fetch_one_hot(ticker: str, fetcher) -> tuple:
                 pass
         if raw and raw.get('ohlcv'):
             analysis_cache[ticker] = {'data': raw, 'ts': _time.time()}
-            # 存回本機 + GitHub，下次可直接命中快取
+            # 本機存檔同步，GitHub push 背景執行
             try:
                 from github_cache import (local_save_price, local_save_dividend,
                                           local_save_fundamental, gh_save_price,
                                           gh_save_dividend, gh_save_fundamental)
                 if raw.get('ohlcv'):
                     local_save_price(DATA_DIR, ticker, raw['ohlcv'])
-                    gh_save_price(ticker, raw['ohlcv'])
                 if raw.get('dividend_data'):
                     local_save_dividend(DATA_DIR, ticker, raw['dividend_data'])
-                    gh_save_dividend(ticker, raw['dividend_data'])
                 if raw.get('info'):
                     local_save_fundamental(DATA_DIR, ticker, raw['info'])
-                    gh_save_fundamental(ticker, raw['info'])
+                _t_s = ticker
+                _o_s = raw.get('ohlcv')
+                _d_s = raw.get('dividend_data')
+                _i_s = raw.get('info')
+                def _bg_hot(_t=_t_s, _o=_o_s, _d=_d_s, _i=_i_s):
+                    try:
+                        if _o: gh_save_price(_t, _o)
+                        if _d: gh_save_dividend(_t, _d)
+                        if _i: gh_save_fundamental(_t, _i)
+                    except Exception: pass
+                _threading.Thread(target=_bg_hot, daemon=True).start()
             except Exception as e_save:
                 print(f"  [hot_summary/{ticker}] 快取存檔失敗（不影響回應）: {e_save}")
             print(f"  [hot_summary/{ticker}] 🌐 yfinance 成功，已存快取")
@@ -1094,21 +1102,40 @@ def get_stock_analysis(ticker):
                 else:
                     raw = _yf_raw
 
-                # 存入本機 + GitHub，下次 L1/L2 可命中
+                # 存入本機（同步，快）+ GitHub（背景，慢）
                 try:
                     from github_cache import (local_save_price, local_save_dividend,
                                               local_save_fundamental, gh_save_price,
                                               gh_save_dividend, gh_save_fundamental)
+                    # 本機存檔同步執行（速度快，確保 L1.5 立即可用）
                     if not _only_info_supplement:
                         local_save_price(DATA_DIR, ticker, raw['ohlcv'])
-                        gh_save_price(ticker, raw['ohlcv'])
                     if raw.get('dividend_data'):
                         local_save_dividend(DATA_DIR, ticker, raw['dividend_data'])
-                        gh_save_dividend(ticker, raw['dividend_data'])
                     if raw.get('info'):
                         local_save_fundamental(DATA_DIR, ticker, raw['info'])
-                        gh_save_fundamental(ticker, raw['info'])
-                    print(f"  [{ticker}] yfinance 成功，已存入本機/GitHub 快取")
+                    print(f"  [{ticker}] yfinance 成功，已存入本機快取")
+
+                    # ★ GitHub push 改為背景執行緒，不阻塞 HTTP response
+                    _t_snap  = ticker
+                    _o_snap  = raw['ohlcv']       if not _only_info_supplement else None
+                    _d_snap  = raw.get('dividend_data')
+                    _i_snap  = raw.get('info')
+                    _skip_o  = _only_info_supplement
+                    def _bg_push_sa(_t=_t_snap, _o=_o_snap, _d=_d_snap,
+                                    _i=_i_snap, _skip=_skip_o):
+                        try:
+                            if not _skip and _o:
+                                gh_save_price(_t, _o)
+                            if _d:
+                                gh_save_dividend(_t, _d)
+                            if _i:
+                                gh_save_fundamental(_t, _i)
+                            print(f"  [{_t}] GitHub 背景 push 完成")
+                        except Exception as _eg:
+                            print(f"  [{_t}] GitHub 背景 push 失敗（非致命）: {_eg}")
+                    _threading.Thread(target=_bg_push_sa, daemon=True).start()
+
                 except Exception as e_save:
                     print(f"  [{ticker}] 快取存檔失敗（不影響回應）: {e_save}")
         except Exception as _e_yf:
@@ -2311,8 +2338,9 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # 存快取（本機 + GitHub，統一由 cache_mgr 輔助函式處理）
+            # 本機存快取同步，GitHub push 背景執行
             from github_cache import local_save_price, gh_save_price
+            _ef_push_list = []
             for tk in need_fetch:
                 if tk not in prices:
                     continue
@@ -2323,9 +2351,14 @@ def efficient_frontier():
                         for d, v in price_series.items() if pd.notna(v)
                     ]
                     local_save_price(DATA_DIR, tk, price_list)
-                    gh_save_price(tk, price_list)
+                    _ef_push_list.append((tk, price_list))
                 except Exception as e_save:
                     print(f"  [EF] 存快取 {tk} 失敗（非致命）: {e_save}")
+            def _bg_ef_push(_lst=_ef_push_list):
+                for _tk, _pl in _lst:
+                    try: gh_save_price(_tk, _pl)
+                    except Exception: pass
+            _threading.Thread(target=_bg_ef_push, daemon=True).start()
 
         if failed:
             return jsonify({'status':'error',
