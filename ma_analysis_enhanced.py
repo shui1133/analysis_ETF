@@ -853,18 +853,29 @@ def enhanced_generate_recommendation(
     if ma_center:
         if total_score >= 6:
             # 買進/強力買進：以均線中心向上估算，溢價以 total_score 標準化後計算
+            # ★ 修正：取 max(close, ma_center) 確保目標價一定高於現價
             norm_score = total_score / 2   # 對應原版的「每多1分+3%」
-            target_price = round(ma_center * (1 + (norm_score - 2) * 0.03), 1)
+            base_up = max(close, ma_center)
+            target_price = round(base_up * (1 + (norm_score - 2) * 0.03), 1)
+            if target_price <= close:  # 二次保險
+                target_price = round(close * 1.01, 1)
             target_type, target_desc = 'upside', '上漲目標（均線+趨勢溢價）'
         elif total_score >= 0:
             target_price = ma_center
             target_type, target_desc = 'fair', '合理估值（均線中心）'
         else:
-            # 減碼/賣出：同樣標準化後計算下行空間
+            # 減碼/賣出：以現價或均線中心（取較低者）向下計算下行風險位
+            # ★ 修正：原本用 ma_center（均線中心）計算，當股價已跌破均線時
+            #   ma_center 可能遠高於現價，導致「下行風險位」反而高於現價（邏輯矛盾）
+            #   改用 min(close, ma_center) 確保下行風險位一定低於現價
             norm_score = total_score / 2
-            downside_pct = max(norm_score * 0.025, -0.15)
-            target_price = round(ma_center * (1 + downside_pct), 1)
-            target_type, target_desc = 'downside', '下行風險位（均線-弱勢折價）'
+            downside_pct = max(norm_score * 0.025, -0.15)   # 範圍 -0.15 ~ 0
+            base_price = min(close, ma_center)               # 取現價與均線中心的較低值
+            target_price = round(base_price * (1 + downside_pct), 1)
+            # 二次保險：若算出來仍 >= 現價，強制改以現價為基準
+            if target_price >= close:
+                target_price = round(close * (1 + downside_pct), 1)
+            target_type, target_desc = 'downside', '下行風險位（現價-弱勢折價）'
     else:
         target_price, target_type, target_desc = None, 'none', ''
 
