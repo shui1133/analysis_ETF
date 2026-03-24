@@ -6034,6 +6034,15 @@ async function _pollCacheVersion() {
     if (_lastCacheVersion && _lastCacheVersion !== v) {
       console.log(`[Cache] 偵測到後端更新（${_lastCacheVersion} → ${v}），清空本地快取`);
       await hotCacheClear();
+      // ★ 修正：清除後重置 hotStockData，讓下次切換到熱門股票頁時重新從後端拉取
+      // 加入隨機延遲 (1~3s)，避免多個標籤頁同時觸發大量請求
+      hotStockData = {};
+      if (typeof loadHotStocksSequential === 'function' &&
+          document.getElementById('hotStockTableBody') &&
+          !document.getElementById('hotPanel')?.classList.contains('hidden')) {
+        const delay = 1000 + Math.random() * 2000;
+        setTimeout(() => loadHotStocksSequential(), delay);
+      }
     }
     _lastCacheVersion = v;
   } catch(e) { /* 網路問題靜默忽略 */ }
@@ -6695,9 +6704,10 @@ async function loadHotStocksSequential(onlyCodes) {
   _renderHotSkeleton(missing);
 
   // 逐支抓取（含重試），每抓到一支立即更新畫面
-  // ★ 修正：CONCURRENCY 從 8 降至 3，降低 Render worker 同時壓力避免 502
-  const CONCURRENCY = 3;
-  const SINGLE_TIMEOUT = 35000;  // ★ 修正：從 25s 延長到 35s，給 L3 yfinance 更充裕時間
+  // ★ 修正：CONCURRENCY 依未命中筆數動態調整，大批量時降低並行避免 Render 502
+  //   missing ≤10 → 2 並行；> 10 → 1 並行（序列），避免 50 筆時擠爆單一 worker
+  const CONCURRENCY = missing.length <= 10 ? 2 : 1;
+  const SINGLE_TIMEOUT = 40000;  // 40s，給 L3 yfinance 充裕時間
   const MAX_RETRY = 2;  // L2 快取命中後幾乎不需重試；L3 yfinance 給一次重試機會
 
   const fetchOne = async (code) => {
@@ -6750,8 +6760,12 @@ async function loadHotStocksSequential(onlyCodes) {
 
   updateHotProgress(loaded, total, `從 yfinance 抓取 ${missing.length} 支資料...`);
 
+  // ★ 修正：大批量（>10支未命中）時每支請求後等 300ms，避免 Render worker 瞬間過載
+  const _fetchDelay = missing.length > 10 ? 300 : 0;
+
   await runWithConcurrency(missing, async (s) => {
     if (hotLoadAbort) return;
+    if (_fetchDelay > 0) await new Promise(res => setTimeout(res, _fetchDelay));
     const data = await fetchOne(s.code);
     hotStockData[s.code] = data;   // null 也記錄（避免重複抓）
     if (data) {

@@ -786,20 +786,36 @@ def enhanced_generate_recommendation(
     fund_score = 0
     pe = info.get('pe_ratio'); pb = info.get('pb_ratio'); roe = info.get('roe')
     if pe:
-        if pe < 15:
-            reasons_buy.append(f'本益比 {pe:.1f}x，估值相對合理'); fund_score += 1
-        elif pe > 30:
-            risks.append(f'本益比 {pe:.1f}x，估值偏高'); fund_score -= 1
-    if pb and pb < 1.5:
+        if pe < 12:
+            reasons_buy.append(f'本益比 {pe:.1f}x，估值偏低，具安全邊際'); fund_score += 2
+        elif pe < 20:
+            reasons_buy.append(f'本益比 {pe:.1f}x，估值合理'); fund_score += 1
+        elif pe <= 35:
+            pass  # 20~35x 中性，不加不扣（科技/成長股常態）
+        else:
+            risks.append(f'本益比 {pe:.1f}x，估值明顯偏高'); fund_score -= 1
+    # ★ 修正：P/B 依 ROE 動態判斷（高 ROE 企業合理持有高 P/B）
+    if pb is not None and roe is not None:
+        # 合理 P/B = ROE / 要求報酬率（預設 8%）
+        fair_pb = (roe / 0.08) if roe > 0 else 1.0
+        if pb < fair_pb * 0.7:
+            reasons_buy.append(f'P/B {pb:.2f}x，低於合理估值（ROE {roe*100:.1f}%）'); fund_score += 1
+        elif pb > fair_pb * 1.5:
+            risks.append(f'P/B {pb:.2f}x，相對 ROE {roe*100:.1f}% 偏貴'); fund_score -= 1
+    elif pb is not None and pb < 1.5:
         reasons_buy.append(f'股價淨值比 {pb:.2f}x，低於1.5倍'); fund_score += 1
     if roe and roe > 0.15:
         reasons_buy.append(f'ROE {roe*100:.1f}%，獲利能力優異'); fund_score += 1
+    elif roe and roe > 0.08:
+        reasons_buy.append(f'ROE {roe*100:.1f}%，獲利穩定')
     if div_yield:
         if div_yield >= 5:
             reasons_buy.append(f'殖利率 {div_yield:.2f}%，配息豐厚（高股息）'); fund_score += 1
         elif div_yield >= 3:
-            reasons_buy.append(f'殖利率 {div_yield:.2f}%，配息穩定')
-        elif div_yield < 1:
+            reasons_buy.append(f'殖利率 {div_yield:.2f}%，配息穩定'); fund_score += 1
+        elif div_yield >= 1:
+            pass  # 1~3% 中性
+        else:
             risks.append(f'殖利率 {div_yield:.2f}%，配息偏低')
 
     # ── 綜合評分與評級 ───────────────────────────────────────
