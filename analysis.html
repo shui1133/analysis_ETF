@@ -4613,10 +4613,19 @@ function switchTab(tab) {
       setTimeout(() => { efInput.style.borderColor = ''; }, 1500);
     }
   }
-  if (tab === 'sim' && currentData && !document.getElementById('simMetrics').classList.contains('hidden') === false) {
-    runSIMAnalysis();
+  if (tab === 'sim' && currentData) {
+    // ★ 修正：0000（台灣加權指數）本身是市場基準，顯示提示，不呼叫 API
+    if (currentData.ticker === '0000' || currentData.is_index) {
+      document.getElementById('simLoading').classList.add('hidden');
+      document.getElementById('simMetrics').classList.add('hidden');
+      document.getElementById('simNoData').classList.add('hidden');
+      document.getElementById('simError').classList.remove('hidden');
+      document.getElementById('simErrorMsg').textContent =
+        '台灣加權指數為市場基準指數，SIM 分析以其為參照標準，本身不做迴歸分析。';
+    } else {
+      runSIMAnalysis();
+    }
   }
-  if (tab === 'sim' && currentData) runSIMAnalysis();
   if (tab === 'tradeoverview' && currentData) renderTradeOverview(currentData);
   if (tab === 'finreport' && currentData) loadFinReport(currentData.ticker);
   if (tab === 'maanalysis' && currentData) renderMAAnalysisTab(currentData);
@@ -7998,8 +8007,8 @@ let _finAILoading   = false;
 
 // ── 載入財報 ─────────────────────────────────────────────────────
 async function loadFinReport(ticker) {
-  if (!ticker || ticker === '0000') {
-    document.getElementById('finreport-error-msg').textContent = '指數無財報資料';
+  if (!ticker || ticker === '0000' || (currentData && currentData.is_index)) {
+    document.getElementById('finreport-error-msg').textContent = '指數無財務報表資料';
     showFinState('error'); return;
   }
   if (_finData && _finData.ticker === ticker) {

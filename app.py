@@ -479,6 +479,30 @@ def force_refresh_price():
                 if tk in analysis_cache:
                     del analysis_cache[tk]
 
+                # ★ 特殊處理：0000 = 台灣加權指數，改走 _fetch_twii_data_raw()（^TWII）
+                if tk == '0000':
+                    try:
+                        # 強制清除快取，讓 _fetch_twii_data_raw 重抓
+                        analysis_cache.pop('0000', None)
+                        twii_data = _fetch_twii_data_raw()
+                        if twii_data and twii_data.get('latest', {}).get('close'):
+                            lat = twii_data['latest']
+                            results['0000'] = {
+                                'status':     'success',
+                                'date':       lat.get('date'),
+                                'close':      lat.get('close'),
+                                'change':     lat.get('change'),
+                                'change_pct': lat.get('change_pct'),
+                                'rows':       len(twii_data.get('chart', {}).get('closes', [])),
+                                'elapsed_ms': round((_time.time() - t0) * 1000),
+                            }
+                            print(f"  [forceRefresh] 0000 ^TWII 已更新，收盤 {lat.get('close')}")
+                        else:
+                            results['0000'] = {'status': 'error', 'message': '無法取得 ^TWII 資料'}
+                    except Exception as _e0:
+                        results['0000'] = {'status': 'error', 'message': str(_e0)}
+                    continue   # 跳過後續一般股票邏輯
+
                 # ★ 呼叫 force_refresh=True，強制跳過 L1.5/L2，直接打 yfinance
                 raw = fetcher.fetch_stock_analysis(tk, force_refresh=True)
                 if not raw or not raw.get('ohlcv'):
@@ -1627,7 +1651,7 @@ def _fetch_twse_fundamentals(ticker: str) -> dict:
                 }
                 try:
                     r = _req.post('https://mops.twse.com.tw/mops/web/ajax_t05st22',
-                                  data=post_data, headers=headers, timeout=15)
+                                  data=post_data, headers=headers, timeout=15, verify=False)
                     if not r.ok:
                         continue
                     r.encoding = 'utf-8'
@@ -1683,7 +1707,7 @@ def _fetch_twse_fundamentals(ticker: str) -> dict:
                         'encodeURIComponent': '1', 'step': '1', 'firstin': '1',
                         'off': '1', 'co_id': ticker, 'TYPEK': typek
                     },
-                    headers=headers, timeout=15
+                    headers=headers, timeout=15, verify=False
                 )
                 if not r.ok:
                     continue
@@ -2560,6 +2584,14 @@ def sim_analysis(ticker):
         ticker  = ticker.strip().upper()
         period  = request.args.get('period', '2y')
 
+        # ★ 修正：0000（台灣加權指數）本身即為市場基準，無法對自身做 SIM 分析
+        if ticker == '0000':
+            return jsonify({
+                'status':  'error',
+                'message': '台灣加權指數（0000）為市場基準指數，不提供 SIM 分析',
+                'is_index': True,
+            }), 422
+
         # 快取5分鐘
         import time
         cache_key = f'sim_{ticker}'
@@ -3435,7 +3467,7 @@ def _fetch_mops_finreport(ticker: str, headers: dict) -> dict:
                 'report_id': 'C',
             }
             url = base_url + 'ajax_t05st22'
-            r = req.post(url, data=form_data, headers={**headers, 'Content-Type': 'application/x-www-form-urlencoded'}, timeout=15)
+            r = req.post(url, data=form_data, headers={**headers, 'Content-Type': 'application/x-www-form-urlencoded'}, timeout=15, verify=False)
             if not r.ok: continue
             # 用 regex 抓關鍵數字（HTML 表格解析）
             text = r.text
