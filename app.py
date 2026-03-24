@@ -515,22 +515,36 @@ def force_refresh_price():
                      'low': r.get('low'), 'close': r['close'], 'volume': r.get('volume', 0)}
                     for r in ohlcv
                 ]
-                # ★ 修正：同步存本機 + GitHub（price / dividend / fundamental 全部）
+                # ★ 修正：本機存檔同步執行；GitHub push 改為背景執行，避免阻塞 worker 超時
                 try:
                     from github_cache import (local_save_price, local_save_dividend,
                                               local_save_fundamental, gh_save_price,
                                               gh_save_dividend, gh_save_fundamental)
+                    # 本機存檔（快，必須同步）
                     local_save_price(DATA_DIR, tk, price_list)
-                    gh_save_price(tk, price_list)
                     if raw.get('dividend_data'):
                         local_save_dividend(DATA_DIR, tk, raw['dividend_data'])
-                        gh_save_dividend(tk, raw['dividend_data'])
                     if raw.get('info'):
                         local_save_fundamental(DATA_DIR, tk, raw['info'])
-                        gh_save_fundamental(tk, raw['info'])
-                    print(f"  [forceRefresh] {tk} 已同步存入本機 + GitHub（price/div/fund）")
+                    print(f"  [forceRefresh] {tk} 已存入本機快取")
+
+                    # GitHub push（慢，改為背景執行，不阻塞 HTTP response）
+                    _tk_snap      = tk
+                    _price_snap   = price_list
+                    _div_snap     = raw.get('dividend_data')
+                    _info_snap    = raw.get('info')
+                    def _bg_push(_tk=_tk_snap, _p=_price_snap, _d=_div_snap, _i=_info_snap):
+                        try:
+                            gh_save_price(_tk, _p)
+                            if _d: gh_save_dividend(_tk, _d)
+                            if _i: gh_save_fundamental(_tk, _i)
+                            print(f"  [forceRefresh] {_tk} GitHub push 完成")
+                        except Exception as _eg:
+                            print(f"  [forceRefresh] {_tk} GitHub push 失敗（非致命）: {_eg}")
+                    _threading.Thread(target=_bg_push, daemon=True).start()
+
                 except Exception as _e_gh:
-                    print(f"  [forceRefresh] GitHub 推送失敗（非致命）: {_e_gh}")
+                    print(f"  [forceRefresh] 存檔失敗（非致命）: {_e_gh}")
 
                 # ★ 修正：清除 L0 記憶體快取（raw 格式），確保下次 /api/stock_analysis
                 #         走 L1/L2 重新組裝完整 data_out（含 chart.volumes）
