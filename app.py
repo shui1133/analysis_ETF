@@ -103,7 +103,7 @@ def _background_warmup():
     不阻塞 gunicorn 健康檢查，失敗也不影響正常服務。
     """
     import time as _t
-    _t.sleep(20)   # ★ 延長等待：給 gunicorn health check 充足時間通過
+    _t.sleep(5)    # ★ 修正：health check 通常 3s 內完成，5s 已足夠，縮短讓快取更早就緒
     try:
         from github_cache import (GitHubCache, local_save_price,
                                   local_save_dividend, local_save_fundamental,
@@ -491,12 +491,38 @@ def force_refresh_price():
                      'low': r.get('low'), 'close': r['close'], 'volume': r.get('volume', 0)}
                     for r in ohlcv
                 ]
-                # 推送到 GitHub（_save_data 已存本機，此處只推遠端）
+                # ★ 修正：同步存本機 + GitHub（price / dividend / fundamental 全部）
                 try:
-                    from github_cache import gh_save_price
+                    from github_cache import (local_save_price, local_save_dividend,
+                                              local_save_fundamental, gh_save_price,
+                                              gh_save_dividend, gh_save_fundamental)
+                    local_save_price(DATA_DIR, tk, price_list)
                     gh_save_price(tk, price_list)
+                    if raw.get('dividend_data'):
+                        local_save_dividend(DATA_DIR, tk, raw['dividend_data'])
+                        gh_save_dividend(tk, raw['dividend_data'])
+                    if raw.get('info'):
+                        local_save_fundamental(DATA_DIR, tk, raw['info'])
+                        gh_save_fundamental(tk, raw['info'])
+                    print(f"  [forceRefresh] {tk} 已同步存入本機 + GitHub（price/div/fund）")
                 except Exception as _e_gh:
                     print(f"  [forceRefresh] GitHub 推送失敗（非致命）: {_e_gh}")
+
+                # ★ 修正：同步更新 L0 記憶體快取（analysis_cache），下次 /api/stock_analysis 直接命中
+                try:
+                    _indicators = calc_technical_indicators(ohlcv)
+                    _raw_for_cache = {
+                        'ohlcv':         ohlcv,
+                        'indicators':    _indicators,
+                        'dividend_data': raw.get('dividend_data', []),
+                        'info':          raw.get('info', {}),
+                        'name':          raw.get('name', tk),
+                        'source':        'yfinance',
+                    }
+                    analysis_cache[tk] = {'data': _raw_for_cache, 'ts': _time.time()}
+                    print(f"  [forceRefresh] {tk} 已更新 L0 記憶體快取")
+                except Exception as _e_mem:
+                    print(f"  [forceRefresh] 記憶體快取更新失敗（非致命）: {_e_mem}")
 
                 last = ohlcv[-1]
                 prev = ohlcv[-2] if len(ohlcv) >= 2 else last

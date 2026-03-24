@@ -2543,6 +2543,8 @@ async function loadStock(ticker) {
   if (isValidFullData(ghCached)) {
     _stockDataCache[ticker] = { data: ghCached, ts: Date.now() };
     await hotCacheSave(ticker, ghCached);
+    // ★ 修正：同步更新 hotStockData，讓熱門股票表格也受益
+    if (typeof hotStockData !== 'undefined') hotStockData[ticker] = ghCached;
     currentData = ghCached;
     hide('loadingSection'); show('analysisSection');
     renderAll(ghCached);
@@ -2561,9 +2563,13 @@ async function loadStock(ticker) {
       return;
     }
 
-    // 同時寫入記憶體快取與 IDB（讓熱門股票/ETF 面板也能受益）
+    // ★ 修正：同步更新三層快取（記憶體 → IDB/localStorage），熱門股票面板也能受益
     _stockDataCache[ticker] = { data: d.data, ts: Date.now() };
     await hotCacheSave(ticker, d.data);
+    // 同步更新 hotStockData，讓熱門股票表格顯示最新資料
+    if (typeof hotStockData !== 'undefined') {
+      hotStockData[ticker] = d.data;
+    }
 
     currentData = d.data;
     renderAll(d.data);
@@ -6462,10 +6468,12 @@ async function forceRefreshHotStocks() {
                   // 步驟2：取得完整分析資料（走 L2 快取，通常 <1s）
                   try {
                     const r2 = await fetch('/api/stock_analysis/' + code,
-                                           { signal: AbortSignal.timeout(20000) });
+                                           { signal: AbortSignal.timeout(35000) });
                     const d2 = await r2.json();
                     if (d2.status === 'success' && d2.data) {
                       hotStockData[code] = d2.data;
+                      // ★ 修正：同步更新三層快取（記憶體 → IDB/localStorage）
+                      _stockDataCache[code] = { data: d2.data, ts: Date.now() };
                       await hotCacheSave(code, d2.data);
                       renderHotTable();   // 立即更新畫面
                     }
@@ -6512,12 +6520,16 @@ async function forceRefreshSingleHotStock(code) {
     });
     const d = await r.json();
     if (d.results?.[code]?.status === 'success') {
-      // 強制從後端重新取得完整資料
-      const r2 = await fetch('/api/stock_analysis/' + code);
+      // ★ 修正：強制從後端重新取得完整資料，並同步更新三層快取
+      const r2 = await fetch('/api/stock_analysis/' + code, { signal: AbortSignal.timeout(35000) });
       const d2 = await r2.json();
       const result = (d2.status === 'success') ? d2.data : null;
       hotStockData[code] = result;
-      if (result) await hotCacheSave(code, result);
+      if (result) {
+        // 同步更新：記憶體 → IDB/localStorage
+        _stockDataCache[code] = { data: result, ts: Date.now() };
+        await hotCacheSave(code, result);
+      }
     } else {
       hotStockData[code] = null;
     }
@@ -6546,14 +6558,14 @@ async function forceRefreshCurrentStock() {
     });
     const d = await r.json();
     if (d.results?.[ticker]?.status === 'success') {
-      // 清除記憶體快取 + IDB，強制走後端重新取得（確保 volume 單位正確）
+      // ★ 修正：只清除該 ticker 的記憶體快取（不清全部 IDB，避免其他股票資料消失）
       delete _stockDataCache[ticker];
-      await hotCacheClear();
       await loadStock(ticker);
-      // ★ 修正：把剛取得的最新資料存入 IDB + localStorage，下次開頁免重打 API
+      // 同步更新三層快取：記憶體 → IDB/localStorage
       if (currentData) {
+        _stockDataCache[ticker] = { data: currentData, ts: Date.now() };
         await hotCacheSave(ticker, currentData);
-        console.log(`[forceRefresh] ${ticker} 最新股價已存入 IDB 快取`);
+        console.log(`[forceRefresh] ${ticker} 最新股價已同步至記憶體 + IDB`);
       }
     } else {
       alert(`取得 ${ticker} 最新股價失敗：${d.results?.[ticker]?.message || '未知錯誤'}`);
@@ -6569,13 +6581,18 @@ async function forceRefreshCurrentStock() {
 async function reloadSingleHotStock(code) {
   // 清除失敗快取，顯示載入中
   delete hotStockData[code];
+  delete _stockDataCache[code];
   renderHotTable();
   try {
-    const r = await fetch('/api/stock_analysis/' + code);
+    const r = await fetch('/api/stock_analysis/' + code, { signal: AbortSignal.timeout(35000) });
     const d = await r.json();
     const result = (d.status === 'success') ? d.data : null;
     hotStockData[code] = result;
-    if (result) await hotCacheSave(code, result);   // 更新 IDB 快取
+    if (result) {
+      // ★ 修正：同步更新三層快取（記憶體 → IDB/localStorage）
+      _stockDataCache[code] = { data: result, ts: Date.now() };
+      await hotCacheSave(code, result);
+    }
   } catch(e) { hotStockData[code] = null; }
   renderHotTable();
   updateHotSummary();
@@ -6643,9 +6660,9 @@ async function loadHotStocksSequential(onlyCodes) {
   _renderHotSkeleton(missing);
 
   // 逐支抓取（含重試），每抓到一支立即更新畫面
-  // CONCURRENCY：同時最多 8 支並行（提升速度）
-  const CONCURRENCY = 8;
-  const SINGLE_TIMEOUT = 25000;  // 單支最長 25s（L1/L2 快取命中時 <1s；L3 yfinance 最長約 20s）
+  // ★ 修正：CONCURRENCY 從 8 降至 3，降低 Render worker 同時壓力避免 502
+  const CONCURRENCY = 3;
+  const SINGLE_TIMEOUT = 35000;  // ★ 修正：從 25s 延長到 35s，給 L3 yfinance 更充裕時間
   const MAX_RETRY = 2;  // L2 快取命中後幾乎不需重試；L3 yfinance 給一次重試機會
 
   const fetchOne = async (code) => {
@@ -6659,7 +6676,7 @@ async function loadHotStocksSequential(onlyCodes) {
           // 5xx 才重試；4xx 直接放棄
           if (r.status < 500 && attempt < MAX_RETRY) return null;
           if (attempt < MAX_RETRY) {
-            await new Promise(res => setTimeout(res, 600 * attempt));
+            await new Promise(res => setTimeout(res, 800 * attempt));
             continue;
           }
           return null;
@@ -6669,7 +6686,7 @@ async function loadHotStocksSequential(onlyCodes) {
         return null;
       } catch (e) {
         if (attempt < MAX_RETRY)
-          await new Promise(res => setTimeout(res, 600 * attempt));
+          await new Promise(res => setTimeout(res, 800 * attempt));
       }
     }
     return null;
@@ -6703,7 +6720,8 @@ async function loadHotStocksSequential(onlyCodes) {
     const data = await fetchOne(s.code);
     hotStockData[s.code] = data;   // null 也記錄（避免重複抓）
     if (data) {
-      // ★ 立即存入 IDB + localStorage
+      // ★ 修正：同時更新三層快取：記憶體 → IDB/localStorage
+      _stockDataCache[s.code] = { data, ts: Date.now() };
       await hotCacheSave(s.code, data);
     }
     const nowLoaded = countLoaded();
