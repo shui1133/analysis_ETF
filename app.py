@@ -455,7 +455,7 @@ def health_check():
 # ─────────────────────────────────────────────────────────────────
 @app.route('/api/force_refresh_price', methods=['POST'])
 def force_refresh_price():
-    """強制從 yfinance 取得最新股價並更新快取"""
+    """強制從 yfinance 取得最新股價並更新快取（跳過所有快取層）"""
     import time as _time
     try:
         body = request.get_json(force=True) or {}
@@ -475,39 +475,44 @@ def force_refresh_price():
         for tk in tickers:
             t0 = _time.time()
             try:
-                # 清除記憶體快取，強制重新向 yfinance 抓取
+                # ★ 修正：清除所有快取層（L1 記憶體 + L1.5 磁碟的 meta.json mtime）
+                # 清 L1 記憶體
                 if tk in analysis_cache:
                     del analysis_cache[tk]
 
-                raw = fetcher.fetch_stock_analysis(tk)
+                # ★ 修正：呼叫 force_refresh=True，強制跳過 L1.5/L2，直接打 yfinance
+                raw = fetcher.fetch_stock_analysis(tk, force_refresh=True)
                 if not raw or not raw.get('ohlcv'):
-                    results[tk] = {'status': 'error', 'message': '無法取得資料'}
+                    results[tk] = {'status': 'error', 'message': fetcher.last_error or '無法取得資料'}
                     continue
 
                 ohlcv = raw['ohlcv']
-                # 轉換為 price list 格式存快取
+                # 轉換為 price list 格式存快取（github_cache 格式）
                 price_list = [
                     {'date': r['date'], 'open': r.get('open'), 'high': r.get('high'),
                      'low': r.get('low'), 'close': r['close'], 'volume': r.get('volume', 0)}
                     for r in ohlcv
                 ]
-                from github_cache import local_save_price, gh_save_price
-                local_save_price(DATA_DIR, tk, price_list)
-                gh_save_price(tk, price_list)
+                # ★ 修正：_save_data 內部已同步存子資料夾 + 舊版平面路徑，無需再次呼叫
+                # 但仍額外呼叫 gh_save_price 推送到 GitHub
+                try:
+                    from github_cache import gh_save_price
+                    gh_save_price(tk, price_list)
+                except Exception as _e_gh:
+                    print(f"  [forceRefresh] GitHub 推送失敗（非致命）: {_e_gh}")
 
-                # 更新記憶體快取（analysis_cache）
                 last = ohlcv[-1]
                 prev = ohlcv[-2] if len(ohlcv) >= 2 else last
                 change = round(last['close'] - prev['close'], 2)
                 change_pct = round(change / prev['close'] * 100, 2) if prev['close'] else 0
 
                 results[tk] = {
-                    'status':  'success',
-                    'date':    last['date'],
-                    'close':   last['close'],
-                    'change':  change,
+                    'status':     'success',
+                    'date':       last['date'],
+                    'close':      last['close'],
+                    'change':     change,
                     'change_pct': change_pct,
-                    'rows':    len(ohlcv),
+                    'rows':       len(ohlcv),
                     'elapsed_ms': round((_time.time() - t0) * 1000),
                 }
             except Exception as e:
@@ -515,8 +520,8 @@ def force_refresh_price():
 
         all_ok = all(v.get('status') == 'success' for v in results.values())
         return jsonify({
-            'status':  'success' if all_ok else 'partial',
-            'results': results,
+            'status':     'success' if all_ok else 'partial',
+            'results':    results,
             'updated_at': pd.Timestamp.now().isoformat(),
         })
 

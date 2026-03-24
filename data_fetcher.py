@@ -304,40 +304,58 @@ class ETFDataFetcher:
     # ─────────────────────────────────────────────────────────────
     # 股票分析專用：取得含 OHLCV + 技術指標 的完整資料
     # ─────────────────────────────────────────────────────────────
-    def fetch_stock_analysis(self, ticker):
+    def fetch_stock_analysis(self, ticker, force_refresh: bool = False):
         """
         回傳股票分析所需完整資料（四層快取）：
-        L1 記憶體(1hr) → L1.5 磁碟(每日) → L2 GitHub(20hr) → L3 yfinance
+        L1 記憶體(1hr) → L1.5 磁碟(盤後) → L2 GitHub(20hr) → L3 yfinance
         {
           ticker, name, ohlcv, price_data, dividend_data,
           indicators, info, source
         }
+
+        force_refresh=True：跳過所有快取，強制從 yfinance 重新抓取。
         """
-        print(f"\n[分析模式] 取得 {ticker} 完整資料...")
+        print(f"\n[分析模式] 取得 {ticker} 完整資料... (force={force_refresh})")
         self.last_error = ''
 
         # ── L1：記憶體快取（最快，同一進程內，1小時有效）────
         import sys
         _app = sys.modules.get('__main__') or sys.modules.get('app')
         mem_cache = getattr(_app, 'analysis_cache', {})
-        cached = mem_cache.get(ticker)
-        if isinstance(cached, dict) and (time.time() - cached.get('_ts', 0)) < 3600:
-            print(f"  [L1 記憶體] {ticker} 命中快取")
-            return cached
+        if not force_refresh:
+            cached = mem_cache.get(ticker)
+            if isinstance(cached, dict) and (time.time() - cached.get('_ts', 0)) < 3600:
+                print(f"  [L1 記憶體] {ticker} 命中快取")
+                return cached
 
-        # ── L1.5：本地磁碟快取（每交易日只抓一次）──────────
-        # 以 {ticker}_data.json 的修改日期判斷是否同一天
-        disk_json_path = os.path.join(self.output_dir, f"{ticker}_data.json")
-        disk_ohlcv_path = os.path.join(self.output_dir, f"{ticker}_price.csv")
-        if os.path.exists(disk_json_path) and os.path.exists(disk_ohlcv_path):
+        # ── L1.5：本地磁碟快取（雙重TTL：同日 + 13:30盤後更新）──
+        # ★ 修正：路徑統一為子資料夾格式 data/{ticker}/price.csv
+        ticker_dir      = os.path.join(self.output_dir, ticker)
+        disk_json_path  = os.path.join(ticker_dir, "meta.json")
+        disk_ohlcv_path = os.path.join(ticker_dir, "price.csv")
+        # 同時支援舊版平面路徑（向下相容讀取）
+        _legacy_json  = os.path.join(self.output_dir, f"{ticker}_data.json")
+        _legacy_ohlcv = os.path.join(self.output_dir, f"{ticker}_price.csv")
+        if not os.path.exists(disk_json_path) and os.path.exists(_legacy_json):
+            disk_json_path  = _legacy_json
+        if not os.path.exists(disk_ohlcv_path) and os.path.exists(_legacy_ohlcv):
+            disk_ohlcv_path = _legacy_ohlcv
+
+        if not force_refresh and os.path.exists(disk_json_path) and os.path.exists(disk_ohlcv_path):
             try:
-                mtime = os.path.getmtime(disk_json_path)
-                mtime_date = pd.Timestamp.fromtimestamp(mtime).date()
-                today = pd.Timestamp.now().date()
-                if mtime_date == today:
+                from github_cache import _is_stale, TTL_PRICE
+                _stale = _is_stale(disk_json_path, TTL_PRICE)
+            except Exception:
+                import datetime as _dt
+                mtime_date = pd.Timestamp.fromtimestamp(os.path.getmtime(disk_json_path)).date()
+                _stale = (mtime_date != pd.Timestamp.now().date())
+
+            if not _stale:
+                try:
                     with open(disk_json_path, 'r', encoding='utf-8') as f:
                         saved = json.load(f)
                     price_df = pd.read_csv(disk_ohlcv_path, encoding='utf-8-sig')
+
                     date_col  = next((c for c in price_df.columns if c in ['日期','date','Date']), None)
                     close_col = next((c for c in price_df.columns if c in ['收盤價','close','Close']), None)
                     if date_col and close_col and len(price_df) >= 5:
@@ -352,7 +370,10 @@ class ETFDataFetcher:
                                 'close':  c,
                                 'volume': int(float(row.get('volume', row.get('成交量', 0)))),
                             })
-                        div_csv = os.path.join(self.output_dir, f"{ticker}_hist_配息.csv")
+                        # ★ 修正：配息路徑也改為子資料夾格式，同時向下相容舊路徑
+                        div_csv = os.path.join(ticker_dir, "dividend.csv")
+                        if not os.path.exists(div_csv):
+                            div_csv = os.path.join(self.output_dir, f"{ticker}_hist_配息.csv")
                         dividend_data = []
                         if os.path.exists(div_csv):
                             try:
@@ -381,13 +402,13 @@ class ETFDataFetcher:
                             '_ts':           time.time(),
                         }
                         mem_cache[ticker] = result
-                        print(f"  [L1.5 磁碟] {ticker} 今日已快取（{len(ohlcv)} 筆），略過重新抓取")
+                        print(f"  [L1.5 磁碟] {ticker} 快取有效（{len(ohlcv)} 筆），略過重新抓取")
                         return result
-            except Exception as e:
-                print(f"  [L1.5 磁碟] 讀取失敗（非致命）: {e}")
+                except Exception as e:
+                    print(f"  [L1.5 磁碟] 讀取失敗（非致命）: {e}")
 
-        # ── L2：GitHub 持久化快取（跨重啟有效）──────────────
-        if _gh_cache and _gh_cache.enabled and _gh_cache.is_fresh(ticker, 'price'):
+        # ── L2：GitHub 持久化快取（跨重啟有效，force_refresh 時跳過）──
+        if not force_refresh and _gh_cache and _gh_cache.enabled and _gh_cache.is_fresh(ticker, 'price'):
             rows = _gh_cache.load_price(ticker)
             if rows:
                 div_rows  = _gh_cache.load_dividend(ticker)    or []
@@ -427,14 +448,56 @@ class ETFDataFetcher:
                 print(f"  [L2 GitHub] {ticker} 命中快取（{len(ohlcv)} 筆）")
                 return result
 
-        # ── L3：yfinance 重新抓取（最慢，但最新）────────────
+        # ── L3：yfinance 重新抓取 ────────────────────────────
+        # ★ 最多抓近 5 年（約 1250 筆），避免 period='max' 造成 timeout / 502
+        # ★ 增量邏輯：若本機已有快取，依落差天數縮短抓取範圍，再合併去重
+        # ★ timeout=60s：留足夠緩衝，防止 signal timed out
         print(f"  [L3 yfinance] {ticker} 重新抓取...")
         result = None
+
+        # ── 讀取本機舊快取（供增量合併）──────────────────────
+        _existing_rows: list = []
+        _existing_path = os.path.join(self.output_dir, ticker, "price.csv")
+        if not os.path.exists(_existing_path):
+            _existing_path = os.path.join(self.output_dir, f"{ticker}_price.csv")
+        if os.path.exists(_existing_path):
+            try:
+                _ex_df = pd.read_csv(_existing_path, encoding='utf-8-sig')
+                _dc = next((c for c in _ex_df.columns if c in ['日期','date','Date']), None)
+                _cc = next((c for c in _ex_df.columns if c in ['收盤價','close','Close']), None)
+                if _dc and _cc:
+                    for _, _r in _ex_df.iterrows():
+                        _cv = float(_r[_cc])
+                        _existing_rows.append({
+                            'date':   str(_r[_dc]),
+                            'open':   float(_r.get('open', _r.get('開盤價', _cv))),
+                            'high':   float(_r.get('high', _r.get('最高價', _cv))),
+                            'low':    float(_r.get('low',  _r.get('最低價', _cv))),
+                            'close':  _cv,
+                            'volume': int(float(_r.get('volume', _r.get('成交量', 0)))),
+                        })
+            except Exception:
+                _existing_rows = []
+
+        # 依落差天數決定抓取範圍（最多 5 年）
+        _yf_period = '5y'   # ← 首次或快取過舊時，上限固定 5 年
+        if _existing_rows:
+            _last_date  = _existing_rows[-1]['date']
+            _days_behind = (pd.Timestamp.now() - pd.Timestamp(_last_date)).days
+            if _days_behind <= 30:
+                _yf_period = '6mo'
+                print(f"  [L3] 已有快取至 {_last_date}（差 {_days_behind} 天），改抓近 6 個月（增量）")
+            elif _days_behind <= 180:
+                _yf_period = '2y'
+                print(f"  [L3] 已有快取至 {_last_date}（差 {_days_behind} 天），改抓近 2 年（增量）")
+            else:
+                print(f"  [L3] 已有快取至 {_last_date}（差 {_days_behind} 天），改抓近 5 年（全量更新）")
+
         for suffix in ['.TW', '.TWO']:
             yf_ticker = f"{ticker}{suffix}"
             try:
                 tk   = yf.Ticker(yf_ticker)
-                hist = tk.history(period='max', timeout=15)
+                hist = tk.history(period=_yf_period, timeout=60)
                 if hist is None or hist.empty:
                     continue
 
@@ -459,6 +522,15 @@ class ETFDataFetcher:
                 if not ohlcv:
                     continue
 
+                # ── 增量合併：新資料優先，以 date 去重後按日期排序 ──
+                if _existing_rows and _yf_period != '5y':
+                    existing_dates = {r['date'] for r in ohlcv}
+                    merged = [r for r in _existing_rows if r['date'] not in existing_dates]
+                    merged.extend(ohlcv)
+                    merged.sort(key=lambda r: r['date'])
+                    ohlcv      = merged
+                    price_data = [{'date': r['date'], 'close': r['close']} for r in ohlcv]
+                    print(f"  [L3] 增量合併完成：共 {len(ohlcv)} 筆")
                 # 配息
                 dividend_data = []
                 try:
@@ -563,7 +635,7 @@ class ETFDataFetcher:
             yf_ticker = f"{ticker}{suffix}"
             try:
                 tk = yf.Ticker(yf_ticker)
-                hist = tk.history(period='max', timeout=15)
+                hist = tk.history(period='5y', timeout=60)
                 if hist is None or hist.empty:
                     continue
 
@@ -746,71 +818,81 @@ class ETFDataFetcher:
             'source':        'simulated',
         }
 
-    # ─────────────────────────────────────────────────────────────
-    # 儲存資料（與 backtest.py 格式相容）
-    # ─────────────────────────────────────────────────────────────
     def _save_data(self, ticker, data):
+        """
+        儲存股票資料到本機磁碟。
+        ★ 修正：路徑統一為子資料夾格式 data/{ticker}/price.csv
+                 與 github_cache.local_save_price 完全一致，消除路徑雙軌問題。
+        """
         try:
-            # 優先使用完整 ohlcv 存檔（含 open/high/low/volume），供 L1.5 磁碟快取使用
-            # 若無 ohlcv，降級使用 price_data（僅日期+收盤）
+            # ── 建立子資料夾 ────────────────────────────────────
+            ticker_dir = os.path.join(self.output_dir, ticker)
+            os.makedirs(ticker_dir, exist_ok=True)
+
+            # ── 存 price.csv（OHLCV 完整格式，僅保留近 5 年）──
+            # ★ 截留近 5 年：避免 CSV 無限膨脹，技術分析用不到更早的資料
+            _cutoff_5y = (pd.Timestamp.now() - pd.DateOffset(years=5)).strftime('%Y-%m-%d')
+
             if data.get('ohlcv'):
                 ohlcv_df = pd.DataFrame(data['ohlcv'])
-                col_map = {
-                    'date': '日期', 'Date': '日期',
-                    'open': 'open', 'high': 'high', 'low': 'low',
-                    'close': '收盤價', 'Close': '收盤價',
-                    'volume': 'volume',
-                }
-                ohlcv_df = ohlcv_df.rename(columns={k: v for k, v in col_map.items() if k in ohlcv_df.columns})
-                # 確保必要欄位存在
-                if '日期' in ohlcv_df.columns and '收盤價' in ohlcv_df.columns:
-                    # 保留所有欄位（日期、收盤價、open、high、low、volume）
-                    keep_cols = ['日期', '收盤價'] + [c for c in ['open','high','low','volume'] if c in ohlcv_df.columns]
-                    ohlcv_df = ohlcv_df[keep_cols]
-                    ohlcv_df.to_csv(
-                        os.path.join(self.output_dir, f"{ticker}_price.csv"),
+                # 欄位映射：統一輸出英文小寫欄位名（與 github_cache 格式一致）
+                col_map = {'date': 'date', 'open': 'open', 'high': 'high',
+                           'low': 'low', 'close': 'close', 'volume': 'volume',
+                           '日期': 'date', '收盤價': 'close', '開盤價': 'open',
+                           '最高價': 'high', '最低價': 'low', '成交量': 'volume'}
+                ohlcv_df = ohlcv_df.rename(columns={k: v for k, v in col_map.items()
+                                                      if k in ohlcv_df.columns})
+                keep_cols = [c for c in ['date','open','high','low','close','volume']
+                             if c in ohlcv_df.columns]
+                if 'date' in keep_cols and 'close' in keep_cols:
+                    ohlcv_df = ohlcv_df[ohlcv_df['date'] >= _cutoff_5y]
+                    ohlcv_df[keep_cols].to_csv(
+                        os.path.join(ticker_dir, "price.csv"),
                         index=False, encoding='utf-8-sig'
                     )
             elif data.get('price_data'):
                 price_df = pd.DataFrame(data['price_data'])
-                for old, new in [('date','日期'),('Date','日期'),
-                                  ('close','收盤價'),('Close','收盤價')]:
-                    if old in price_df.columns:
+                for old, new in [('date','date'),('Date','date'),('日期','date'),
+                                  ('close','close'),('Close','close'),('收盤價','close')]:
+                    if old in price_df.columns and new not in price_df.columns:
                         price_df = price_df.rename(columns={old: new})
-                if '日期' not in price_df.columns or '收盤價' not in price_df.columns:
-                    if len(price_df.columns) >= 2:
-                        price_df.columns = ['日期','收盤價'] + list(price_df.columns[2:])
-                    else:
-                        return
-                price_df = price_df[['日期','收盤價']]
-                price_df.to_csv(
-                    os.path.join(self.output_dir, f"{ticker}_price.csv"),
-                    index=False, encoding='utf-8-sig'
-                )
+                if 'date' in price_df.columns and 'close' in price_df.columns:
+                    price_df = price_df[price_df['date'] >= _cutoff_5y]
+                    price_df[['date','close']].to_csv(
+                        os.path.join(ticker_dir, "price.csv"),
+                        index=False, encoding='utf-8-sig'
+                    )
 
+            # ── 存 dividend.csv ─────────────────────────────────
             if data.get('dividend_data'):
                 div_df = pd.DataFrame(data['dividend_data'])
-                for old, new in [('date','除息日'),('Date','除息日'),
-                                  ('dividend','股利'),('Dividend','股利')]:
-                    if old in div_df.columns:
+                for old, new in [('date','date'),('Date','date'),('除息日','date'),
+                                  ('dividend','dividend'),('Dividend','dividend'),('股利','dividend')]:
+                    if old in div_df.columns and new not in div_df.columns:
                         div_df = div_df.rename(columns={old: new})
-                if '除息日' not in div_df.columns or '股利' not in div_df.columns:
-                    if len(div_df.columns) >= 2:
-                        div_df.columns = ['除息日','股利'] + list(div_df.columns[2:])
-                    else:
-                        return
-                div_df = div_df[['除息日','股利']]
-                div_df.to_csv(
-                    os.path.join(self.output_dir, f"{ticker}_hist_配息.csv"),
-                    index=False, encoding='utf-8-sig'
-                )
+                if 'date' in div_df.columns and 'dividend' in div_df.columns:
+                    div_df[['date','dividend']].to_csv(
+                        os.path.join(ticker_dir, "dividend.csv"),
+                        index=False, encoding='utf-8-sig'
+                    )
 
-            with open(os.path.join(self.output_dir, f"{ticker}_data.json"),
+            # ── 存 meta.json（基本資訊 + 元資料）──────────────
+            save_data = {k: v for k, v in data.items()
+                         if k not in ('ohlcv', 'indicators')}
+            with open(os.path.join(ticker_dir, "meta.json"),
                       'w', encoding='utf-8') as f:
-                # 排除 ohlcv/indicators（體積太大）只存基本
-                save_data = {k: v for k, v in data.items()
-                             if k not in ('ohlcv', 'indicators')}
                 json.dump(save_data, f, ensure_ascii=False, indent=2)
+
+            # ── 同步更新舊版平面路徑（向下相容，讓舊版 app.py 仍可讀）──
+            # 注意：只做「指向性」複製，下次整合完成後可移除此段
+            try:
+                import shutil
+                shutil.copy2(os.path.join(ticker_dir, "price.csv"),
+                             os.path.join(self.output_dir, f"{ticker}_price.csv"))
+                shutil.copy2(os.path.join(ticker_dir, "meta.json"),
+                             os.path.join(self.output_dir, f"{ticker}_data.json"))
+            except Exception:
+                pass
 
         except Exception as e:
             print(f"  ❌ 儲存 {ticker} 失敗: {e}")
@@ -821,12 +903,12 @@ class ETFDataFetcher:
     # （github_cache.py 的 CacheManager.get_price/dividend/fundamental
     #   在 L3 網路抓取時會呼叫這三個方法）
     # ─────────────────────────────────────────────────────────────
-    def fetch_price(self, ticker: str) -> list | None:
+    def fetch_price(self, ticker: str, force_refresh: bool = False) -> list | None:
         """
         取得股價資料，回傳 [{date, open, high, low, close, volume}, ...] 或 None。
         委派至 fetch_stock_analysis 以重用已有的 yfinance 邏輯。
         """
-        raw = self.fetch_stock_analysis(ticker)
+        raw = self.fetch_stock_analysis(ticker, force_refresh=force_refresh)
         if raw and raw.get('ohlcv'):
             return raw['ohlcv']
         # 降級：僅取 price_data（date + close）
@@ -876,7 +958,7 @@ class ETFDataFetcher:
             yf_ticker = f"{ticker}{suffix}"
             try:
                 tk   = yf.Ticker(yf_ticker)
-                hist = tk.history(period='max', timeout=15)
+                hist = tk.history(period='5y', timeout=60)
                 if hist is None or hist.empty:
                     errors.append(f"{yf_ticker}: 無歷史資料")
                     continue
