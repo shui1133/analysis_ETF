@@ -5975,6 +5975,25 @@ async function _idbClear() {
   } catch(e) { /* 忽略 */ }
 }
 
+// ★ 新增：單筆刪除 IDB 快取（forceRefresh 個股時使用，不影響其他股票）
+async function _idbDelete(code) {
+  try {
+    const db = await _getIDB();
+    if (!db) return;
+    const tx = db.transaction(IDB_STORE_NAME, 'readwrite');
+    tx.objectStore(IDB_STORE_NAME).delete(code);
+  } catch(e) { /* 忽略 */ }
+}
+
+// ★ 新增：單筆刪除 localStorage 索引
+function _lsIndexDelete(code) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HOT_CACHE_KEY) || '{}');
+    delete raw[code];
+    localStorage.setItem(HOT_CACHE_KEY, JSON.stringify(raw));
+  } catch(e) { /* 忽略 */ }
+}
+
 // ── 快取新鮮度判斷（每日 16:00 台灣時間後強制刷新）──────────────
 function _hotCacheIsFresh(ts) {
   if (!ts) return false;
@@ -6602,22 +6621,39 @@ async function forceRefreshCurrentStock() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>更新中...'; }
 
   try {
+    // ★ 修正：timeout 從 20s 延長到 60s（yfinance 增量抓取 + GitHub push 可能需要 30s+）
     const r = await fetch('/api/force_refresh_price', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ticker }),
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(60000),
     });
     const d = await r.json();
     if (d.results?.[ticker]?.status === 'success') {
-      // ★ 修正：只清除該 ticker 的記憶體快取（不清全部 IDB，避免其他股票資料消失）
+      // ★ 修正：清除記憶體快取 + IDB 該 ticker 的資料，確保 loadStock 走後端 API
+      // （只清除該 ticker，不影響其他股票的 IDB 快取）
       delete _stockDataCache[ticker];
-      await loadStock(ticker);
-      // 同步更新三層快取：記憶體 → IDB/localStorage
-      if (currentData) {
-        _stockDataCache[ticker] = { data: currentData, ts: Date.now() };
-        await hotCacheSave(ticker, currentData);
-        console.log(`[forceRefresh] ${ticker} 最新股價已同步至記憶體 + IDB`);
+      await _idbDelete(ticker);
+      _lsIndexDelete(ticker);
+
+      // ★ 直接呼叫後端 stock_analysis 取得最新組裝好的資料，跳過所有快取層
+      const r2 = await fetch('/api/stock_analysis/' + ticker, {
+        signal: AbortSignal.timeout(40000),
+      });
+      const d2 = await r2.json();
+      if (d2.status === 'success' && d2.data) {
+        // 同步更新三層快取：記憶體 → IDB/localStorage
+        _stockDataCache[ticker] = { data: d2.data, ts: Date.now() };
+        await hotCacheSave(ticker, d2.data);
+        if (typeof hotStockData !== 'undefined') hotStockData[ticker] = d2.data;
+        currentData = d2.data;
+        renderAll(d2.data);
+        show('analysisSection');
+        switchTab(currentTab);
+        console.log(`[forceRefresh] ${ticker} 最新資料已更新，日期：${d2.data.latest?.date}`);
+      } else {
+        // stock_analysis 失敗就走 loadStock（會重走後端）
+        await loadStock(ticker);
       }
     } else {
       alert(`取得 ${ticker} 最新股價失敗：${d.results?.[ticker]?.message || '未知錯誤'}`);
