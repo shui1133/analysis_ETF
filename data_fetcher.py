@@ -899,8 +899,15 @@ class ETFDataFetcher:
                     )
 
             # ── 存 meta.json（基本資訊 + 元資料）──────────────
+            # ★ 修正：同步記錄 price_at / dividend_at，供 github_cache._is_stale()
+            #   使用時間戳判斷（而非退化成不可靠的檔案 mtime）
+            import datetime as _dt
+            _now_iso = _dt.datetime.now().isoformat()
             save_data = {k: v for k, v in data.items()
                          if k not in ('ohlcv', 'indicators')}
+            save_data['price_at']    = _now_iso
+            save_data['dividend_at'] = _now_iso
+            save_data.setdefault('fundamental_at', _now_iso)
             with open(os.path.join(ticker_dir, "meta.json"),
                       'w', encoding='utf-8') as f:
                 json.dump(save_data, f, ensure_ascii=False, indent=2)

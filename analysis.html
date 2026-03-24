@@ -6001,17 +6001,115 @@ function _lsIndexDelete(code) {
   } catch(e) { /* 忽略 */ }
 }
 
-// ── 快取新鮮度判斷（每日 16:00 台灣時間後強制刷新）──────────────
+// ── 快取新鮮度判斷（每日 13:30 台灣時間後強制刷新）──────────────
 function _hotCacheIsFresh(ts) {
   if (!ts) return false;
-  const now  = Date.now();
-  const age  = now - ts;
+  const now = Date.now();
+  const age = now - ts;
   if (age > HOT_CACHE_TTL_MS) return false;
-  // 每日 16:00 後強制刷新：快取時間在今日 16:00 之前視為過期
-  const today1600 = new Date();
-  today1600.setHours(16, 0, 0, 0);
-  if (now >= today1600.getTime() && ts < today1600.getTime()) return false;
+  // 每日 13:30 後強制刷新：快取時間在今日 13:30 之前視為過期
+  const today1330 = new Date();
+  today1330.setHours(13, 30, 0, 0);
+  if (now >= today1330.getTime() && ts < today1330.getTime()) return false;
   return true;
+}
+
+// ── 判斷快取資料是否需要差異增量更新 ────────────────────────────
+// 條件 A：最後一筆 volume === 0（當日尚未成交）
+// 條件 B：最後一筆日期 < 今日 且 已過 13:30（有新交易日資料）
+function _needsIncrementalUpdate(data) {
+  try {
+    const chart   = data.chart || {};
+    const dates   = chart.dates   || [];
+    const volumes = chart.volumes || [];
+    if (!dates.length) return false;
+
+    const lastDate   = dates[dates.length - 1];
+    const lastVolume = volumes[volumes.length - 1] || 0;
+
+    // 條件 A：成交量為 0 → 需要增量
+    if (lastVolume === 0) return true;
+
+    // 條件 B：最後日期 < 今日 且 已過 13:30
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    if (lastDate < todayStr) {
+      const today1330 = new Date();
+      today1330.setHours(13, 30, 0, 0);
+      if (now >= today1330) return true;
+    }
+    return false;
+  } catch(e) { return false; }
+}
+
+// ── 取出快取中最後一筆日期（供差異增量查詢用）────────────────────
+function _getLastCachedDate(data) {
+  try {
+    const dates = (data.chart && data.chart.dates) || [];
+    return dates.length ? dates[dates.length - 1] : null;
+  } catch(e) { return null; }
+}
+
+// ── 差異增量：向後端抓取 since 日期後的新資料，append 回 data ────
+// 成功後同步更新 hotStockData[code] + IDB 快取
+async function fetchIncrementalUpdate(code, data) {
+  const since = _getLastCachedDate(data);
+  if (!since) return data;
+
+  try {
+    const r = await fetch(`/api/stock_analysis/${code}?since=${since}`,
+      { signal: AbortSignal.timeout(30000) });
+    if (!r.ok) return data;
+    const d = await r.json();
+    if (d.status !== 'success' || !d.data) return data;
+
+    const newChart   = d.data.chart || {};
+    const newDates   = newChart.dates   || [];
+    const newOpens   = newChart.opens   || [];
+    const newHighs   = newChart.highs   || [];
+    const newLows    = newChart.lows    || [];
+    const newCloses  = newChart.closes  || [];
+    const newVolumes = newChart.volumes || [];
+
+    if (!data.chart.dates) data.chart.dates = [];
+    const existingDates = data.chart.dates;
+    let appended = 0;
+
+    for (let i = 0; i < newDates.length; i++) {
+      const dt  = newDates[i];
+      const idx = existingDates.lastIndexOf(dt);
+      if (idx >= 0) {
+        // 同日期：若舊 volume=0 且新值有效，覆蓋最後一筆
+        if ((data.chart.volumes[idx] || 0) === 0 && newVolumes[i]) {
+          data.chart.volumes[idx] = newVolumes[i];
+          if (newCloses[i]) data.chart.closes[idx] = newCloses[i];
+          if (newOpens[i])  data.chart.opens[idx]  = newOpens[i];
+          if (newHighs[i])  data.chart.highs[idx]  = newHighs[i];
+          if (newLows[i])   data.chart.lows[idx]   = newLows[i];
+          appended++;
+        }
+        continue;
+      }
+      // 新日期：append
+      data.chart.dates.push(dt);
+      data.chart.closes  = data.chart.closes  || []; data.chart.closes.push(newCloses[i]);
+      data.chart.opens   = data.chart.opens   || []; data.chart.opens.push(newOpens[i]);
+      data.chart.highs   = data.chart.highs   || []; data.chart.highs.push(newHighs[i]);
+      data.chart.lows    = data.chart.lows    || []; data.chart.lows.push(newLows[i]);
+      data.chart.volumes = data.chart.volumes || []; data.chart.volumes.push(newVolumes[i]);
+      appended++;
+    }
+
+    if (appended > 0) {
+      if (d.data.latest) data.latest = { ...data.latest, ...d.data.latest };
+      console.log(`[IncrementalUpdate] ${code} append/覆蓋 ${appended} 筆`);
+      await hotCacheSave(code, data);
+    }
+    return data;
+  } catch(e) {
+    console.warn(`[IncrementalUpdate] ${code} 失敗（沿用舊快取）:`, e.message);
+    return data;
+  }
 }
 
 // ── localStorage 精簡索引（只存 code + ts，不存完整資料）──────────
@@ -6463,10 +6561,8 @@ function closeHotStockPanel() {
 
 function changeHotPageSize() {
   const newSize = parseInt(document.getElementById('hotPageSize').value) || 50;
-  // 若頁數不變，不重置已有資料
-  if (newSize !== hotPageSize) {
-    hotStockData = {};
-  }
+  // ★ 修正：不論筆數是否改變，均保留已有 hotStockData，
+  //   loadHotStocksSequential 內部會自動只補抓缺少的股票
   hotPageSize  = newSize;
   // ETF 模式只顯示 00 開頭 ETF；一般模式顯示熱門股票
   hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
@@ -6714,6 +6810,7 @@ async function loadHotStocksSequential(onlyCodes) {
 
   // ── ① IDB / localStorage 快取填充（立即顯示已有資料）──────────
   _cacheHits = 0;
+  const _needIncremental = [];   // 快取命中但需差異增量的股票
   for (const s of targetList) {
     if (hotStockData[s.code] !== undefined) continue;
     const cached = await hotCacheLoad(s.code);
@@ -6723,6 +6820,10 @@ async function loadHotStocksSequential(onlyCodes) {
       if (testRow && testRow.close) {
         hotStockData[s.code] = cached;
         _cacheHits++;
+        // ★ 判斷是否需要差異增量（volume=0 或有新交易日）
+        if (_needsIncrementalUpdate(cached)) {
+          _needIncremental.push(s.code);
+        }
       } else {
         // 快取格式不符（舊格式或損壞），清除後重新抓取
         console.warn(`[Cache] ${s.code} 快取格式不符，清除重抓`);
@@ -6737,8 +6838,31 @@ async function loadHotStocksSequential(onlyCodes) {
   }
 
   let loaded = countLoaded();
+  const _incrNote = _needIncremental.length > 0 ? `，${_needIncremental.length} 支需增量更新` : '';
   updateHotProgress(loaded, total,
-    _cacheHits > 0 ? `快取命中 ${_cacheHits} 支，補齊剩餘...` : '準備載入...');
+    _cacheHits > 0 ? `快取命中 ${_cacheHits} 支${_incrNote}，補齊剩餘...` : '準備載入...');
+
+  // ── ① 差異增量：對快取命中但 volume=0 或有新交易日的股票，背景補齊 ──
+  if (_needIncremental.length > 0) {
+    console.log(`[IncrementalUpdate] 需補齊 ${_needIncremental.length} 支:`, _needIncremental);
+    // 背景逐支更新，不阻塞主流程（每支間隔 200ms 避免並發過多）
+    (async () => {
+      for (const code of _needIncremental) {
+        if (hotLoadAbort) break;
+        const prev = hotStockData[code];
+        if (!prev) continue;
+        const updated = await fetchIncrementalUpdate(code, prev);
+        hotStockData[code] = updated;
+        _stockDataCache[code] = { data: updated, ts: Date.now() };
+        renderHotTable();
+        updateHotSummary();
+        await new Promise(res => setTimeout(res, 200));
+      }
+      const nowLoaded = countLoaded();
+      updateHotProgress(nowLoaded, total,
+        `增量更新完成（${_needIncremental.length} 支已補齊）`);
+    })();
+  }
 
   // ── ② yfinance 逐支並行抓取（僅對快取未命中的）────────────────
   const missing = targetList.filter(s => hotStockData[s.code] === undefined);

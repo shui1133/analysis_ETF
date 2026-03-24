@@ -170,15 +170,42 @@ def _is_stale(path: str, ttl: timedelta) -> bool:
     雙重 TTL：
     1. 距上次修改超過 ttl
     2. 今日已過 13:30 且上次修改在 13:30 前 → 強制過期
+
+    ★ 修正：優先讀取同目錄 meta.json 的 price_at / dividend_at 時間戳
+    比起 Render ephemeral 環境的 mtime（每次冷啟動都重置），時間戳更可靠
     """
     if not os.path.exists(path):
         return True
-    mtime  = datetime.fromtimestamp(os.path.getmtime(path), tz=TW_TZ)
-    now    = datetime.now(tz=TW_TZ)
-    if now - mtime > ttl:
+
+    # 嘗試從 meta.json 取得對應的時間戳
+    _meta_ts = None
+    try:
+        _dir  = os.path.dirname(path)
+        _base = os.path.basename(path)
+        _meta_path = os.path.join(_dir, "meta.json")
+        if os.path.exists(_meta_path):
+            with open(_meta_path, encoding="utf-8") as _mf:
+                _meta = json.load(_mf)
+            # price.csv → price_at, dividend.csv → dividend_at, fundamental.json → fundamental_at
+            _key_map = {
+                "price.csv":        "price_at",
+                "dividend.csv":     "dividend_at",
+                "fundamental.json": "fundamental_at",
+            }
+            _ts_key = _key_map.get(_base)
+            if _ts_key and _meta.get(_ts_key):
+                _meta_ts = datetime.fromisoformat(_meta[_ts_key]).replace(tzinfo=TW_TZ)
+    except Exception:
+        pass
+
+    # 以 meta.json 時間戳為主；若無，退化至檔案 mtime
+    ref_time = _meta_ts if _meta_ts else datetime.fromtimestamp(os.path.getmtime(path), tz=TW_TZ)
+    now      = datetime.now(tz=TW_TZ)
+
+    if now - ref_time > ttl:
         return True
     cutoff = now.replace(hour=13, minute=30, second=0, microsecond=0)
-    if now >= cutoff and mtime < cutoff:
+    if now >= cutoff and ref_time < cutoff:
         return True
     return False
 
@@ -191,6 +218,24 @@ def _ensure_dir(data_dir: str, ticker: str) -> str:
     d = os.path.join(data_dir, ticker)
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def _update_meta_timestamp(data_dir: str, ticker: str, key: str) -> None:
+    """
+    ★ 新增：在 meta.json 中更新指定時間戳欄位（price_at / dividend_at / fundamental_at）。
+    _is_stale() 優先讀此時間戳，比 Render ephemeral 環境的 mtime 更可靠。
+    """
+    meta_path = os.path.join(data_dir, ticker, "meta.json")
+    try:
+        meta: Dict = {}
+        if os.path.exists(meta_path):
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.load(f)
+        meta[key] = datetime.now(tz=TW_TZ).isoformat()
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning("_update_meta_timestamp %s/%s: %s", ticker, key, e)
 
 
 def local_save_price(data_dir: str, ticker: str, rows: List[Dict]) -> bool:
@@ -222,8 +267,18 @@ def local_save_price(data_dir: str, ticker: str, rows: List[Dict]) -> bool:
                     row['open']   = r.get('open')   or r.get('Open',   close)
                     row['high']   = r.get('high')   or r.get('High',   close)
                     row['low']    = r.get('low')    or r.get('Low',    close)
-                    row['volume'] = r.get('volume') or r.get('Volume', 0)
+                    # ★ 修正：正規化 volume 單位 → 統一換算為「張」（1張=1000股）
+                    # yfinance 早期資料（2000–2005）回傳值異常大（數千億），
+                    # 近年資料約 2千萬~5千萬股，÷1000 = 2萬~5萬張，符合台股實際
+                    # 閾值：> 500萬 視為原始股數，需除以 1000
+                    raw_vol = r.get('volume') or r.get('Volume') or 0
+                    try:
+                        raw_vol = float(raw_vol)
+                    except (ValueError, TypeError):
+                        raw_vol = 0.0
+                    row['volume'] = round(raw_vol / 1000) if raw_vol > 5_000_000 else int(raw_vol)
                 writer.writerow(row)
+        _update_meta_timestamp(data_dir, ticker, "price_at")  # ★ 修正
         return True
     except Exception as e:
         logger.error("local_save_price %s: %s", ticker, e)
@@ -241,6 +296,7 @@ def local_save_dividend(data_dir: str, ticker: str, rows: List[Dict]) -> bool:
             writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
             writer.writeheader()
             writer.writerows(rows)
+        _update_meta_timestamp(data_dir, ticker, "dividend_at")  # ★ 修正
         return True
     except Exception as e:
         logger.error("local_save_dividend %s: %s", ticker, e)
@@ -250,11 +306,22 @@ def local_save_dividend(data_dir: str, ticker: str, rows: List[Dict]) -> bool:
 def local_save_fundamental(data_dir: str, ticker: str, info: Dict) -> bool:
     if not info:
         return False
+    # ★ 修正：若 fundamental 只有 name（或 name 與 ticker 相同），視為無效資料不儲存
+    # 避免 yfinance 抓取失敗時存入空殼，導致後續快取命中卻無財務數據
+    meaningful_keys = {'pe_ratio', 'pb_ratio', 'eps', 'roe', 'profit_margin',
+                       'market_cap', 'div_yield', 'sector', 'industry', 'description'}
+    has_data = any(info.get(k) for k in meaningful_keys)
+    name_val = info.get('name', '')
+    name_is_ticker = (name_val == ticker or name_val == '')
+    if not has_data and name_is_ticker:
+        logger.warning("local_save_fundamental %s: 資料不完整（只有 name），跳過儲存", ticker)
+        return False
     _ensure_dir(data_dir, ticker)
     path = os.path.join(data_dir, ticker, "fundamental.json")
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(info, f, ensure_ascii=False, indent=2)
+        _update_meta_timestamp(data_dir, ticker, "fundamental_at")  # ★ 修正
         return True
     except Exception as e:
         logger.error("local_save_fundamental %s: %s", ticker, e)
@@ -523,8 +590,18 @@ class CacheManager:
             try:
                 with open(path, encoding="utf-8") as f:
                     info = json.load(f)
+                # ★ 修正：驗證 fundamental 是否有實質財務數據
+                # 若只有 name 欄位（抓取失敗的空殼），視為快取無效，繼續往下抓
                 if info:
-                    return info
+                    meaningful_keys = {'pe_ratio', 'pb_ratio', 'eps', 'roe',
+                                       'profit_margin', 'market_cap', 'div_yield',
+                                       'sector', 'description'}
+                    has_data = any(info.get(k) for k in meaningful_keys)
+                    name_val = info.get('name', '')
+                    name_is_ticker = (name_val == ticker or name_val == '')
+                    if has_data or not name_is_ticker:
+                        return info
+                    logger.info("get_fundamental %s: 本機快取為空殼，嘗試重新抓取", ticker)
             except Exception:
                 pass
 
