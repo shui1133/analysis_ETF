@@ -4623,6 +4623,8 @@ function switchTab(tab) {
       document.getElementById('simErrorMsg').textContent =
         '台灣加權指數為市場基準指數，SIM 分析以其為參照標準，本身不做迴歸分析。';
     } else {
+      // ★ 修正：防重入鎖在 runSIMAnalysis 內部處理，switchTab 直接呼叫即可
+      // 快取命中時 runSIMAnalysis 立即返回，不重複打 API
       runSIMAnalysis();
     }
   }
@@ -4929,6 +4931,10 @@ function renderEfficientFrontier(d) {
 // ════════════════════════════════════════════════════════════════
 
 let simCurrentPeriod = '2y';
+// ★ 修正：防重入鎖 + 結果快取，避免 switchTab 多次觸發重複打 API
+let _simRunning = false;
+const _simCache = {};  // { 'ticker_period': { data, ts } }
+const _SIM_CACHE_TTL = 5 * 60 * 1000;  // 5 分鐘
 
 function changeSIMPeriod(period, label) {
   simCurrentPeriod = period;
@@ -4946,6 +4952,21 @@ async function runSIMAnalysis() {
     return;
   }
   const ticker = currentData.ticker;
+
+  // ★ 防重入：已在執行中直接跳過
+  if (_simRunning) return;
+
+  // ★ 快取命中：同 ticker+period 5 分鐘內直接用上次結果
+  const cacheKey = `${ticker}_${simCurrentPeriod}`;
+  const cached = _simCache[cacheKey];
+  if (cached && (Date.now() - cached.ts < _SIM_CACHE_TTL)) {
+    document.getElementById('simLoading').classList.add('hidden');
+    renderSIM(cached.data);
+    return;
+  }
+
+  _simRunning = true;
+
   document.getElementById('simTickerLabel').textContent =
     (typeof STOCK_NAMES_ZH !== 'undefined' && STOCK_NAMES_ZH[ticker])
       ? `${ticker} ${STOCK_NAMES_ZH[ticker]}`
@@ -4973,12 +4994,17 @@ async function runSIMAnalysis() {
         '後端回傳資料不完整，請確認 /api/sim_analysis 路由正常綁定（可能是 app.py 路由錯位）。';
       return;
     }
+    // ★ 存入快取，下次同 ticker+period 直接使用
+    _simCache[cacheKey] = { data: d.data, ts: Date.now() };
     renderSIM(d.data);
 
   } catch(e) {
     document.getElementById('simLoading').classList.add('hidden');
     document.getElementById('simError').classList.remove('hidden');
     document.getElementById('simErrorMsg').textContent = '錯誤：' + e.message;
+  } finally {
+    // ★ 無論成功或失敗都解鎖，讓下次切換 tab 可以重新執行
+    _simRunning = false;
   }
 }
 

@@ -2592,11 +2592,11 @@ def sim_analysis(ticker):
                 'is_index': True,
             }), 422
 
-        # 快取5分鐘
+        # ★ 修正：快取延長至 10 分鐘，減少重複計算
         import time
-        cache_key = f'sim_{ticker}'
+        cache_key = f'sim_{ticker}_{period}'   # ★ 含 period，不同期間各自快取
         cached    = analysis_cache.get(cache_key)
-        if cached and (time.time() - cached.get('ts', 0)) < 300:
+        if cached and (time.time() - cached.get('ts', 0)) < 600:
             return jsonify({'status':'success', 'data': cached['data']})
 
         # ── 取得個股資料 ─────────────────────────────────────
