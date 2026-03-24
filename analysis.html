@@ -3044,7 +3044,7 @@ function _renderFundamentalUI(f, ticker, isLoading=false) {
     mCard('52週高點', f['52w_high'], '元', '#ef4444'),
     mCard('52週低點', f['52w_low'],  '元', '#10b981'),
     mCard('市值',      f.market_cap != null ? fmtMktCap(f.market_cap) : null, '', '#3b82f6', true),
-    mCard('近12月配息', f.annual_div > 0 ? f.annual_div.toFixed(4) : null, '元', '#f59e0b'),
+    mCard('近12月配息', f.annual_div > 0 ? f.annual_div.toFixed(1) : null, '元', '#f59e0b'),
   ].join('');
 
   // 公司描述（自動偵測英文並翻譯為繁體中文）
@@ -6891,8 +6891,13 @@ function _summaryToDataFormat(code, s) {
       },
     },
     fundamentals: {
-      pe_ratio:  s.pe_ratio,
-      div_yield: s.div_yield,
+      pe_ratio:   s.pe_ratio,
+      pb_ratio:   s.pb_ratio,
+      div_yield:  s.div_yield,
+      market_cap: s.market_cap,
+      annual_div: s.annual_div,
+      '52w_high': s['52w_high'],
+      '52w_low':  s['52w_low'],
     },
     recommendation: {
       rating:       s.rating,

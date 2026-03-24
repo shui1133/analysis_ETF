@@ -1999,16 +1999,21 @@ def _estimate_chip(ohlcv, trend):
     up_vol    = sum(r['volume'] for r in recent20 if r['close'] >= r['open'])
     down_vol  = sum(r['volume'] for r in recent20 if r['close'] < r['open'])
 
+    # ★ 修正：快取資料已是「張」(< 10000)，不可再除 1000
+    def _v_to_lots(v):
+        v = float(v or 0)
+        return max(1, round(v / 1000)) if v >= 10000 else max(1, int(round(v)))
+
     return {
         'foreign_dir':    foreign_dir,
         'trust_dir':      trust_dir,
         'vol_ratio':      vol_ratio,
-        'avg_volume':     max(1, round(avg_vol / 1000)),        # 股→張
-        'recent5_volume': max(1, round(recent5_vol / 1000)),    # 股→張
+        'avg_volume':     _v_to_lots(avg_vol),       # 自動判斷股/張
+        'recent5_volume': _v_to_lots(recent5_vol),   # 自動判斷股/張
         'up_days_20':     up_days,
         'down_days_20':   down_days,
-        'up_vol_20':      round(int(up_vol) / 1000),            # 股→張
-        'down_vol_20':    round(int(down_vol) / 1000),          # 股→張
+        'up_vol_20':      _v_to_lots(up_vol),        # 20日合計，自動判斷
+        'down_vol_20':    _v_to_lots(down_vol),      # 20日合計，自動判斷
         'estimated':      True,
         'note':           '⚠ 籌碼資料為統計模型估算，僅供參考，非真實法人申報數據'
     }
