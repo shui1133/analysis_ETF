@@ -6431,9 +6431,11 @@ async function forceRefreshHotStocks() {
   }
 
   try {
-    // 逐支呼叫 /api/force_refresh_price（單支，避免 Render 30s 批次逾時）
+    // 逐支呼叫 /api/force_refresh_price（單支，串行執行）
+    // ★ 修正：Render Free 只有 1 個 gunicorn worker，3 並發會導致後 2 支排隊
+    //         等待超過前端 timeout，改為 CONCUR=1 串行，確保每支都能完成
     // 然後立即呼叫 /api/stock_analysis 取得完整資料並更新畫面
-    const CONCUR = 3;   // 同時最多 3 支，避免 Render 過載
+    const CONCUR = 1;   // ★ 串行：Render Free plan 單 worker，避免排隊超時
     const sem = { count: 0 };
 
     await new Promise(resolve => {
@@ -6452,7 +6454,7 @@ async function forceRefreshHotStocks() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ticker: code }),
-                signal: AbortSignal.timeout(25000),
+                signal: AbortSignal.timeout(45000),  // ★ 修正：從 25s 延長到 45s（yfinance 增量約需 15-20s）
               });
               if (r1.ok) {
                 const d1 = await r1.json();

@@ -472,29 +472,26 @@ def force_refresh_price():
 
         fetcher = ETFDataFetcher(output_dir=DATA_DIR)
         results = {}
-        for tk in tickers:
+        for i, tk in enumerate(tickers):
             t0 = _time.time()
             try:
-                # ★ 修正：清除所有快取層（L1 記憶體 + L1.5 磁碟的 meta.json mtime）
-                # 清 L1 記憶體
+                # ★ 清除 L1 記憶體快取
                 if tk in analysis_cache:
                     del analysis_cache[tk]
 
-                # ★ 修正：呼叫 force_refresh=True，強制跳過 L1.5/L2，直接打 yfinance
+                # ★ 呼叫 force_refresh=True，強制跳過 L1.5/L2，直接打 yfinance
                 raw = fetcher.fetch_stock_analysis(tk, force_refresh=True)
                 if not raw or not raw.get('ohlcv'):
                     results[tk] = {'status': 'error', 'message': fetcher.last_error or '無法取得資料'}
                     continue
 
                 ohlcv = raw['ohlcv']
-                # 轉換為 price list 格式存快取（github_cache 格式）
                 price_list = [
                     {'date': r['date'], 'open': r.get('open'), 'high': r.get('high'),
                      'low': r.get('low'), 'close': r['close'], 'volume': r.get('volume', 0)}
                     for r in ohlcv
                 ]
-                # ★ 修正：_save_data 內部已同步存子資料夾 + 舊版平面路徑，無需再次呼叫
-                # 但仍額外呼叫 gh_save_price 推送到 GitHub
+                # 推送到 GitHub（_save_data 已存本機，此處只推遠端）
                 try:
                     from github_cache import gh_save_price
                     gh_save_price(tk, price_list)
@@ -515,6 +512,11 @@ def force_refresh_price():
                     'rows':       len(ohlcv),
                     'elapsed_ms': round((_time.time() - t0) * 1000),
                 }
+
+                # ★ 修正：批次時每支間隔 1.5s，避免 yfinance Too Many Requests
+                if i < len(tickers) - 1:
+                    _time.sleep(1.5)
+
             except Exception as e:
                 results[tk] = {'status': 'error', 'message': str(e)}
 
