@@ -3321,6 +3321,14 @@ function renderRecommendation(data) {
   else if (_ts >= -6) { rec.rating='減碼';     rec.rating_color='#ea580c'; rec.rating_bg='#7c2d12'; rec.rating_icon='⚠️'; }
   else                { rec.rating='賣出';     rec.rating_color='#fbbf24'; rec.rating_bg='#7f1d1d'; rec.rating_icon='🔴'; }
 
+  // ★ 修正：同步更新標題列 ratingBadge，確保與投資建議頁一致
+  const _ratingBadge = document.getElementById('ratingBadge');
+  if (_ratingBadge) {
+    _ratingBadge.innerHTML = `<div class="rating-badge" style="background:${rec.rating_bg};color:${rec.rating_color};border:1px solid ${rec.rating_color}40;">
+      <span>${rec.rating_icon}</span><span>${rec.rating}</span>
+    </div>`;
+  }
+
 
   const ratingDisp = document.getElementById('rec-rating-display');
   ratingDisp.textContent = `${rec.rating_icon} ${rec.rating}`;

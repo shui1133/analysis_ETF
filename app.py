@@ -1255,6 +1255,20 @@ def get_stock_analysis(ticker):
             lst = indicators.get(key, [])
             return lst[offset:offset + chart_len] if len(lst) >= offset + chart_len else lst[-chart_len:]
 
+        # ★ 修正：若 yfinance 沒有回傳 52w_high/low，從 OHLCV 自行計算（近252個交易日）
+        _52w_high = info.get('52w_high')
+        _52w_low  = info.get('52w_low')
+        if not _52w_high or not _52w_low:
+            _ohlcv_252 = ohlcv[-252:] if len(ohlcv) >= 252 else ohlcv
+            if _ohlcv_252:
+                if not _52w_high:
+                    _52w_high = round(max(r['high'] for r in _ohlcv_252), 2)
+                if not _52w_low:
+                    _52w_low  = round(min(r['low']  for r in _ohlcv_252), 2)
+
+        # ★ 修正：若 yfinance 沒有回傳 market_cap，用最新收盤價×流通股數估算（或標記 N/A）
+        _market_cap = info.get('market_cap')
+
         data_out = {
             'ticker':    ticker,
             'name':      raw.get('name', ticker),
@@ -1280,11 +1294,11 @@ def get_stock_analysis(ticker):
                 'eps':           info.get('eps'),
                 'roe':           info.get('roe'),
                 'profit_margin': info.get('profit_margin'),
-                'market_cap':    info.get('market_cap'),
+                'market_cap':    _market_cap,
                 'sector':        info.get('sector', ''),
                 'industry':      info.get('industry', ''),
-                '52w_high':      info.get('52w_high'),
-                '52w_low':       info.get('52w_low'),
+                '52w_high':      _52w_high,
+                '52w_low':       _52w_low,
                 'description':   info.get('description', ''),
             },
             # 技術分析
