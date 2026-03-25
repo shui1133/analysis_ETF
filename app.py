@@ -3173,6 +3173,96 @@ def ai_report(ticker: str):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/ai_investment/<ticker>', methods=['GET', 'POST'])
+def ai_investment(ticker: str):
+    """
+    AI 投資建議分析（整合技術面、基本面、MA、葛蘭碧、交易概況、財報、效益邊緣線、新聞）
+    GET  → 查詢快取（本機 Storage 優先，再查 GitHub），不呼叫 Claude
+    POST → 接收前端整合好的分析摘要，呼叫 Claude API 產生完整投資建議報告
+           結果同時存本機 Storage + GitHub（以節省 API 費用）
+    """
+    from github_cache import _gh_raw_get, _gh_writer
+    import json as _json
+
+    ticker = ticker.strip().upper()
+    period_key = _get_period_key()
+    local_path = os.path.join(DATA_DIR, f"ai_investment_{ticker}_{period_key}.json")
+    gh_path = f"ai_investment/{ticker}/{period_key}.json"
+
+    if request.method == 'GET':
+        # ── L1：本機 Storage ───────────────────────────────────
+        if os.path.exists(local_path):
+            try:
+                with open(local_path, 'r', encoding='utf-8') as f:
+                    data = _json.load(f)
+                if data.get('report_text'):
+                    print(f"  [ai_investment] {ticker} GET 本機快取命中")
+                    return jsonify({'status': 'cached', 'source': 'local',
+                                    'period_key': period_key, 'data': data})
+            except Exception:
+                pass
+        # ── L2：GitHub Public Repo ────────────────────────────
+        try:
+            content = _gh_raw_get(gh_path)
+            if content:
+                data = _json.loads(content)
+                if data.get('report_text'):
+                    try:
+                        with open(local_path, 'w', encoding='utf-8') as f:
+                            _json.dump(data, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+                    print(f"  [ai_investment] {ticker} GET GitHub 命中，已回填本機")
+                    return jsonify({'status': 'cached', 'source': 'github',
+                                    'period_key': period_key, 'data': data})
+        except Exception:
+            pass
+        return jsonify({'status': 'not_found', 'period_key': period_key, 'data': None})
+
+    # ── POST：呼叫 Claude API 產生投資建議報告 ─────────────────
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        return jsonify({'error': '伺服器未設定 ANTHROPIC_API_KEY 環境變數'}), 500
+    try:
+        payload = request.get_json(force=True)
+        import requests as _req3
+        resp = _req3.post(
+            'https://api.anthropic.com/v1/messages',
+            headers={'Content-Type': 'application/json', 'x-api-key': api_key,
+                     'anthropic-version': '2023-06-01'},
+            json=payload, timeout=120
+        )
+        if not resp.ok:
+            return jsonify({'error': f'Claude API 錯誤：{resp.status_code}', 'detail': resp.text}), resp.status_code
+        report_text = ''.join(
+            b.get('text', '') for b in resp.json().get('content', [])
+            if b.get('type') == 'text'
+        )
+        if not report_text:
+            return jsonify({'error': '取得的 AI 分析內容為空'}), 500
+        from datetime import datetime, timezone, timedelta
+        tz_tw = timezone(timedelta(hours=8))
+        report_data = {'ticker': ticker, 'period_key': period_key,
+                       'report_text': report_text,
+                       'generated_at': datetime.now(tz_tw).isoformat()}
+        # ── 存本機 Storage ────────────────────────────────────
+        try:
+            with open(local_path, 'w', encoding='utf-8') as f:
+                _json.dump(report_data, f, ensure_ascii=False, indent=2)
+            print(f"  [ai_investment] {ticker} 已存本機 Storage")
+        except Exception as e:
+            print(f'  [ai_investment] 本機存檔失敗（非致命）: {e}')
+        # ── 同步 GitHub Repo ──────────────────────────────────
+        try:
+            _gh_writer.put(gh_path, _json.dumps(report_data, ensure_ascii=False, indent=2),
+                           f'ai_investment: {ticker} {period_key}')
+        except Exception as e:
+            print(f'  [ai_investment] GitHub 存檔失敗（非致命）: {e}')
+        return jsonify({'status': 'generated', 'period_key': period_key, 'data': report_data})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/cache_version', methods=['GET'])
 def cache_version():
     v = getattr(app, '_cache_version', '')
