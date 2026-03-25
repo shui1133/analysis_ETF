@@ -3439,12 +3439,12 @@ function renderRecommendation(data) {
   // 覆蓋後端分數，確保說明文字與數字完全一致
   rec.tech_score  = _techScoreCalc;
   rec.total_score = _techScoreCalc + (rec.fund_score || 0);
-  // 重新判斷評級（與後端門檻一致：強力買進≥12 / 買進≥6 / 持有≥0 / 減碼≥-6 / 賣出<-6）
+  // 重新判斷評級（與後端 _generate_recommendation 門檻一致：強力買進≥6 / 買進≥3 / 持有≥0 / 減碼≥-3 / 賣出<-3）
   const _ts = rec.total_score;
-  if (_ts >= 12)      { rec.rating='強力買進'; rec.rating_color='#16a34a'; rec.rating_bg='#14532d'; rec.rating_icon='🚀'; }
-  else if (_ts >= 6)  { rec.rating='買進';     rec.rating_color='#2563eb'; rec.rating_bg='#1e3a8a'; rec.rating_icon='✅'; }
+  if (_ts >= 6)       { rec.rating='強力買進'; rec.rating_color='#16a34a'; rec.rating_bg='#14532d'; rec.rating_icon='🚀'; }
+  else if (_ts >= 3)  { rec.rating='買進';     rec.rating_color='#2563eb'; rec.rating_bg='#1e3a8a'; rec.rating_icon='✅'; }
   else if (_ts >= 0)  { rec.rating='持有';     rec.rating_color='#d97706'; rec.rating_bg='#78350f'; rec.rating_icon='⚖️'; }
-  else if (_ts >= -6) { rec.rating='減碼';     rec.rating_color='#ea580c'; rec.rating_bg='#7c2d12'; rec.rating_icon='⚠️'; }
+  else if (_ts >= -3) { rec.rating='減碼';     rec.rating_color='#ea580c'; rec.rating_bg='#7c2d12'; rec.rating_icon='⚠️'; }
   else                { rec.rating='賣出';     rec.rating_color='#fbbf24'; rec.rating_bg='#7f1d1d'; rec.rating_icon='🔴'; }
 
   // ★ 修正：同步更新標題列 ratingBadge，確保與投資建議頁一致
@@ -3540,8 +3540,8 @@ function renderRecommendation(data) {
   // 評分說明條
   const totalScore = rec.total_score;
   const barPct = Math.round((totalScore - (-20)) / 40 * 100);
-  const barColor = totalScore>=12?'#10b981':totalScore>=6?'#22d3ee':totalScore>=0?'#3b82f6':totalScore>=-6?'#f59e0b':'#ef4444';
-  const ratingDescs = {'強力買進':'技術面與基本面高度一致偏多（總分≥12），含均線多頭排列、葛蘭碧強訊號、交叉確認等多重共振，為最強力買入訊號。建議在支撐位分批建倉，設定停損保護獲利。','買進':'技術面具明確優勢（總分≥6），均線趨勢向上，動能指標配合，整體偏多。建議在回撤至支撐位時逢低分批買進。','持有':'多空訊號相對平衡（0≤總分<6）。已持有者續持觀望，未持有者等待更明確訊號。','減碼':'出現偏空訊號（-6≤總分<0），均線或葛蘭碧出現賣出訊號，趨勢開始轉弱。建議逐步減少持股，等待更佳時機。','賣出':'技術面多項指標指向弱勢（總分<-6），含空頭排列、交叉預警或葛蘭碧賣出訊號，整體偏空。建議儘早出脫，嚴格執行停損。'};
+  const barColor = totalScore>=6?'#10b981':totalScore>=3?'#22d3ee':totalScore>=0?'#3b82f6':totalScore>=-3?'#f59e0b':'#ef4444';
+  const ratingDescs = {'強力買進':'技術面與基本面高度一致偏多（總分≥6），含均線多頭排列、葛蘭碧強訊號、交叉確認等多重共振，為最強力買入訊號。建議在支撐位分批建倉，設定停損保護獲利。','買進':'技術面具明確優勢（總分≥3），均線趨勢向上，動能指標配合，整體偏多。建議在回撤至支撐位時逢低分批買進。','持有':'多空訊號相對平衡（0≤總分<3）。已持有者續持觀望，未持有者等待更明確訊號。','減碼':'出現偏空訊號（-3≤總分<0），均線或葛蘭碧出現賣出訊號，趨勢開始轉弱。建議逐步減少持股，等待更佳時機。','賣出':'技術面多項指標指向弱勢（總分<-3），含空頭排列、交叉預警或葛蘭碧賣出訊號，整體偏空。建議儘早出脫，嚴格執行停損。'};
   const scoreBarEl = document.getElementById('recScoreBar');
   if (scoreBarEl) scoreBarEl.innerHTML=`<div class="flex items-center gap-3 mb-3"><div class="flex-1 bg-slate-700 h-3 rounded-full overflow-hidden"><div style="width:${Math.max(2,barPct)}%;background:${barColor};height:100%;border-radius:999px;transition:width .4s;"></div></div><span class="text-xs font-bold mono" style="color:${barColor};min-width:60px;">${fmtScore(totalScore)} / 12</span></div><div class="text-sm text-slate-300"><strong style="color:${barColor}">「${rec.rating}」</strong>：${ratingDescs[rec.rating]||''}</div><div class="text-xs text-slate-500 mt-2">評分構成：技術面（${fmtScore(rec.tech_score)}，不設上下限）＋基本面（${fmtScore(rec.fund_score)}，-1~+4）＝ 總分（${fmtScore(totalScore)}） ｜ 門檻：強力買進≥12 / 買進≥6 / 持有≥0 / 減碼≥-6 / 賣出<-6</div>`;
 
