@@ -3016,6 +3016,58 @@ def get_goodinfo_news(ticker):
 # 財報分析 API
 # ═══════════════════════════════════════════════════════════════
 
+def _call_claude_api(api_key: str, payload: dict, timeout: int = 60,
+                     max_retries: int = 3) -> tuple:
+    """
+    呼叫 Claude API，自動處理 529 Overloaded（指數退避重試）
+    回傳 (response_dict, status_code)
+    """
+    import requests as _req_claude
+    import time as _t
+
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            resp = _req_claude.post(
+                'https://api.anthropic.com/v1/messages',
+                headers={
+                    'Content-Type':      'application/json',
+                    'x-api-key':         api_key,
+                    'anthropic-version': '2023-06-01',
+                },
+                json=payload,
+                timeout=timeout,
+            )
+            # 529 = API 過載，等待後重試
+            if resp.status_code == 529:
+                wait_sec = 2 ** attempt * 3   # 3s → 6s → 12s
+                print(f"  [Claude API] 529 Overloaded，第 {attempt+1} 次重試，等待 {wait_sec}s ...")
+                if attempt < max_retries - 1:
+                    _t.sleep(wait_sec)
+                    last_err = ('Claude API 服務繁忙（過載），已自動重試仍無法完成，'
+                                '請稍後 1～2 分鐘再試')
+                    continue
+                # 最後一次仍 529
+                return {
+                    'error': last_err or 'Claude API 服務繁忙，請稍後再試',
+                    'retries': attempt + 1,
+                }, 503   # 回傳 503 讓前端顯示友善訊息
+            # 其他非 2xx
+            if not resp.ok:
+                try:
+                    body = resp.json()
+                    err_msg = body.get('error', {}).get('message', resp.text[:200])
+                except Exception:
+                    err_msg = resp.text[:200]
+                return {'error': f'Claude API 錯誤（{resp.status_code}）：{err_msg}'}, resp.status_code
+            return resp.json(), resp.status_code
+        except Exception as e:
+            last_err = str(e)
+            if attempt < max_retries - 1:
+                _t.sleep(2 ** attempt)
+    return {'error': last_err or 'Claude API 請求失敗，請稍後再試'}, 500
+
+
 @app.route('/api/claude_proxy', methods=['POST'])
 def claude_proxy():
     """
@@ -3023,26 +3075,16 @@ def claude_proxy():
     API Key 從環境變數 ANTHROPIC_API_KEY 讀取，不暴露於前端
     本機開發：在 .env 或系統環境變數設定 ANTHROPIC_API_KEY=sk-ant-api03-...
     Render 部署：在 Render Dashboard > Environment 設定同名變數
+    自動重試：529 Overloaded 最多重試 3 次（指數退避）
     """
-    import requests as req
-
     api_key = os.environ.get('ANTHROPIC_API_KEY', '')
     if not api_key:
         return jsonify({'error': '伺服器未設定 ANTHROPIC_API_KEY 環境變數'}), 500
 
     try:
         payload = request.get_json(force=True)
-        resp = req.post(
-            'https://api.anthropic.com/v1/messages',
-            headers={
-                'Content-Type':    'application/json',
-                'x-api-key':       api_key,
-                'anthropic-version': '2023-06-01',
-            },
-            json=payload,
-            timeout=60
-        )
-        return jsonify(resp.json()), resp.status_code
+        resp_data, status_code = _call_claude_api(api_key, payload, timeout=60)
+        return jsonify(resp_data), status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -3136,16 +3178,11 @@ def ai_report(ticker: str):
         return jsonify({'error': '伺服器未設定 ANTHROPIC_API_KEY 環境變數'}), 500
     try:
         payload = request.get_json(force=True)
-        resp = _req2.post(
-            'https://api.anthropic.com/v1/messages',
-            headers={'Content-Type': 'application/json', 'x-api-key': api_key,
-                     'anthropic-version': '2023-06-01'},
-            json=payload, timeout=90
-        )
-        if not resp.ok:
-            return jsonify({'error': f'Claude API 錯誤：{resp.status_code}'}), resp.status_code
+        resp_data, status_code = _call_claude_api(api_key, payload, timeout=90)
+        if status_code not in (200, 201) or resp_data.get('error'):
+            return jsonify({'error': resp_data.get('error', f'Claude API 錯誤（{status_code}）')}), status_code
         report_text = ''.join(
-            b.get('text', '') for b in resp.json().get('content', [])
+            b.get('text', '') for b in resp_data.get('content', [])
             if b.get('type') == 'text'
         )
         if not report_text:
@@ -3225,17 +3262,14 @@ def ai_investment(ticker: str):
         return jsonify({'error': '伺服器未設定 ANTHROPIC_API_KEY 環境變數'}), 500
     try:
         payload = request.get_json(force=True)
-        import requests as _req3
-        resp = _req3.post(
-            'https://api.anthropic.com/v1/messages',
-            headers={'Content-Type': 'application/json', 'x-api-key': api_key,
-                     'anthropic-version': '2023-06-01'},
-            json=payload, timeout=120
-        )
-        if not resp.ok:
-            return jsonify({'error': f'Claude API 錯誤：{resp.status_code}', 'detail': resp.text}), resp.status_code
+        resp_data, status_code = _call_claude_api(api_key, payload, timeout=120)
+        if status_code not in (200, 201) or resp_data.get('error'):
+            return jsonify({
+                'error': resp_data.get('error', f'Claude API 錯誤（{status_code}）'),
+                'detail': resp_data.get('detail', '')
+            }), status_code
         report_text = ''.join(
-            b.get('text', '') for b in resp.json().get('content', [])
+            b.get('text', '') for b in resp_data.get('content', [])
             if b.get('type') == 'text'
         )
         if not report_text:
@@ -3291,7 +3325,8 @@ def get_finreport(ticker):
     try:
         result = _fetch_finreport(ticker)
         if result.get('error'):
-            return jsonify({'status': 'error', 'message': result['error']}), 404
+            # ETF 或無財報時回傳 200 + error 訊息，前端可友善顯示而非視為系統錯誤
+            return jsonify({'status': 'unavailable', 'message': result['error'], 'data': None}), 200
 
         analysis_cache[cache_key] = {'data': result, 'ts': time.time()}
         return jsonify({'status': 'success', 'data': result})
@@ -3417,7 +3452,19 @@ def _fetch_finreport(ticker: str) -> dict:
             print(f'  [finreport] MOPS 備援失敗: {e}')
 
     if not yf_ok:
-        result['error'] = f'無法取得 {ticker} 財務報表，請確認股票代碼（台灣上市如 2330、2412）'
+        # 判斷是否為 ETF（代碼開頭 00 或長度<=6且含字母）
+        is_etf = ticker.startswith('00') or (len(ticker) <= 6 and not ticker.isdigit())
+        if is_etf:
+            result['error'] = (
+                f'{ticker} 為 ETF 或特殊商品，財務報表資料有限。'
+                '建議至投信官網或公開資訊觀測站查詢完整資料。'
+            )
+        else:
+            result['error'] = (
+                f'無法取得 {ticker} 財務報表。'
+                '可能原因：①上市未滿1年 ②代碼有誤（台灣上市如 2330、2412）'
+                '③ yfinance 暫時無法取得資料，請稍後再試。'
+            )
         return result
 
     # ══════════════════════════════════════════════════════════

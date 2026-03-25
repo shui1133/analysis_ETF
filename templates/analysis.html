@@ -8358,6 +8358,11 @@ async function loadFinReport(ticker) {
   try {
     const r = await fetch(`/api/finreport/${ticker}`, { signal: AbortSignal.timeout(60000) });
     const d = await r.json();
+    if (d.status === 'unavailable') {
+      // ETF 或無財報：顯示友善說明而非錯誤紅框
+      document.getElementById('finreport-error-msg').textContent = d.message || '此標的無財務報表資料';
+      showFinState('error'); return;
+    }
     if (d.status !== 'success') {
       document.getElementById('finreport-error-msg').textContent = d.message || '財報載入失敗';
       showFinState('error'); return;
@@ -9291,6 +9296,10 @@ ${newsSection}
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
+      // 503 = 後端已重試仍過載；給出更具體的提示
+      if (response.status === 503 || response.status === 529) {
+        throw new Error(errData.error || 'AI 服務目前流量較高，請等候 1～2 分鐘後再試');
+      }
       throw new Error(errData.error || `API 回應 ${response.status}`);
     }
     const result = await response.json();
@@ -9305,7 +9314,11 @@ ${newsSection}
     const errEl = document.getElementById('ai-inv-error');
     const msgEl = document.getElementById('ai-inv-error-msg');
     if (errEl) errEl.classList.remove('hidden');
-    if (msgEl) msgEl.textContent = `AI 分析失敗：${e.message || '請稍後重試'}`;
+    if (msgEl) {
+      const msg = e.message || '請稍後重試';
+      // 若訊息已含說明文字（如「AI 服務...」），不重複加前綴
+      msgEl.textContent = msg.startsWith('AI') ? msg : `AI 分析失敗：${msg}`;
+    }
     _updateAiInvBtn(false, false, null);
   } finally {
     _aiInvLoading = false;
