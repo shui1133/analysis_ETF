@@ -1479,6 +1479,14 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
 
         <!-- 均線走勢圖（近120日） -->
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-slate-500"><i class="fa-solid fa-magnifying-glass mr-1 text-blue-400 opacity-60"></i>拖曳放大 · 滾輪縮放</span>
+          <button id="maChart2ResetBtn" onclick="resetMAChart2Zoom()"
+                  class="period-btn hidden items-center gap-1 text-amber-300 border-amber-700"
+                  title="重置縮放">
+            <i class="fa-solid fa-arrows-minimize text-xs"></i>重置
+          </button>
+        </div>
         <div style="height:280px;position:relative;width:100%;">
           <canvas id="maChart2" style="display:block;"></canvas>
         </div>
@@ -1675,9 +1683,17 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <div class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
           <h3 class="font-bold text-sm text-white">葛蘭碧訊號 K線圖</h3>
-          <div class="flex flex-wrap gap-1">
-            <button class="period-btn active" onclick="setGranPeriod('D')" id="granpbtn-D">日線</button>
-            <button class="period-btn" onclick="setGranPeriod('W')" id="granpbtn-W">週線</button>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap gap-1">
+              <button class="period-btn active" onclick="setGranPeriod('D')" id="granpbtn-D">日線</button>
+              <button class="period-btn" onclick="setGranPeriod('W')" id="granpbtn-W">週線</button>
+            </div>
+            <span class="hidden sm:inline text-xs text-slate-500"><i class="fa-solid fa-magnifying-glass mr-1 text-blue-400 opacity-60"></i>拖曳放大 · 滾輪縮放</span>
+            <button id="granResetZoomBtn" onclick="resetGranZoom()"
+                    class="period-btn hidden items-center gap-1 text-amber-300 border-amber-700"
+                    title="重置縮放">
+              <i class="fa-solid fa-arrows-minimize text-xs"></i>重置
+            </button>
           </div>
         </div>
         <div class="chart-wrap" style="height:360px">
@@ -4097,14 +4113,13 @@ function drawCandleChartPeriod(data, period) {
   const ctx = document.getElementById('candleChart');
   if (charts.candle) { charts.candle.destroy(); charts.candle = null; }
 
-  // 各週期預設顯示根數：日線120（約半年）、週線104（約2年）、雙週線60、月線/季線/半年線/年線全部
   const MAX_BARS = MAX_BARS_MAP[period] ?? 120;
   const n      = Math.min(ch.dates.length, MAX_BARS);
   const offset = ch.dates.length - n;
   const sl = arr => arr.slice(offset);
 
   const dates  = sl(ch.dates);
-  const labels = sl(ch.labels || ch.dates);   // 季線為 "2024-Q1" 格式
+  const labels = sl(ch.labels || ch.dates);
   const closes = sl(ch.closes);
   const opens  = sl(ch.opens);
   const highs  = sl(ch.highs);
@@ -4114,117 +4129,173 @@ function drawCandleChartPeriod(data, period) {
   const ma3    = sl(ch.ma3);
   const cfg    = PERIOD_CFG[period];
 
-
   // 台股：紅漲綠跌
-  // ★ 修正：opens[i] 可能為 null（精簡快取格式只有 date/close），
-  //   改用前一根 close 作為 open 的 fallback，確保顏色判斷正確。
-  const upClr   = 'rgba(239,68,68,0.92)';
-  const downClr = 'rgba(22,163,74,0.92)';
   const effectiveOpens = opens.map((o, i) => {
     if (o != null && !isNaN(o)) return o;
-    // fallback：用前一根 close（或當根 close）當 open
     return (i > 0 && closes[i-1] != null) ? closes[i-1] : closes[i];
   });
-  const bodyColors = dates.map((_, i) => closes[i] >= effectiveOpens[i] ? upClr : downClr);
-  const wickColors = dates.map((_, i) => closes[i] >= effectiveOpens[i]
-    ? 'rgba(239,68,68,0.6)' : 'rgba(22,163,74,0.6)');
 
-  // 根數越多 → K棒越細
-  const barPct  = n <= 30 ? Math.min(0.92, 0.75 * 2.2) : n <= 60 ? Math.min(0.92, 0.65 * 2.2) : n <= 120 ? Math.min(0.88, 0.55 * 2.2) : Math.min(0.82, 0.45 * 2.2);
-  const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;
+  // ── 自訂蠟燭圖 Plugin（Canvas 直接繪製，最真實的蠟燭效果）──
+  const candlestickPlugin = {
+    id: 'candlestickPlugin',
+    afterDatasetsDraw(chart) {
+      const c2d   = chart.ctx;
+      const xAxis = chart.scales.x;
+      const yAxis = chart.scales.y;
+      const total = labels.length;
+      if (!total) return;
 
+      // 計算每根 K 棒的像素寬度
+      const availW = xAxis.width;
+      const barW   = Math.max(2, Math.min(24, (availW / total) * 0.72));
+      const halfW  = barW / 2;
+      const wickW  = Math.max(1, barW * 0.12);  // 影線寬度
+
+      for (let i = 0; i < total; i++) {
+        const o = effectiveOpens[i];
+        const c = closes[i];
+        const h = highs[i];
+        const l = lows[i];
+        if (o == null || c == null || isNaN(o) || isNaN(c)) continue;
+
+        const isUp = c >= o;
+        const bodyClr  = isUp ? '#ef4444' : '#16a34a';  // 紅漲綠跌
+        const wickClr  = isUp ? '#ef4444' : '#16a34a';
+
+        const xPx   = xAxis.getPixelForValue(i);
+        const yOpen = yAxis.getPixelForValue(o);
+        const yClose= yAxis.getPixelForValue(c);
+        const yHigh = h != null ? yAxis.getPixelForValue(h) : Math.min(yOpen, yClose);
+        const yLow  = l != null ? yAxis.getPixelForValue(l) : Math.max(yOpen, yClose);
+
+        const bodyTop = Math.min(yOpen, yClose);
+        const bodyBot = Math.max(yOpen, yClose);
+        const bodyH   = Math.max(1.5, bodyBot - bodyTop);
+
+        c2d.save();
+
+        // 上影線
+        c2d.beginPath();
+        c2d.strokeStyle = wickClr;
+        c2d.lineWidth   = wickW;
+        c2d.moveTo(xPx, bodyTop);
+        c2d.lineTo(xPx, yHigh);
+        c2d.stroke();
+
+        // 下影線
+        c2d.beginPath();
+        c2d.moveTo(xPx, bodyBot);
+        c2d.lineTo(xPx, yLow);
+        c2d.stroke();
+
+        // 實體矩形
+        c2d.fillStyle = bodyClr;
+        c2d.fillRect(xPx - halfW, bodyTop, barW, bodyH);
+
+        // 實體外框（讓蠟燭輪廓更清晰）
+        c2d.strokeStyle = isUp ? 'rgba(239,68,68,0.5)' : 'rgba(22,163,74,0.5)';
+        c2d.lineWidth   = 0.5;
+        c2d.strokeRect(xPx - halfW, bodyTop, barW, bodyH);
+
+        c2d.restore();
+      }
+    }
+  };
+
+  // ── 用隱形的散點圖承載 OHLC 資料（提供 tooltip 資訊）──
   charts.candle = new Chart(ctx, {
-    type: 'bar',
+    type: 'scatter',
     data: {
       labels: labels,
       datasets: [
-        // ① 蠟燭實體（開~收浮動長條）
+        // 隱形散點：只用於 tooltip，不顯示
         {
           label: 'OHLC',
-          data:  dates.map((_, i) => {
-            // ★ 修正：使用 effectiveOpens（已做 null/NaN fallback），
-            //   確保即使快取只有 date/close 格式，K棒實體仍能正常渲染。
-            const o = effectiveOpens[i];
-            const c = closes[i];
-            if (o == null || c == null || isNaN(o) || isNaN(c)) return null;
-            // 若 o === c（精簡格式 fallback），給一個極小的最低高度讓 bar 可見
-            if (o === c) return [c * 0.9995, c * 1.0005];
-            return [Math.min(o, c), Math.max(o, c)];
-          }),
-          backgroundColor: bodyColors,
-          borderColor:     bodyColors,
-          borderWidth: 0,
-          barPercentage:   barPct,
-          categoryPercentage: 0.9,
+          data: closes.map((c, i) => ({ x: i, y: c })),
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          showLine: false,
+          order: 99,
+        },
+        // MA 均線
+        {
+          type: 'line',
+          label: `MA${cfg.ma[0]}`,
+          data: ma1.map((v, i) => ({ x: i, y: v })),
+          borderColor: '#f59e0b',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.3,
+          spanGaps: false,
           order: 1,
         },
-        // ② 上下影線（高~低，極細長條，畫在實體下層）
         {
-          type: 'bar',
-          label: 'wick',
-          data:  dates.map((_, i) => {
-            const h = highs[i] ?? closes[i];
-            const l = lows[i]  ?? closes[i];
-            if (h == null || l == null) return null;
-            return [l, h];
-          }),
-          backgroundColor: wickColors,
-          borderColor:     wickColors,
-          borderWidth: 0,
-          barPercentage:   wickPct,
-          categoryPercentage: 1.0,
-          order: 2,
+          type: 'line',
+          label: `MA${cfg.ma[1]}`,
+          data: ma2.map((v, i) => ({ x: i, y: v })),
+          borderColor: '#60a5fa',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.3,
+          spanGaps: false,
+          order: 1,
         },
-        // ③ MA 均線
-        { type:'line', label:`MA${cfg.ma[0]}`, data:ma1,
-          borderColor:'#f59e0b', borderWidth:2.5, pointRadius:0,
-          fill:false, tension:.3, spanGaps:false, order:1 },
-        { type:'line', label:`MA${cfg.ma[1]}`, data:ma2,
-          borderColor:'#60a5fa', borderWidth:2.5, pointRadius:0,
-          fill:false, tension:.3, spanGaps:false, order:1 },
-        { type:'line', label:`MA${cfg.ma[2]}`, data:ma3,
-          borderColor:'#a78bfa', borderWidth:2.5, pointRadius:0,
-          fill:false, tension:.3, spanGaps:false, order:1 },
+        {
+          type: 'line',
+          label: `MA${cfg.ma[2]}`,
+          data: ma3.map((v, i) => ({ x: i, y: v })),
+          borderColor: '#a78bfa',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.3,
+          spanGaps: false,
+          order: 1,
+        },
       ]
     },
-    plugins: [],
+    plugins: [candlestickPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 250 },
-      interaction: { mode:'index', intersect:false },
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
           display: true,
           labels: {
-            color:'#94a3b8', font:{size:11}, boxWidth:14, usePointStyle:true,
-            filter: item => !['OHLC','wick'].includes(item.text)
+            color: '#94a3b8', font: { size: 11 }, boxWidth: 14, usePointStyle: true,
+            filter: item => item.text !== 'OHLC'
           }
         },
         tooltip: {
           callbacks: {
-            title: ctxArr => ctxArr[0]?.label || '',
+            title: ctxArr => {
+              const i = ctxArr[0]?.dataIndex;
+              return labels[i] || '';
+            },
             label: ctx => {
               const i = ctx.dataIndex;
-              const dsLabel = ctx.dataset.label || '';
-              if (ctx.datasetIndex === 0) {
-                const dir = closes[i] >= opens[i] ? '▲ 上漲' : '▼ 下跌';
-                return [`開: ${opens[i]}`, `高: ${highs[i]}`, `低: ${lows[i]}`, `收: ${closes[i]}`, dir];
+              if (ctx.dataset.label === 'OHLC') {
+                const dir = closes[i] >= effectiveOpens[i] ? '▲ 上漲' : '▼ 下跌';
+                return [
+                  `開: ${effectiveOpens[i]?.toFixed ? effectiveOpens[i].toFixed(2) : effectiveOpens[i]}`,
+                  `高: ${highs[i]?.toFixed ? highs[i].toFixed(2) : highs[i]}`,
+                  `低: ${lows[i]?.toFixed  ? lows[i].toFixed(2)  : lows[i]}`,
+                  `收: ${closes[i]?.toFixed ? closes[i].toFixed(2) : closes[i]}`,
+                  dir
+                ];
               }
-              if (ctx.datasetIndex === 1) return null;
-              const val = Array.isArray(ctx.raw) ? ctx.raw[1] : ctx.parsed?.y;
+              const val = ctx.parsed?.y;
               if (val == null) return null;
               return ctx.dataset.label + ': ' + Number(val).toFixed(2);
             },
-            filter: item => item.datasetIndex !== 1,
           }
         },
         zoom: {
-          pan: {
-            enabled: true,
-            mode: 'x',
-            modifierKey: null,
-          },
+          pan: { enabled: true, mode: 'x', modifierKey: null },
           zoom: {
             drag: {
               enabled: true,
@@ -4240,17 +4311,19 @@ function drawCandleChartPeriod(data, period) {
               if (btn) { btn.classList.remove('hidden'); btn.style.display = 'inline-flex'; }
             },
           },
-          limits: {
-            x: { minRange: 5 },
-          },
+          limits: { x: { minRange: 5 } },
         },
       },
       scales: {
         x: {
+          type: 'linear',
+          min: 0,
+          max: labels.length - 1,
           ticks: {
-            color:'#64748b', font:{size:10}, maxRotation:45, autoSkip:true,
+            color: '#64748b', font: { size: 10 }, maxRotation: 45, autoSkip: true,
             maxTicksLimit: period === 'Y' ? 30 : 14,
-            callback: function(val, idx) {
+            callback: function(val) {
+              const idx = Math.round(val);
               const lbl = labels[idx];
               if (!lbl) return '';
               if (period === 'Y')  return lbl.substring(0, 4);
@@ -4258,30 +4331,28 @@ function drawCandleChartPeriod(data, period) {
               return lbl;
             }
           },
-          grid: { color:'rgba(255,255,255,.04)' },
+          grid: { color: 'rgba(255,255,255,.04)' },
         },
         y: {
           min: (function() {
-            const visLows  = lows.filter(v => v != null && v > 0);
-            if (!visLows.length) return undefined;
-            const minVal = Math.min(...visLows);
-            const maxVal = Math.max(...highs.filter(v => v != null));
-            const pad = (maxVal - minVal) * 0.08 || minVal * 0.02;
-            return Math.floor((minVal - pad) * 10) / 10;
+            const vals = lows.filter(v => v != null && v > 0);
+            if (!vals.length) return undefined;
+            const minV = Math.min(...vals), maxV = Math.max(...highs.filter(v=>v!=null));
+            const pad = (maxV - minV) * 0.08 || minV * 0.02;
+            return Math.floor((minV - pad) * 10) / 10;
           })(),
           max: (function() {
-            const visHighs = highs.filter(v => v != null && v > 0);
-            if (!visHighs.length) return undefined;
-            const minVal = Math.min(...lows.filter(v => v != null));
-            const maxVal = Math.max(...visHighs);
-            const pad = (maxVal - minVal) * 0.08 || maxVal * 0.02;
-            return Math.ceil((maxVal + pad) * 10) / 10;
+            const vals = highs.filter(v => v != null && v > 0);
+            if (!vals.length) return undefined;
+            const minV = Math.min(...lows.filter(v=>v!=null)), maxV = Math.max(...vals);
+            const pad = (maxV - minV) * 0.08 || maxV * 0.02;
+            return Math.ceil((maxV + pad) * 10) / 10;
           })(),
           ticks: {
-            color:'#64748b', font:{size:10},
+            color: '#64748b', font: { size: 10 },
             callback: v => v.toLocaleString()
           },
-          grid:  { color:'rgba(255,255,255,.06)' }
+          grid: { color: 'rgba(255,255,255,.06)' }
         }
       }
     }
@@ -7943,7 +8014,26 @@ function renderMAAnalysisTab(data) {
                 return `${dsLabel}: ${ctx.parsed.y != null ? ctx.parsed.y.toFixed(2) : '--'}`;
               }
             }
-          }
+          },
+          zoom: {
+            pan: { enabled: true, mode: 'x', modifierKey: null },
+            zoom: {
+              drag: {
+                enabled: true,
+                backgroundColor: 'rgba(59,130,246,0.15)',
+                borderColor: 'rgba(59,130,246,0.6)',
+                borderWidth: 1,
+              },
+              wheel: { enabled: true, speed: 0.1 },
+              pinch: { enabled: true },
+              mode: 'x',
+              onZoomComplete: function() {
+                const btn = document.getElementById('maChart2ResetBtn');
+                if (btn) { btn.classList.remove('hidden'); btn.style.display = 'inline-flex'; }
+              },
+            },
+            limits: { x: { minRange: 5 } },
+          },
         },
         scales: {
           x: { ticks:{ color:'#94a3b8', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
@@ -7962,6 +8052,13 @@ function renderMAAnalysisTab(data) {
       }
     });
   }
+
+// ── 重置移動平均線圖縮放 ──────────────────────────────────────
+function resetMAChart2Zoom() {
+  if (hotChartMA2) hotChartMA2.resetZoom();
+  const btn = document.getElementById('maChart2ResetBtn');
+  if (btn) btn.classList.add('hidden');
+}
 
   // ── 均線交叉預測資訊卡（預估天數）──
   const crossSect = document.getElementById('maCrossSection');
@@ -8223,9 +8320,14 @@ function _drawGranCandleChart(data, period) {
   const ma1    = sl(ch.ma1);
   const ma2    = sl(ch.ma2);   // MA20
 
+  // effectiveOpens fallback
+  const effectiveOpens = opens.map((o, i) => {
+    if (o != null && !isNaN(o)) return o;
+    return (i > 0 && closes[i-1] != null) ? closes[i-1] : closes[i];
+  });
+
   // ── 葛蘭碧訊號計算 ──────────────────────────────────────
   const granSigs = calcGranvilleOnSeries(closes, ma2);
-  // 為每種規則建立獨立資料陣列（8種各自顯示標記）
   const granRuleData = {};
   for (let r = 1; r <= 8; r++) granRuleData[r] = new Array(n).fill(null);
   granSigs.forEach(sig => {
@@ -8237,174 +8339,235 @@ function _drawGranCandleChart(data, period) {
       granRuleData[sig.rule][sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.010 : closes[sig.idx] * 1.010;
   });
 
-  // ── K 棒顏色（台股紅漲綠跌）─────────────────────────────
-  const upClr   = 'rgba(239,68,68,0.92)';
-  const downClr = 'rgba(22,163,74,0.92)';
-  const bodyColors = dates.map((_, i) => closes[i] >= opens[i] ? upClr : downClr);
-  const wickColors = dates.map((_, i) => closes[i] >= opens[i]
-    ? 'rgba(239,68,68,0.6)' : 'rgba(22,163,74,0.6)');
-
-  const barPct  = n <= 30 ? Math.min(0.92, 0.75*2.2) : n <= 60 ? Math.min(0.92, 0.65*2.2) : n <= 120 ? Math.min(0.88, 0.55*2.2) : Math.min(0.82, 0.45*2.2);
-  const wickPct = n <= 30 ? 0.10 : n <= 60 ? 0.08 : 0.06;
-
-  // ── 預先計算 Y 軸範圍（只基於 K 棒的 high/low，不受訊號標記影響）──
+  // ── Y 軸範圍（只基於 K 棒 high/low）──
   const validLows  = lows.filter(v => v != null && isFinite(v));
   const validHighs = highs.filter(v => v != null && isFinite(v));
-  const yMin = validLows.length  ? Math.min(...validLows)  * 0.9 : undefined;
-  const yMax = validHighs.length ? Math.max(...validHighs) * 1.1 : undefined;
+  const yMin = validLows.length  ? Math.min(...validLows)  * 0.90 : undefined;
+  const yMax = validHighs.length ? Math.max(...validHighs) * 1.10 : undefined;
+
+  // ── 自訂蠟燭 Plugin ──────────────────────────────────────
+  const candlePlugin = {
+    id: 'granCandlePlugin',
+    afterDatasetsDraw(chart) {
+      const c2d   = chart.ctx;
+      const xAxis = chart.scales.x;
+      const yAxis = chart.scales.y;
+      const total = labels.length;
+      if (!total) return;
+
+      const availW = xAxis.width;
+      const barW   = Math.max(2, Math.min(22, (availW / total) * 0.70));
+      const halfW  = barW / 2;
+      const wickW  = Math.max(1, barW * 0.12);
+
+      for (let i = 0; i < total; i++) {
+        const o = effectiveOpens[i];
+        const c = closes[i];
+        const h = highs[i];
+        const l = lows[i];
+        if (o == null || c == null || isNaN(o) || isNaN(c)) continue;
+
+        const isUp    = c >= o;
+        const bodyClr = isUp ? '#ef4444' : '#16a34a';
+
+        const xPx    = xAxis.getPixelForValue(i);
+        const yOpen  = yAxis.getPixelForValue(o);
+        const yClose = yAxis.getPixelForValue(c);
+        const yHigh  = h != null ? yAxis.getPixelForValue(h) : Math.min(yOpen, yClose);
+        const yLow   = l != null ? yAxis.getPixelForValue(l) : Math.max(yOpen, yClose);
+
+        const bodyTop = Math.min(yOpen, yClose);
+        const bodyBot = Math.max(yOpen, yClose);
+        const bodyH   = Math.max(1.5, bodyBot - bodyTop);
+
+        c2d.save();
+        // 上影線
+        c2d.beginPath();
+        c2d.strokeStyle = bodyClr;
+        c2d.lineWidth   = wickW;
+        c2d.moveTo(xPx, bodyTop);
+        c2d.lineTo(xPx, yHigh);
+        c2d.stroke();
+        // 下影線
+        c2d.beginPath();
+        c2d.moveTo(xPx, bodyBot);
+        c2d.lineTo(xPx, yLow);
+        c2d.stroke();
+        // 實體
+        c2d.fillStyle   = bodyClr;
+        c2d.fillRect(xPx - halfW, bodyTop, barW, bodyH);
+        c2d.strokeStyle = isUp ? 'rgba(239,68,68,0.4)' : 'rgba(22,163,74,0.4)';
+        c2d.lineWidth   = 0.5;
+        c2d.strokeRect(xPx - halfW, bodyTop, barW, bodyH);
+        c2d.restore();
+      }
+    }
+  };
+
+  // ── 號碼標註 Plugin ──────────────────────────────────────
+  const granLabelPlugin = {
+    id: 'granLabelPlugin',
+    afterDraw(chart) {
+      const c2d    = chart.ctx;
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+      const numMap = { '①買':1,'②買':2,'③買':3,'④買':4,'⑤賣':5,'⑥賣':6,'⑦賣':7,'⑧賣':8 };
+      const circleNums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
+      chart.data.datasets.forEach((ds) => {
+        const rule = numMap[ds.label];
+        if (!rule) return;
+        const gl = GRANVILLE_LABELS[rule];
+        if (!gl) return;
+        const isBuy = gl.type === 'buy';
+        ds.data.forEach((val, i) => {
+          if (val == null || val.y == null) return;
+          const x = xScale.getPixelForValue(i);
+          const y = yScale.getPixelForValue(val.y);
+          const offsetY = isBuy ? -22 : 22;
+          const label = circleNums[rule - 1];
+          c2d.save();
+          c2d.font = 'bold 11px "Noto Sans TC", sans-serif';
+          c2d.textAlign = 'center';
+          c2d.textBaseline = 'middle';
+          const tw = c2d.measureText(label).width + 4;
+          c2d.fillStyle = 'rgba(15,23,42,0.72)';
+          c2d.beginPath();
+          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
+          else c2d.rect(x - tw/2, y + offsetY - 7, tw, 14);
+          c2d.fill();
+          c2d.fillStyle = gl.color;
+          c2d.fillText(label, x, y + offsetY);
+          c2d.restore();
+        });
+      });
+    }
+  };
 
   granCandleChart = new Chart(ctx, {
-    type: 'bar',
+    type: 'scatter',
     data: {
       labels: labels,
       datasets: [
-        // ① K 棒實體
+        // 隱形散點提供 tooltip
         {
           label: 'OHLC',
-          data:  dates.map((_, i) => {
-            const o = opens[i] ?? closes[i];
-            const c = closes[i] ?? opens[i];
-            if (o == null || c == null) return null;
-            return [Math.min(o, c), Math.max(o, c)];
-          }),
-          backgroundColor: bodyColors,
-          borderColor: bodyColors,
-          borderWidth: 0,
-          barPercentage: barPct,
-          categoryPercentage: 0.9,
-          order: 2,
+          data: closes.map((c, i) => ({ x: i, y: c })),
+          pointRadius: 0, pointHoverRadius: 0, showLine: false, order: 99,
         },
-        // ② 影線（最高～最低）
-        {
-          label: 'wick',
-          data:  dates.map((_, i) => {
-            const h = highs[i] ?? closes[i];
-            const l = lows[i]  ?? closes[i];
-            if (h == null || l == null) return null;
-            return [l, h];
-          }),
-          backgroundColor: wickColors,
-          borderColor: wickColors,
-          borderWidth: 0,
-          barPercentage: wickPct,
-          categoryPercentage: 0.9,
-          order: 3,
-        },
-        // ③ MA5
-        { type:'line', label:'MA5',  data: ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // ④ MA20
-        { type:'line', label:'MA20', data: ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // ⑤~⑫ 葛蘭碧八種訊號各自標記（用個別 dataset）
-        { type:'line', label:GRANVILLE_LABELS[1].short, data:granRuleData[1], backgroundColor:GRANVILLE_LABELS[1].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[1].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[1].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[1].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
-        { type:'line', label:GRANVILLE_LABELS[2].short, data:granRuleData[2], backgroundColor:GRANVILLE_LABELS[2].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[2].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[2].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[2].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
-        { type:'line', label:GRANVILLE_LABELS[3].short, data:granRuleData[3], backgroundColor:GRANVILLE_LABELS[3].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[3].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[3].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[3].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
-        { type:'line', label:GRANVILLE_LABELS[4].short, data:granRuleData[4], backgroundColor:GRANVILLE_LABELS[4].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[4].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[4].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:0,   pointBackgroundColor:GRANVILLE_LABELS[4].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
-        { type:'line', label:GRANVILLE_LABELS[5].short, data:granRuleData[5], backgroundColor:GRANVILLE_LABELS[5].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[5].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[5].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[5].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
-        { type:'line', label:GRANVILLE_LABELS[6].short, data:granRuleData[6], backgroundColor:GRANVILLE_LABELS[6].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[6].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[6].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[6].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
-        { type:'line', label:GRANVILLE_LABELS[7].short, data:granRuleData[7], backgroundColor:GRANVILLE_LABELS[7].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[7].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[7].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[7].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
-        { type:'line', label:GRANVILLE_LABELS[8].short, data:granRuleData[8], backgroundColor:GRANVILLE_LABELS[8].color, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:granRuleData[8].map(v=>v!=null?11:0), pointHoverRadius:granRuleData[8].map(v=>v!=null?13:0), pointStyle:'triangle', pointRotation:180, pointBackgroundColor:GRANVILLE_LABELS[8].color, pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        // MA5
+        { type:'line', label:'MA5',  data: ma1.map((v,i)=>({x:i,y:v})),
+          borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // MA20
+        { type:'line', label:'MA20', data: ma2.map((v,i)=>({x:i,y:v})),
+          borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // 葛蘭碧八種訊號標記
+        ...Object.keys(granRuleData).map(r => {
+          const rn = parseInt(r);
+          const gl = GRANVILLE_LABELS[rn];
+          const isBuy = gl.type === 'buy';
+          return {
+            type: 'scatter',
+            label: gl.short,
+            data: granRuleData[rn].map((v, i) => v != null ? { x: i, y: v } : null),
+            pointRadius: granRuleData[rn].map(v => v != null ? 11 : 0),
+            pointHoverRadius: granRuleData[rn].map(v => v != null ? 13 : 0),
+            pointStyle: 'triangle',
+            pointRotation: isBuy ? 0 : 180,
+            pointBackgroundColor: gl.color,
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1.5,
+            showLine: false,
+            order: 0,
+          };
+        }),
       ]
     },
-    // ── 號碼標註 Plugin：在三角形旁繪製規則編號 ──────────────
-    plugins: [{
-      id: 'granLabelPlugin',
-      afterDraw(chart) {
-        const ctx2 = chart.ctx;
-        const xScale = chart.scales.x;
-        const yScale = chart.scales.y;
-        const numMap = { '①買':1,'②買':2,'③買':3,'④買':4,'⑤賣':5,'⑥賣':6,'⑦賣':7,'⑧賣':8 };
-        const circleNums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
-        chart.data.datasets.forEach((ds) => {
-          const rule = numMap[ds.label];
-          if (!rule) return;
-          const gl = GRANVILLE_LABELS[rule];
-          if (!gl) return;
-          const isBuy = gl.type === 'buy';
-          ds.data.forEach((val, i) => {
-            if (val == null) return;
-            // Chart.js v4: 用 getPixelForValue 取得 x 座標（category 軸用 index）
-            const x = xScale.getPixelForValue(i);
-            const y = yScale.getPixelForValue(val);
-            // 三角形高度約 11px，號碼顯示在三角形正外側
-            const offsetY = isBuy ? -22 : 22;
-            const label = circleNums[rule - 1];
-            ctx2.save();
-            ctx2.font = 'bold 11px "Noto Sans TC", sans-serif';
-            ctx2.textAlign = 'center';
-            ctx2.textBaseline = 'middle';
-            // 半透明背景增加可讀性
-            const tw = ctx2.measureText(label).width + 4;
-            ctx2.fillStyle = 'rgba(15,23,42,0.72)';
-            ctx2.beginPath();
-            if (ctx2.roundRect) {
-              ctx2.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
-            } else {
-              ctx2.rect(x - tw/2, y + offsetY - 7, tw, 14);
-            }
-            ctx2.fill();
-            // 文字顏色與訊號一致
-            ctx2.fillStyle = gl.color;
-            ctx2.fillText(label, x, y + offsetY);
-            ctx2.restore();
-          });
-        });
-      }
-    }],
+    plugins: [candlePlugin, granLabelPlugin],
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: {
           labels: {
             color:'#94a3b8', font:{size:10}, boxWidth:12, padding:8,
-            filter: item => !['OHLC','wick'].includes(item.text),
+            filter: item => item.text !== 'OHLC',
             generateLabels: (chart) => {
               return chart.data.datasets
-                .filter(ds => !['OHLC','wick'].includes(ds.label))
+                .filter(ds => ds.label !== 'OHLC')
                 .map(ds => {
-                  const i = chart.data.datasets.indexOf(ds);
-                  const gl = Object.values(GRANVILLE_LABELS).find(g => g.short === ds.label);
-                  if (gl) {
-                    // 葛蘭碧規則：顯示規則短標籤，買入綠色/賣出紅色
-                    return { text: ds.label, fillStyle: gl.color, strokeStyle: gl.color,
-                             lineWidth:0, datasetIndex:i, hidden:false, fontColor:'#cbd5e1' };
-                  }
-                  // MA 線：色條
-                  return { text: ds.label, fillStyle:'transparent',
-                           strokeStyle: ds.borderColor||'#94a3b8', lineWidth:2,
-                           datasetIndex:i, hidden:false, fontColor:'#cbd5e1' };
+                  const idx = chart.data.datasets.indexOf(ds);
+                  const gl  = Object.values(GRANVILLE_LABELS).find(g => g.short === ds.label);
+                  if (gl) return { text: ds.label, fillStyle: gl.color, strokeStyle: gl.color, lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
+                  return { text: ds.label, fillStyle:'transparent', strokeStyle: ds.borderColor||'#94a3b8', lineWidth:2, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
                 });
             }
           }
         },
         tooltip: {
           callbacks: {
-            title: ctxArr => ctxArr[0]?.label || '',
+            title: ctxArr => {
+              const i = ctxArr[0]?.dataIndex;
+              return labels[i] || '';
+            },
             label: ctx => {
-              const i = ctx.dataIndex;
-              const dsLabel = ctx.dataset.label || '';
-              // 葛蘭碧八種規則標籤（①買②買...⑧賣）
-              const glEntry = Object.values(GRANVILLE_LABELS).find(g => g.short === dsLabel);
+              const i   = ctx.dataIndex;
+              const lbl = ctx.dataset.label || '';
+              const glEntry = Object.values(GRANVILLE_LABELS).find(g => g.short === lbl);
               if (glEntry) {
                 if (ctx.parsed?.y == null) return null;
                 return [`${glEntry.full}`, `${glEntry.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`];
               }
-              if (ctx.datasetIndex === 0) {
-                return [`開:${opens[i]?.toFixed(2)||'--'} 高:${highs[i]?.toFixed(2)||'--'} 低:${lows[i]?.toFixed(2)||'--'} 收:${closes[i]?.toFixed(2)||'--'}`];
+              if (lbl === 'OHLC') {
+                const dir = closes[i] >= effectiveOpens[i] ? '▲ 上漲' : '▼ 下跌';
+                return [
+                  `開:${effectiveOpens[i]?.toFixed(2)||'--'}`,
+                  `高:${highs[i]?.toFixed(2)||'--'}`,
+                  `低:${lows[i]?.toFixed(2)||'--'}`,
+                  `收:${closes[i]?.toFixed(2)||'--'}`,
+                  dir
+                ];
               }
-              if (ctx.datasetIndex === 1) return null;
-              return `${dsLabel}: ${ctx.parsed.y?.toFixed(2)||'--'}`;
+              const val = ctx.parsed?.y;
+              return val != null ? `${lbl}: ${val.toFixed(2)}` : null;
             }
           }
-        }
+        },
+        zoom: {
+          pan: { enabled: true, mode: 'x', modifierKey: null },
+          zoom: {
+            drag: {
+              enabled: true,
+              backgroundColor: 'rgba(59,130,246,0.15)',
+              borderColor: 'rgba(59,130,246,0.6)',
+              borderWidth: 1,
+            },
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+            onZoomComplete: function() {
+              const btn = document.getElementById('granResetZoomBtn');
+              if (btn) { btn.classList.remove('hidden'); btn.style.display = 'inline-flex'; }
+            },
+          },
+          limits: { x: { minRange: 5 } },
+        },
       },
       scales: {
-        x: { ticks:{ color:'#94a3b8', maxRotation:45, font:{size:9} }, grid:{color:'#1e293b'} },
+        x: {
+          type: 'linear',
+          min: 0, max: labels.length - 1,
+          ticks: {
+            color:'#94a3b8', maxRotation:45, font:{size:9},
+            callback: val => {
+              const idx = Math.round(val);
+              return labels[idx] || '';
+            }
+          },
+          grid: { color:'#1e293b' }
+        },
         y: {
-          ticks:{ color:'#94a3b8', font:{size:9} },
-          grid:{color:'#1e293b'},
+          ticks: { color:'#94a3b8', font:{size:9} },
+          grid:  { color:'#1e293b' },
           afterDataLimits(scale) {
-            // ★ Y軸：最低價×0.9為下界、最高價×1.1為上界，確保K線充滿畫面
-            // 強制覆蓋 Chart.js 自動計算（包含訊號三角形）的範圍
             if (yMin !== undefined) scale.min = yMin;
             if (yMax !== undefined) scale.max = yMax;
           }
