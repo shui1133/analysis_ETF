@@ -8281,6 +8281,7 @@ function _drawGranCandleChart(data, period) {
   const lows   = sl(ch.lows);
   const ma1    = sl(ch.ma1);
   const ma2    = sl(ch.ma2);   // MA20
+  const ma3    = sl(ch.ma3);   // MA60
 
   // effectiveOpens fallback
   const effectiveOpens = opens.map((o, i) => {
@@ -8414,6 +8415,8 @@ function _drawGranCandleChart(data, period) {
         { type:'line', label:'MA5',  data:ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA20
         { type:'line', label:'MA20', data:ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // MA60
+        { type:'line', label:'MA60', data:ma3, borderColor:'#a78bfa', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // 葛蘭碧八種訊號（line type, showLine:false，用 pointStyle triangle 標記）
         ...Object.keys(granRuleData).map(r => {
           const rn = parseInt(r);
