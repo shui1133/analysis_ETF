@@ -231,19 +231,19 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-2xl mx-auto text-sm text-slate-400">
       <div class="card-sm p-4">
         <i class="fa-solid fa-chart-candlestick text-2xl text-blue-400 mb-2"></i>
-        <div class="font-bold">K線圖</div><div class="text-xs mt-1">含布林通道</div>
+        <div class="font-bold text-white">K線圖/MACD/KD/RSI</div><div class="text-xs mt-1">技術指標</div>
       </div>
       <div class="card-sm p-4">
         <i class="fa-solid fa-wave-square text-2xl text-emerald-400 mb-2"></i>
-        <div class="font-bold">MACD / KD / RSI</div><div class="text-xs mt-1">技術指標</div>
+        <div class="font-bold text-white">基本面分析</div><div class="text-xs mt-1">本益比、殖利率</div>
       </div>
       <div class="card-sm p-4">
         <i class="fa-solid fa-building-columns text-2xl text-yellow-400 mb-2"></i>
-        <div class="font-bold">基本面分析</div><div class="text-xs mt-1">本益比、殖利率</div>
+        <div class="font-bold text-white">移動平均線/葛蘭碧</div><div class="text-xs mt-1">八大訊號分析</div>
       </div>
       <div class="card-sm p-4">
         <i class="fa-solid fa-dice text-2xl text-purple-400 mb-2"></i>
-        <div class="font-bold">蒙地卡羅</div><div class="text-xs mt-1">P10/P50/P90</div>
+        <div class="font-bold text-white">財報分析</div><div class="text-xs mt-1">投資建議</div>
       </div>
     </div>
   </div>
@@ -3151,6 +3151,7 @@ function renderFundamental(data) {
   if (f.eps           == null) missingFund.push('eps');
   if (f.roe           == null) missingFund.push('roe');
   if (f.profit_margin == null) missingFund.push('profit_margin');
+  if (f.market_cap    == null) missingFund.push('market_cap');
   const descMissing = !f.description || f.description.length < 10;
   if (descMissing) missingFund.push('description');
 
@@ -3200,10 +3201,26 @@ function _renderFundamentalUI(f, ticker, isLoading=false) {
               v => v > 20 ? 'up' : v > 5 ? 'flat' : 'down', isLoading && f.profit_margin == null),
   ].join('');
 
+  // 市值：後端回傳 > 股價×股本估算 > 顯示補充中/查無
+  let mktCapDisplay = null;
+  if (f.market_cap != null && f.market_cap > 0) {
+    mktCapDisplay = fmtMktCap(f.market_cap);
+  } else if (currentData && currentData.latest && f.shares_outstanding != null) {
+    // 用最新股價 × 流通股數估算
+    const estCap = currentData.latest.close * f.shares_outstanding;
+    if (estCap > 0) mktCapDisplay = fmtMktCap(estCap) + '(估)';
+  } else if (currentData && currentData.latest && f.eps != null && f.pe_ratio != null) {
+    // 備用：用 EPS × PE × 股本推估（若有）
+  }
+
   document.getElementById('market-metrics').innerHTML = [
     mCard('52週高點', f['52w_high'], '元', '#ef4444'),
     mCard('52週低點', f['52w_low'],  '元', '#10b981'),
-    mCard('市值',      f.market_cap != null ? fmtMktCap(f.market_cap) : null, '', '#3b82f6', true),
+    isLoading && f.market_cap == null
+      ? `<div class="ind-card text-center"><div class="text-xs text-slate-500 mb-1">市值</div><div class="text-xs text-blue-400 flex items-center justify-center gap-1"><i class="fa-solid fa-circle-notch fa-spin"></i>補充中…</div></div>`
+      : mktCapDisplay != null
+        ? `<div class="ind-card text-center"><div class="text-xs text-slate-500 mb-1">市值</div><div class="text-base font-black mono" style="color:#3b82f6">${mktCapDisplay}</div></div>`
+        : mCard('市值', null, '', '#3b82f6', true),
     mCard('近12月配息', f.annual_div > 0 ? f.annual_div.toFixed(1) : null, '元', '#f59e0b'),
   ].join('');
 
@@ -4060,38 +4077,93 @@ const GRANVILLE_LABELS = {
   8: { short:'⑧賣', full:'⑧空頭賣出', color:'#fca5a5', bg:'rgba(252,165,165,0.18)', type:'sell' },
 };
 
-// ── 計算日線葛蘭碧訊號（前端重算，基於可見範圍）────────────────
+// ── 計算葛蘭碧八大法則訊號（完整實作，每次發生都標示）────────────
 function calcGranvilleOnSeries(closes, ma2arr) {
-  // ma2arr = MA20陣列（與closes等長）
+  /*
+    依葛蘭碧八大法則原文：
+    ①買：MA由降轉平或向上，股價從下方向上穿越MA（黃金突破）
+    ②買：股價在MA上方，回測接近MA但未跌破，再度上揚
+    ③買：股價在MA下方且負乖離過大（超賣），技術性反彈
+    ④買：股價跌破MA但MA仍向上（末跌），可能再趨回MA
+
+    ⑤賣：MA由升轉平或向下，股價從上方向下穿越MA（死亡突破）
+    ⑥賣：股價在MA上方且正乖離過大（超買），逢高出脫
+    ⑦賣：股價在MA下方，反彈接近MA但未突破又回落
+    ⑧賣：股價在MA下方，短暫突破MA後馬上回落（假突破）
+  */
   const signals = [];
   const n = Math.min(closes.length, ma2arr.length);
-  if (n < 3) return signals;
-  for (let i = 1; i < n; i++) {
-    const p = closes[i], m = ma2arr[i];
-    if (!m || !p) continue;
-    const pPrev = closes[i-1], mPrev = ma2arr[i-1];
-    const bias = (p - m) / m * 100;
-    const aboveNow  = p  > m;
-    const abovePrev = pPrev > mPrev;
-    const crossUp   = !abovePrev && aboveNow;
-    const crossDown = abovePrev && !aboveNow;
-    const slope = i >= 2 ? (ma2arr[i] - ma2arr[i-2]) : 0;
+  if (n < 5) return signals;
 
-    if (crossUp && slope >= 0)                  signals.push({ idx: i, rule: 1 });
-    else if (aboveNow && !crossUp && bias < 3 && i >= 2 && pPrev < closes[i-2]) signals.push({ idx: i, rule: 2 });
-    else if (p < m && bias < -6)                signals.push({ idx: i, rule: 3 });
-    else if (crossDown && slope > 0)            signals.push({ idx: i, rule: 4 });
-    else if (crossDown && slope <= 0)           signals.push({ idx: i, rule: 5 });
-    else if (p > m && bias > 6)                 signals.push({ idx: i, rule: 6 });
-    else if (!aboveNow && !crossDown && bias > -3 && i >= 2 && pPrev > closes[i-2]) signals.push({ idx: i, rule: 7 });
-    else if (p > m && slope < 0 && bias > 3)   signals.push({ idx: i, rule: 8 });
+  // MA20 斜率：用5日前做比較避免雜訊
+  const maSlope = i => {
+    const lookback = Math.min(i, 5);
+    if (lookback < 2) return 0;
+    return ma2arr[i] - ma2arr[i - lookback];
+  };
+
+  // 最近N日 MA 斜率趨勢
+  const maTrendUp   = i => maSlope(i) > 0;
+  const maTrendDown = i => maSlope(i) < 0;
+  const maFlat      = i => Math.abs(maSlope(i)) < (ma2arr[i] * 0.002); // 0.2% 視為走平
+
+  for (let i = 3; i < n; i++) {
+    const p  = closes[i],   m  = ma2arr[i];
+    const p1 = closes[i-1], m1 = ma2arr[i-1];
+    const p2 = closes[i-2], m2 = ma2arr[i-2];
+    if (!m || !p || !m1 || !p1) continue;
+
+    const bias      = (p - m) / m * 100;          // 當根乖離率
+    const crossUp   = p1 <= m1 && p > m;           // 本根向上穿越MA
+    const crossDown = p1 >= m1 && p < m;           // 本根向下穿越MA
+    const aboveNow  = p > m;
+    const belowNow  = p < m;
+
+    // 前幾根是否整體在MA下方回測過（用於②）
+    const prevDipNearMA = p2 > m2 && p1 >= m1 * 0.995 && p1 <= m1 * 1.02;
+
+    let rule = 0;
+
+    if (crossUp && (maTrendUp(i) || maFlat(i))) {
+      // ①買：MA走平或向上，股價向上穿越MA
+      rule = 1;
+    } else if (aboveNow && !crossUp && prevDipNearMA && p > p1) {
+      // ②買：股價在MA上方，前一根回測接近MA，本根再度上揚
+      rule = 2;
+    } else if (belowNow && bias < -5) {
+      // ③買：股價在MA下方且負乖離 >5%（超賣）
+      rule = 3;
+    } else if (crossDown && maTrendUp(i)) {
+      // ④買：股價向下穿越MA，但MA仍向上（末跌買進）
+      rule = 4;
+    } else if (crossDown && (maTrendDown(i) || maFlat(i))) {
+      // ⑤賣：MA走平或向下，股價向下穿越MA
+      rule = 5;
+    } else if (aboveNow && bias > 5) {
+      // ⑥賣：股價在MA上方且正乖離 >5%（超買）
+      rule = 6;
+    } else if (belowNow && !crossDown && p2 < m2 && p1 >= m1 * 0.97 && p1 <= m1 * 1.005 && p < p1) {
+      // ⑦賣：股價在MA下方，反彈接近MA後再度下跌（未突破MA）
+      rule = 7;
+    } else if (crossUp && maTrendDown(i) && p < m * 1.015) {
+      // ⑧賣：MA向下，股價短暫突破MA但幅度極小（假突破，馬上回落可能）
+      // 保守條件：MA向下且突破幅度 <1.5%
+      rule = 8;
+    }
+
+    if (rule > 0) signals.push({ idx: i, rule });
   }
-  // 去重：同一規則只保留最後一次
-  const seen = new Set(); const unique = [];
-  for (let i = signals.length - 1; i >= 0; i--) {
-    if (!seen.has(signals[i].rule)) { seen.add(signals[i].rule); unique.unshift(signals[i]); }
-  }
-  return unique;
+
+  // 去重：同一根K線只保留最高優先的訊號（買入優先於賣出中取最小rule）
+  // 但不同位置可以重複出現相同規則
+  const byIdx = {};
+  signals.forEach(s => {
+    if (!byIdx[s.idx]) byIdx[s.idx] = s;
+    // 同一根K線：買入訊號(1-4) > 賣出訊號(5-8)，數字小者優先
+    else if (s.rule < byIdx[s.idx].rule) byIdx[s.idx] = s;
+  });
+
+  return Object.values(byIdx).sort((a, b) => a.idx - b.idx);
 }
 
 // ── 計算MA交叉（買入/賣出訊號）────────────────────────────────
@@ -9378,7 +9450,7 @@ async function generateAIInvestment() {
       `- 本益比(P/E)：${fund.pe_ratio != null ? fund.pe_ratio + 'x' : 'N/A'}`,
       `- 股價淨值比(P/B)：${fund.pb_ratio != null ? fund.pb_ratio + 'x' : 'N/A'}`,
       `- 近12月殖利率：${fund.div_yield != null ? fund.div_yield + '%' : 'N/A'}`,
-      `- 市值：${fund.market_cap != null ? (fund.market_cap / 1e8).toFixed(0) + ' 億' : 'N/A'}`,
+      `- 市值：${fund.market_cap != null && fund.market_cap > 0 ? (fund.market_cap / 1e8).toFixed(0) + ' 億' : (latest.close && fund.shares_outstanding ? ((latest.close * fund.shares_outstanding) / 1e8).toFixed(0) + ' 億(估)' : 'N/A')}`,
       `- Beta：${fund.beta != null ? fund.beta.toFixed(2) : 'N/A'}`,
       `- 近期配息：${divs.length > 0 ? divs.map(d => `${d.year || d.date?.slice(0,4)} ${d.amount?.toFixed(2) || '--'}元`).join(' / ') : 'N/A'}`,
       ``,
