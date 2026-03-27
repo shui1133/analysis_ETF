@@ -1,5 +1,5 @@
 """
-ma_analysis_enhanced.py  ── V3 強化版移動平均線分析模組
+ma_analysis_enhanced.py  ── V4 強化版移動平均線分析模組
 ════════════════════════════════════════════════════════════
 新增功能：
   1. 葛蘭碧八大法則完整判斷（標記觸發的法則編號）
@@ -7,15 +7,22 @@ ma_analysis_enhanced.py  ── V3 強化版移動平均線分析模組
   3. 乖離率（BIAS）計算與警戒判斷
   4. 均線多空排列判斷（5/10/20/60 完整排列）
   5. 均線支撐壓力強度評分
-  6. 強化版 _calc_trend()  ── 整合上述所有分析
-  7. 強化版 _generate_recommendation()  ── 納入葛蘭碧分析
-  8. 評級門檻重新校準  ── 技術面上限約 ±16（不截斷，直接累加）
+  6. 四種均線買賣訊號（V4 新增）：
+       訊號①：價格上破 MA（買點）—— 股價由下方向上穿越均線，量能確認
+       訊號②：價格下破 MA（賣點）—— 股價由上方向下跌破均線，量能確認
+       訊號③：黃金交叉（買點）—— 短均線由下往上穿越長均線，趨勢轉多
+       訊號④：死亡交叉（賣點）—— 短均線由上往下穿越長均線，趨勢轉空
+  7. 強化版 _calc_trend()  ── 整合上述所有分析
+  8. 強化版 _generate_recommendation()  ── 納入葛蘭碧+均線訊號
+  9. 評級門檻重新校準  ── 技術面上限約 ±22（含均線訊號加分）
      門檻：強力買進≥12／買進≥6／持有≥0／減碼≥-6／賣出<-6
 
 使用方式：
   from ma_analysis_enhanced import (
       analyze_ma,
       calc_granville_signals,
+      calc_ma_signals,
+      format_ma_signals_summary,
       estimate_cross_days,
       calc_bias,
       enhanced_calc_trend,
@@ -23,10 +30,15 @@ ma_analysis_enhanced.py  ── V3 強化版移動平均線分析模組
   )
 
   # 在 get_stock_analysis() 中替換原有函數：
-  trend          = enhanced_calc_trend(last['close'], latest_ind, ohlcv)
+  trend          = enhanced_calc_trend(last['close'], latest_ind, ohlcv,
+                                       ma_series_dict=ma_series_dict)
   recommendation = enhanced_generate_recommendation(
                       ticker, last['close'], latest_ind, trend,
                       chip, info, div_yield, support, resist)
+
+  # 單獨使用四種均線訊號：
+  signals = calc_ma_signals(close_series, ma_series_dict, volume_series)
+  print(format_ma_signals_summary(signals))
 ════════════════════════════════════════════════════════════
 """
 
@@ -266,7 +278,229 @@ def calc_granville_signals(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. 死亡交叉 / 黃金交叉距離預測
+# 3. 四種均線買賣訊號
+# ══════════════════════════════════════════════════════════════════════════════
+
+def calc_ma_signals(
+    close_series: list[float],
+    ma_series_dict: dict,
+    volume_series: list[float] | None = None,
+    lookback: int = 5,
+) -> list[dict]:
+    """
+    檢測四種標準均線買賣訊號：
+
+    訊號一：價格上破 MA（買點）
+      股價從均線下方向上穿越，短期動能轉強；搭配放量更可靠。
+    訊號二：價格下破 MA（賣點）
+      股價從均線上方向下跌破，短期支撐失守；伴隨量能放大賣壓更重。
+    訊號三：黃金交叉（買點）
+      短期均線由下往上穿越長期均線，趨勢由空轉多。
+    訊號四：死亡交叉（賣點）
+      短期均線由上往下穿越長期均線，趨勢由多轉空。
+
+    Parameters
+    ----------
+    close_series   : 完整收盤價序列（最新在末尾）
+    ma_series_dict : 各均線歷史陣列，key 為 'ma5'/'ma20'/'ma60' 等
+    volume_series  : 成交量序列（可選，用於量能確認）
+    lookback       : 往回檢查的 K 棒數（預設 5）
+
+    Returns
+    -------
+    list[dict]，每筆包含：
+      signal_type : 'price_cross_up' | 'price_cross_down' |
+                    'golden_cross' | 'death_cross'
+      signal      : 'buy' | 'sell'
+      name        : 訊號名稱（中文）
+      description : 詳細說明
+      ma_pair     : 涉及的均線，如 ('price','ma20') 或 ('ma5','ma20')
+      strength    : 'strong' | 'moderate' | 'weak'
+      volume_confirm : True/False/None（量能是否確認）
+      index       : 觸發位置（-1=最新，-2=前一日 …）
+    """
+    results: list[dict] = []
+
+    n_close = len(close_series)
+    if n_close < 3:
+        return results
+
+    # ── 輔助：量能確認（當日量 > 近 5 日均量）──────────────────
+    def _vol_confirm(idx: int) -> bool | None:
+        """idx 為負數索引（-1=最新）"""
+        if not volume_series or len(volume_series) < 6:
+            return None
+        abs_idx = len(volume_series) + idx  # 轉正索引
+        if abs_idx < 5:
+            return None
+        avg_vol = sum(volume_series[abs_idx - 5: abs_idx]) / 5
+        return volume_series[abs_idx] > avg_vol * 1.1  # 量 > 均量 1.1x 視為放量
+
+    # ──────────────────────────────────────────────────────────
+    # 訊號一 & 二：價格上破 / 下破均線
+    # 對每條均線（MA5 / MA20 / MA60）個別偵測
+    # ──────────────────────────────────────────────────────────
+    for ma_key in ('ma5', 'ma20', 'ma60'):
+        ma_arr = ma_series_dict.get(ma_key)
+        if not ma_arr or len(ma_arr) < 3:
+            continue
+
+        # 對齊長度（取兩者較短者的末端）
+        n = min(lookback, len(close_series), len(ma_arr))
+        prices = close_series[-n:]
+        mas    = ma_arr[-n:]
+
+        ma_label = ma_key.upper()  # 'MA5' / 'MA20' / 'MA60'
+
+        for i in range(1, n):
+            prev_above = prices[i - 1] > mas[i - 1]
+            curr_above = prices[i]     > mas[i]
+            neg_idx    = i - n          # 轉成負數索引
+
+            # 價格上破（買點）
+            if not prev_above and curr_above:
+                vol_ok = _vol_confirm(neg_idx)
+                if vol_ok is True:
+                    strength = 'strong'
+                    vol_note = '放量突破，訊號可靠'
+                elif vol_ok is False:
+                    strength = 'weak'
+                    vol_note = '量能不足，注意假突破'
+                else:
+                    strength = 'moderate'
+                    vol_note = '量能資料不足，建議觀察'
+
+                results.append({
+                    'signal_type':    'price_cross_up',
+                    'signal':         'buy',
+                    'name':           f'價格上破 {ma_label}',
+                    'description': (
+                        f'股價由 {ma_label} 下方向上穿越，短期動能轉強（{vol_note}）。'
+                        '進場前建議確認量能放大，避免假突破。'
+                    ),
+                    'ma_pair':        ('price', ma_key),
+                    'strength':       strength,
+                    'volume_confirm': vol_ok,
+                    'index':          neg_idx,
+                })
+
+            # 價格下破（賣點）
+            elif prev_above and not curr_above:
+                vol_ok = _vol_confirm(neg_idx)
+                if vol_ok is True:
+                    strength = 'strong'
+                    vol_note = '伴隨放量，賣壓沉重'
+                elif vol_ok is False:
+                    strength = 'weak'
+                    vol_note = '量能未放大，可能只是測試支撐'
+                else:
+                    strength = 'moderate'
+                    vol_note = '量能資料不足，建議觀察'
+
+                results.append({
+                    'signal_type':    'price_cross_down',
+                    'signal':         'sell',
+                    'name':           f'價格下破 {ma_label}',
+                    'description': (
+                        f'股價由 {ma_label} 上方向下跌破，短期支撐失守（{vol_note}）。'
+                        '若量能持續放大，跌勢可能延續。'
+                    ),
+                    'ma_pair':        ('price', ma_key),
+                    'strength':       strength,
+                    'volume_confirm': vol_ok,
+                    'index':          neg_idx,
+                })
+
+    # ──────────────────────────────────────────────────────────
+    # 訊號三 & 四：均線交叉（黃金交叉 / 死亡交叉）
+    # 組合：MA5×MA20、MA5×MA60、MA20×MA60
+    # ──────────────────────────────────────────────────────────
+    ma_cross_pairs = [
+        ('ma5',  'ma20', '短期×中期', 'moderate'),   # MA5 穿越 MA20
+        ('ma5',  'ma60', '短期×長期', 'strong'),      # MA5 穿越 MA60（較少見，較重要）
+        ('ma20', 'ma60', '中期×長期', 'strong'),      # MA20 穿越 MA60（最重要）
+    ]
+
+    for short_key, long_key, pair_label, base_strength in ma_cross_pairs:
+        short_arr = ma_series_dict.get(short_key)
+        long_arr  = ma_series_dict.get(long_key)
+        if not short_arr or not long_arr or len(short_arr) < 3 or len(long_arr) < 3:
+            continue
+
+        n = min(lookback, len(short_arr), len(long_arr))
+        s_mas = short_arr[-n:]
+        l_mas = long_arr[-n:]
+
+        short_label = short_key.upper()
+        long_label  = long_key.upper()
+
+        for i in range(1, n):
+            prev_short_above = s_mas[i - 1] > l_mas[i - 1]
+            curr_short_above = s_mas[i]     > l_mas[i]
+            neg_idx = i - n
+
+            # 黃金交叉（買點）：短均線由下往上穿越長均線
+            if not prev_short_above and curr_short_above:
+                results.append({
+                    'signal_type':    'golden_cross',
+                    'signal':         'buy',
+                    'name':           f'黃金交叉（{short_label}×{long_label}）',
+                    'description': (
+                        f'{short_label} 由下往上穿越 {long_label}（{pair_label}），'
+                        '趨勢由空轉多，訊號較穩定。注意：均線為落後指標，'
+                        '行情通常已先走一段，進場需衡量追高風險。'
+                    ),
+                    'ma_pair':        (short_key, long_key),
+                    'strength':       base_strength,
+                    'volume_confirm': None,   # 均線交叉不依賴單日量能
+                    'index':          neg_idx,
+                })
+
+            # 死亡交叉（賣點）：短均線由上往下穿越長均線
+            elif prev_short_above and not curr_short_above:
+                results.append({
+                    'signal_type':    'death_cross',
+                    'signal':         'sell',
+                    'name':           f'死亡交叉（{short_label}×{long_label}）',
+                    'description': (
+                        f'{short_label} 由上往下穿越 {long_label}（{pair_label}），'
+                        '趨勢由多轉空，訊號較穩定。適合用於確認趨勢反轉，'
+                        '而非搶短線，持股者應考慮減碼或出場。'
+                    ),
+                    'ma_pair':        (short_key, long_key),
+                    'strength':       base_strength,
+                    'volume_confirm': None,
+                    'index':          neg_idx,
+                })
+
+    # ── 去重：同 signal_type + ma_pair 只保留最新一筆 ──────────
+    seen: set[tuple] = set()
+    unique: list[dict] = []
+    for r in reversed(results):
+        key = (r['signal_type'], r['ma_pair'])
+        if key not in seen:
+            seen.add(key)
+            unique.append(r)
+
+    # 按時間排序（最新在後）
+    unique.sort(key=lambda x: x['index'], reverse=False)
+    return unique
+
+
+def format_ma_signals_summary(signals: list[dict]) -> str:
+    """
+    將 calc_ma_signals() 結果格式化為單行摘要文字。
+    例：「黃金交叉(MA5×MA20) ⬆  |  價格下破MA60 ⬇」
+    """
+    if not signals:
+        return '無近期均線訊號'
+    icon_map = {'buy': '⬆', 'sell': '⬇'}
+    parts = [f'{s["name"]} {icon_map.get(s["signal"], "")}' for s in signals]
+    return '  |  '.join(parts)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. 死亡交叉 / 黃金交叉距離預測
 # ══════════════════════════════════════════════════════════════════════════════
 
 def estimate_cross_days(
@@ -432,7 +666,7 @@ def estimate_cross_days(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4. 均線排列完整判斷
+# 5. 均線排列完整判斷
 # ══════════════════════════════════════════════════════════════════════════════
 
 def classify_ma_array(close: float, ind: dict) -> dict:
@@ -502,7 +736,7 @@ def classify_ma_array(close: float, ind: dict) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 5. 完整均線分析入口
+# 6. 完整均線分析入口
 # ══════════════════════════════════════════════════════════════════════════════
 
 def analyze_ma(
@@ -558,6 +792,11 @@ def analyze_ma(
         if ma_series_dict.get('ma60'):
             granville_60 = calc_granville_signals(close_series, ma_series_dict['ma60'], ma_period=60)
 
+    # 四種均線買賣訊號
+    ma_signals = []
+    if ma_series_dict and close_series:
+        ma_signals = calc_ma_signals(close_series, ma_series_dict)
+
     # 死亡/黃金交叉預測（三組）
     cross_5_20  = estimate_cross_days(close_series, 5,  20)
     cross_20_60 = estimate_cross_days(close_series, 20, 60)
@@ -574,6 +813,8 @@ def analyze_ma(
     if granville_20:
         names = [g['name'] for g in granville_20]
         parts.append(f'葛蘭碧（MA20）：{"、".join(names)}')
+    if ma_signals:
+        parts.append(f'均線訊號：{format_ma_signals_summary(ma_signals)}')
 
     return {
         'bias': bias,
@@ -584,12 +825,14 @@ def analyze_ma(
         'cross_5_20': cross_5_20,
         'cross_20_60': cross_20_60,
         'cross_5_60': cross_5_60,
+        'ma_signals': ma_signals,              # ← 新增四種均線買賣訊號
+        'ma_signals_summary': format_ma_signals_summary(ma_signals),
         'summary': '；'.join(parts),
     }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. 強化版 _calc_trend()  （直接替換 app.py 中原函數）
+# 7. 強化版 _calc_trend()  （直接替換 app.py 中原函數）
 # ══════════════════════════════════════════════════════════════════════════════
 
 def enhanced_calc_trend(
@@ -680,6 +923,11 @@ def enhanced_calc_trend(
     cross_5_20  = estimate_cross_days(close_series, 5,  20) if len(close_series) >= 40 else {}
     cross_20_60 = estimate_cross_days(close_series, 20, 60) if len(close_series) >= 120 else {}
 
+    # 四種均線買賣訊號（需要均線序列）
+    ma_signals = []
+    if ma_series_dict and len(close_series) > 3:
+        ma_signals = calc_ma_signals(close_series, ma_series_dict)
+
     return {
         # ── 原版欄位（完全相容）────────────────────
         'label':   label,
@@ -694,11 +942,13 @@ def enhanced_calc_trend(
         'granville':        granville_signals,
         'cross_5_20':       cross_5_20,
         'cross_20_60':      cross_20_60,
+        'ma_signals':       ma_signals,               # ← 新增
+        'ma_signals_summary': format_ma_signals_summary(ma_signals),   # ← 新增
     }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 7. 強化版 _generate_recommendation()
+# 8. 強化版 _generate_recommendation()
 # ══════════════════════════════════════════════════════════════════════════════
 
 def enhanced_generate_recommendation(
@@ -769,6 +1019,55 @@ def enhanced_generate_recommendation(
     for g in mod_sells[:1]:
         tech_score -= 1
         reasons_sell.append(f'葛蘭碧法則：{g["name"]}')
+
+    # ── 四種均線買賣訊號 ─────────────────────────────────────
+    # 評分規則：
+    #   黃金交叉/死亡交叉（strong）： ±2
+    #   黃金交叉/死亡交叉（moderate）：±1
+    #   價格上破/下破（strong，放量）：±2
+    #   價格上破/下破（moderate）：   ±1
+    #   價格上破/下破（weak，縮量）：  ±0（只記錄，不計分）
+    #   同方向訊號最多計 3 則，避免重複堆疊
+    ma_signals = trend.get('ma_signals', [])
+    _ma_buy_count  = 0
+    _ma_sell_count = 0
+    _SIGNAL_LABEL = {
+        'price_cross_up':   '訊號①',
+        'price_cross_down': '訊號②',
+        'golden_cross':     '訊號③',
+        'death_cross':      '訊號④',
+    }
+    for sig in ma_signals:
+        stype  = sig.get('signal_type', '')
+        sname  = sig.get('name', '')
+        sdesc  = sig.get('description', '')
+        sstr   = sig.get('strength', 'moderate')
+        slabel = _SIGNAL_LABEL.get(stype, '')
+        vol_ok = sig.get('volume_confirm')
+
+        if sig['signal'] == 'buy' and _ma_buy_count < 3:
+            if sstr == 'strong':
+                tech_score += 2
+                reasons_buy.append(f'均線{slabel}【{sname}】（{sdesc}）')
+                _ma_buy_count += 1
+            elif sstr == 'moderate':
+                tech_score += 1
+                reasons_buy.append(f'均線{slabel}【{sname}】')
+                _ma_buy_count += 1
+            else:  # weak（縮量，只警示不計分）
+                reasons_buy.append(f'均線{slabel}【{sname}】（量能不足，謹慎）')
+
+        elif sig['signal'] == 'sell' and _ma_sell_count < 3:
+            if sstr == 'strong':
+                tech_score -= 2
+                reasons_sell.append(f'均線{slabel}【{sname}】（{sdesc}）')
+                _ma_sell_count += 1
+            elif sstr == 'moderate':
+                tech_score -= 1
+                reasons_sell.append(f'均線{slabel}【{sname}】')
+                _ma_sell_count += 1
+            else:
+                reasons_sell.append(f'均線{slabel}【{sname}】（量能不足，觀察）')
 
     # ── 死亡/黃金交叉預測 ───────────────────────────────────
     cross_5_20  = trend.get('cross_5_20', {})
@@ -956,5 +1255,7 @@ def enhanced_generate_recommendation(
             'granville':    granville,
             'cross_5_20':   cross_5_20,
             'cross_20_60':  cross_20_60,
+            'ma_signals':   ma_signals,                          # ← 新增
+            'ma_signals_summary': format_ma_signals_summary(ma_signals),  # ← 新增
         },
     }

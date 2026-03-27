@@ -297,11 +297,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <button class="tab-btn" onclick="switchTab('chip')" id="tab-chip">
         <i class="fa-solid fa-users mr-1"></i>籌碼面
       </button>
-      <button class="tab-btn" onclick="switchTab('maanalysis')" id="tab-maanalysis">
-        <i class="fa-solid fa-wave-square mr-1"></i>移動平均線分析
-      </button>
       <button class="tab-btn" onclick="switchTab('granville')" id="tab-granville">
-        <i class="fa-solid fa-scroll mr-1"></i>葛蘭碧八大法則
+        <i class="fa-solid fa-scroll mr-1"></i>葛蘭碧╱均線訊號
       </button>
       <button class="tab-btn" onclick="switchTab('tradeoverview')" id="tab-tradeoverview">
         <i class="fa-solid fa-table-list mr-1"></i>交易概況
@@ -1420,269 +1417,16 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 
     </div><!-- /panel-tradeoverview -->
 
-    <!-- ═══ Tab: 移動平均線分析 ══════════════════════════════════════ -->
-    <div id="panel-maanalysis" class="hidden space-y-4">
-
-      <!-- MA 數值卡片 -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-wave-square text-purple-400"></i>移動平均線分析
-          <span class="text-slate-400 text-sm font-normal">— 各期均線數值與多空判斷</span>
-        </h3>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" id="maCards2">
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">MA5（5日）</div>
-            <div class="text-xl font-black mono" id="ma2-5">--</div>
-            <div class="text-xs mt-1" id="ma2-5-rel">--</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">MA10（10日）</div>
-            <div class="text-xl font-black mono" id="ma2-10">--</div>
-            <div class="text-xs mt-1" id="ma2-10-rel">--</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">MA20（月線）</div>
-            <div class="text-xl font-black mono" id="ma2-20">--</div>
-            <div class="text-xs mt-1" id="ma2-20-rel">--</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">MA60（季線）</div>
-            <div class="text-xl font-black mono" id="ma2-60">--</div>
-            <div class="text-xs mt-1" id="ma2-60-rel">--</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1" style="color:#f97316">MA120（半年線）</div>
-            <div class="text-xl font-black mono" id="ma2-120">--</div>
-            <div class="text-xs mt-1" id="ma2-120-rel">--</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1" style="color:#ec4899">MA200（年線）</div>
-            <div class="text-xl font-black mono" id="ma2-200">--</div>
-            <div class="text-xs mt-1" id="ma2-200-rel">--</div>
-          </div>
-        </div>
-
-        <!-- 多空趨勢判斷 -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-          <div class="rounded-xl p-3 bg-slate-800/60 border border-slate-700">
-            <div class="text-xs text-slate-400 mb-1">短線趨勢（MA5 vs MA20）</div>
-            <div class="font-black text-base" id="ma2-short-trend">--</div>
-          </div>
-          <div class="rounded-xl p-3 bg-slate-800/60 border border-slate-700">
-            <div class="text-xs text-slate-400 mb-1">中線趨勢（MA20 vs MA60）</div>
-            <div class="font-black text-base" id="ma2-mid-trend">--</div>
-          </div>
-          <div class="rounded-xl p-3 bg-slate-800/60 border border-slate-700">
-            <div class="text-xs text-slate-400 mb-1">多頭排列（MA5>MA20>MA60）</div>
-            <div class="font-black text-base" id="ma2-bull-arr">--</div>
-          </div>
-        </div>
-
-        <!-- 均線走勢圖（近120日） -->
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-xs text-slate-500"><i class="fa-solid fa-magnifying-glass mr-1 text-blue-400 opacity-60"></i>拖曳放大 · 滾輪縮放</span>
-          <button id="maChart2ResetBtn" onclick="resetMAChart2Zoom()"
-                  class="period-btn hidden items-center gap-1 text-amber-300 border-amber-700"
-                  title="重置縮放">
-            <i class="fa-solid fa-arrows-minimize text-xs"></i>重置
-          </button>
-        </div>
-        <div style="height:280px;position:relative;width:100%;">
-          <canvas id="maChart2" style="display:block;"></canvas>
-        </div>
-        <p class="text-xs text-slate-500 mt-2">
-          <i class="fa-solid fa-circle-info mr-1"></i>
-          移動平均線（MA）為過去N日收盤價均值，常用於判斷趨勢方向與支撐/壓力位。實線為短中期均線，虛線為長期均線（MA120/MA200）。
-        </p>
-      </div>
-
-      <!-- 乖離率分析 -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-chart-bar text-blue-400"></i>乖離率分析（BIAS）
-          <span class="text-slate-400 text-sm font-normal">— 股價偏離均線程度</span>
-        </h3>
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4" id="biasCards">
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">BIAS5</div>
-            <div class="text-xl font-black mono" id="bias-5">--</div>
-            <div class="text-xs text-slate-500 mt-1">%</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">BIAS10</div>
-            <div class="text-xl font-black mono" id="bias-10">--</div>
-            <div class="text-xs text-slate-500 mt-1">%</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">BIAS20</div>
-            <div class="text-xl font-black mono" id="bias-20">--</div>
-            <div class="text-xs text-slate-500 mt-1">%</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">BIAS60</div>
-            <div class="text-xl font-black mono" id="bias-60">--</div>
-            <div class="text-xs text-slate-500 mt-1">%</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">BIAS120</div>
-            <div class="text-xl font-black mono" id="bias-120">--</div>
-            <div class="text-xs text-slate-500 mt-1">%</div>
-          </div>
-          <div class="ind-card text-center">
-            <div class="text-xs text-slate-500 mb-1">BIAS200</div>
-            <div class="text-xl font-black mono" id="bias-200">--</div>
-            <div class="text-xs text-slate-500 mt-1">%</div>
-          </div>
-        </div>
-        <div class="text-xs text-slate-400 mt-3 space-y-1 border-t border-slate-700 pt-3">
-          <div><span class="text-green-400 font-bold">▲ 正乖離（+）：</span>股價高於均線，偏多。乖離 <span class="text-orange-400 font-bold">&gt;6%</span> 表示超買（⑥賣 超買回吐），MA 折線圖上以<span class="text-red-400">▼紅三角</span>標示賣出參考點。</div>
-          <div><span class="text-red-400 font-bold">▼ 負乖離（−）：</span>股價低於均線，偏空。乖離 <span class="text-green-400 font-bold">&lt;-6%</span> 表示超賣（③買 超賣反彈），MA 折線圖上以<span class="text-green-400">▲綠三角</span>標示買入參考點。</div>
-        </div>
-      </div>
-
-      <!-- 均線排列強化分析（來自後端 ma_analysis） -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-layer-group text-purple-400"></i>均線強化分析
-          <span class="text-slate-400 text-sm font-normal">— 排列型態、預測與訊號</span>
-        </h3>
-        <div id="maEnhancedSection2" class="space-y-3">
-          <div id="maEnhancedCards2" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
-          <div id="maTechSummaryBox2" class="rounded-xl p-4 border hidden"></div>
-        </div>
-      </div>
-
-      <!-- 均線交叉與預測 -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-arrows-cross text-yellow-400"></i>均線交叉分析
-          <span class="text-slate-400 text-sm font-normal">— 黃金交叉 / 死亡交叉 / 預估到達天數</span>
-        </h3>
-        <!-- 交叉定義說明 -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <div class="rounded-xl p-3 border" style="background:rgba(251,191,36,0.07);border-color:#fbbf2440">
-            <div class="flex items-center gap-2 mb-1">
-              <span style="color:#fbbf24">★</span>
-              <span class="font-bold text-sm" style="color:#fbbf24">黃金交叉 — 買入訊號</span>
-            </div>
-            <div class="text-xs text-slate-300 leading-relaxed">MA5 由下往上穿越 MA20，代表短線動能轉強、趨勢可能由空轉多。兩均線皆向上時訊號最強，建議搭配成交量確認，逢低分批買進。</div>
-          </div>
-          <div class="rounded-xl p-3 border" style="background:rgba(244,63,94,0.07);border-color:#f43f5e40">
-            <div class="flex items-center gap-2 mb-1">
-              <span style="color:#f43f5e">✕</span>
-              <span class="font-bold text-sm" style="color:#f43f5e">死亡交叉 — 賣出訊號</span>
-            </div>
-            <div class="text-xs text-slate-300 leading-relaxed">MA5 由上往下穿越 MA20，代表短線動能轉弱、趨勢可能由多轉空。兩均線皆向下時訊號最強，建議逐步減碼，嚴格執行停損。</div>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-3 text-xs text-slate-400 mb-3">
-          <span class="text-slate-500">⚠ 標示表示預計 ≤10 個交易日即將到達</span>
-        </div>
-        <div id="maCrossSection" class="space-y-2">
-          <div class="text-slate-400 text-sm">載入中...</div>
-        </div>
-        <!-- 歷史交叉紀錄 -->
-        <div class="mt-4">
-          <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-            <i class="fa-solid fa-clock-rotate-left"></i> 近期交叉歷史記錄
-          </div>
-          <div id="maCrossHistoryList" class="space-y-1">
-            <div class="text-slate-500 text-xs">載入中...</div>
-          </div>
-        </div>
-        <!-- 預估死亡交叉日期 -->
-        <div id="maDeathCrossPredictBox" class="hidden mt-4 rounded-xl p-4 border" style="background:rgba(244,63,94,0.08);border-color:#f43f5e50">
-          <div class="font-bold text-sm mb-2" style="color:#f43f5e">
-            <i class="fa-solid fa-triangle-exclamation mr-1"></i>死亡交叉預測
-          </div>
-          <div id="maDeathCrossPredictContent" class="text-slate-300 text-sm"></div>
-        </div>
-      </div>
-
-      <!-- 理論說明：三層架構 -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-layer-group text-purple-400"></i>移動平均線三層架構
-        </h3>
-        <p class="text-xs text-slate-400 leading-relaxed mb-4">
-          移動平均線（MA）為過去 N 日收盤價的算術平均，公式：<strong class="text-white">MA = ΣP(t-i) / n</strong>。
-          依用途分為短、中、長三層，各層負責不同的分析任務，搭配使用效果最佳。
-        </p>
-        <div class="space-y-3">
-          <!-- 短期 -->
-          <div class="rounded-xl p-4 border" style="background:rgba(251,191,36,0.06);border-color:#fbbf2450">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-xs font-black px-2 py-0.5 rounded-full" style="background:#fbbf2420;color:#fbbf24;border:1px solid #fbbf2460">⚡ 短期</span>
-              <span class="font-black text-white">MA5、MA10</span>
-              <span class="text-xs text-slate-400">5日、10日</span>
-            </div>
-            <div class="text-xs text-slate-300 leading-relaxed mb-2">適合看「<strong class="text-yellow-300">短線進出點</strong>」，反應靈敏，主要用途：</div>
-            <ul class="text-xs text-slate-400 space-y-1 pl-2">
-              <li>• <strong class="text-white">乖離率</strong>：MA5/MA10 乖離過大（>±3%）即有短線回歸壓力</li>
-              <li>• <strong class="text-white">黃金交叉 / 死亡交叉</strong>：MA5 上穿 MA10 → 買入；MA5 下穿 MA10 → 賣出</li>
-              <li>• <strong class="text-white">支撐壓力</strong>：短線跌破 MA5 注意，站回即可轉多看待</li>
-            </ul>
-          </div>
-          <!-- 中期 -->
-          <div class="rounded-xl p-4 border" style="background:rgba(59,130,246,0.06);border-color:#3b82f650">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-xs font-black px-2 py-0.5 rounded-full" style="background:#3b82f620;color:#93c5fd;border:1px solid #3b82f660">📅 中期</span>
-              <span class="font-black text-white">MA20、MA60</span>
-              <span class="text-xs text-slate-400">20日（月線）、60日（季線）</span>
-            </div>
-            <div class="text-xs text-slate-300 leading-relaxed mb-2">適合看「<strong class="text-blue-300">波段趨勢</strong>」，是葛蘭碧八大法則的核心均線：</div>
-            <ul class="text-xs text-slate-400 space-y-1 pl-2">
-              <li>• <strong class="text-white">MA20（月線）</strong>：搭配葛蘭碧①②③④⑤⑥⑦⑧抓波段進出點</li>
-              <li>• <strong class="text-white">MA60（季線）</strong>：判斷多空環境大方向，股價站上偏多、跌破偏空</li>
-              <li>• <strong class="text-white">波段訊號</strong>：起漲（①）、續漲（②）、趨勢轉空（⑤）等中期訊號以此層為主</li>
-            </ul>
-          </div>
-          <!-- 長期 -->
-          <div class="rounded-xl p-4 border" style="background:rgba(236,72,153,0.06);border-color:#ec489950">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-xs font-black px-2 py-0.5 rounded-full" style="background:#ec489920;color:#f9a8d4;border:1px solid #ec489960">📈 長期</span>
-              <span class="font-black text-white">MA120、MA240</span>
-              <span class="text-xs text-slate-400">120日（半年線）、240日（年線）</span>
-            </div>
-            <div class="text-xs text-slate-300 leading-relaxed mb-2">判斷「<strong class="text-pink-300">長多、長空的大方向</strong>」，只在做大波段或長期配置時參考：</div>
-            <ul class="text-xs text-slate-400 space-y-1 pl-2">
-              <li>• 主力、實戶、法人參考的重要指標，不適合短線頻繁進出</li>
-              <li>• 股價長期站上 MA120 → 長多格局；跌破 MA240 → 長空警訊</li>
-              <li>• 做大波段時，以 MA120/MA240 為停損停利參考基準</li>
-            </ul>
-          </div>
-        </div>
-        <!-- 關鍵概念補充 -->
-        <div class="border-t border-slate-700 mt-4 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-300">
-          <div class="flex items-start gap-2">
-            <span class="text-yellow-400 font-black mt-0.5 text-sm">★</span>
-            <div><strong class="text-white">黃金交叉：</strong>短期均線由下往上穿越長期均線，兩者均上升時為強力買入訊號。</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-red-400 font-black mt-0.5">✕</span>
-            <div><strong class="text-white">死亡交叉：</strong>短期均線由上往下穿越長期均線，趨勢轉弱，為賣出或減碼訊號。</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-green-400 font-black mt-0.5">▲</span>
-            <div><strong class="text-white">多頭排列：</strong>價格 > MA5 > MA20 > MA60，強勢多頭；反之為空頭排列。</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-blue-400 font-black mt-0.5">≈</span>
-            <div><strong class="text-white">乖離率：</strong>（股價－均線）÷ 均線 × 100%，過大表示超買或超賣，有回歸壓力。</div>
-          </div>
-        </div>
-      </div>
-
-    </div><!-- /panel-maanalysis -->
 
 
-    <!-- ═══ Tab: 葛蘭碧八大法則 ═══════════════════════════════════════ -->
+
+    <!-- ═══ Tab: 葛蘭碧八大法則 ╱ 均線訊號 ════════════════════════════════ -->
     <div id="panel-granville" class="hidden space-y-4">
 
       <!-- ① K線圖（最上方） -->
       <div class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h3 class="font-bold text-sm text-white">葛蘭碧訊號 K線圖</h3>
+          <h3 class="font-bold text-sm text-white">葛蘭碧╱均線訊號 K線圖</h3>
           <div class="flex flex-wrap items-center gap-2">
             <div class="flex flex-wrap gap-1">
               <button class="period-btn active" onclick="setGranPeriod('D')" id="granpbtn-D">日線</button>
@@ -1703,7 +1447,49 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <i class="fa-solid fa-circle-info mr-1"></i>
           <span style="color:#10b981">▲</span> 買入訊號（①②③④）&nbsp;&nbsp;
           <span style="color:#ef4444">▼</span> 賣出訊號（⑤⑥⑦⑧）&nbsp;&nbsp;
+          <span style="color:#fbbf24">★</span> 黃金交叉（短穿長↑）&nbsp;&nbsp;
+          <span style="color:#f43f5e">✕</span> 死亡交叉（短穿長↓）&nbsp;&nbsp;
           訊號號碼對應葛蘭碧八大法則（①~④買入、⑤~⑧賣出）
+        </div>
+      </div>
+
+      <!-- ★ 四種均線買賣訊號（新增） -->
+      <div class="card p-5">
+        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-arrows-cross text-yellow-400"></i>四種均線買賣訊號
+          <span class="text-slate-400 text-sm font-normal">— 即時偵測結果</span>
+        </h3>
+        <!-- 訊號定義說明 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4 text-xs">
+          <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.07);border-color:#10b98150">
+            <div class="font-black mb-1" style="color:#10b981">訊號① 價格上破 MA（買點）</div>
+            <div class="text-slate-300 leading-relaxed">股價從均線下方向上穿越，短期動能轉強。需搭配放量確認，避免假突破。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.07);border-color:#ef444450">
+            <div class="font-black mb-1" style="color:#ef4444">訊號② 價格下破 MA（賣點）</div>
+            <div class="text-slate-300 leading-relaxed">股價從均線上方向下跌破，短期支撐失守。伴隨量能放大時賣壓更重。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(251,191,36,0.07);border-color:#fbbf2450">
+            <div class="font-black mb-1" style="color:#fbbf24">訊號③ 黃金交叉（買點）</div>
+            <div class="text-slate-300 leading-relaxed">短期均線由下往上穿越長期均線，趨勢由空轉多。訊號穩定但屬落後指標，行情通常已先走一段。</div>
+          </div>
+          <div class="rounded-lg p-3 border" style="background:rgba(244,63,94,0.07);border-color:#f43f5e50">
+            <div class="font-black mb-1" style="color:#f43f5e">訊號④ 死亡交叉（賣點）</div>
+            <div class="text-slate-300 leading-relaxed">短期均線由上往下穿越長期均線，趨勢由多轉空。適合確認趨勢反轉，而非搶短線。</div>
+          </div>
+        </div>
+        <!-- 即時偵測結果 -->
+        <div id="maSigDetected" class="space-y-2">
+          <div class="text-slate-400 text-sm">請先查詢個股以顯示均線訊號。</div>
+        </div>
+        <!-- 均線交叉預測（移自舊 MA 分析 Tab） -->
+        <div class="mt-4 border-t border-slate-700 pt-4">
+          <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+            <i class="fa-solid fa-clock-rotate-left"></i> 均線交叉預測（未來 30 個交易日）
+          </div>
+          <div id="granCrossSection" class="space-y-2">
+            <div class="text-slate-500 text-xs">載入中...</div>
+          </div>
         </div>
       </div>
 
@@ -3012,7 +2798,7 @@ function renderTechSignalDetail(data) {
     cards.push(makeCard(granIcon,'葛蘭碧法則',`觸發 ${granList.length} 則`,granSt,granHtml,''));
   }
 
-  // ▼ 均線交叉預測（已移至「移動平均線分析」Tab，此處僅顯示摘要導覽）
+  // ▼ 均線交叉預測（已移至葛蘭碧╱均線訊號 Tab，此處僅顯示摘要導覽）
   const cross520  = maAn.cross_5_20  || {};
   const cross2060 = maAn.cross_20_60 || {};
   const crossItems = [
@@ -3026,8 +2812,8 @@ function renderTechSignalDetail(data) {
     const minDays  = allDays.length ? Math.min(...allDays) : null;
     const titleStr = minDays!=null ? `最快 ${minDays} 交易日後交叉` : `${crossItems.length} 組預測`;
     const crossHtml = `<div class="text-slate-300 text-sm mb-2">偵測到 <strong style="color:${hasDeathCross?'#ef4444':'#10b981'}">${crossItems.length} 組</strong>均線交叉預測，詳細數據請前往專屬分析頁。</div>
-      <button onclick="switchTab('maanalysis')" class="text-xs px-3 py-1.5 rounded-lg font-bold" style="background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f680;">
-        <i class="fa-solid fa-wave-square mr-1 text-purple-400"></i>前往移動平均線分析 Tab →
+      <button onclick="switchTab('granville')" class="text-xs px-3 py-1.5 rounded-lg font-bold" style="background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f680;">
+        <i class="fa-solid fa-scroll mr-1 text-amber-400"></i>前往葛蘭碧╱均線訊號 Tab →
       </button>`;
     cards.push(makeCard('fa-solid fa-arrows-rotate','均線交叉預測',titleStr,crossSt,crossHtml,''));
   }
@@ -4911,7 +4697,7 @@ function drawKDChart(data) {
 // ════════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  const tabs = ['chart','fundamental','chip','tradeoverview','finreport','frontier','sim','news','recommendation','montecarlo','scenario','maanalysis','granville'];
+  const tabs = ['chart','fundamental','chip','tradeoverview','finreport','frontier','sim','news','recommendation','montecarlo','scenario','granville'];
   tabs.forEach(t => {
     const panel = document.getElementById(`panel-${t}`);
     const btn   = document.getElementById(`tab-${t}`);
@@ -4947,7 +4733,6 @@ function switchTab(tab) {
   }
   if (tab === 'tradeoverview' && currentData) renderTradeOverview(currentData);
   if (tab === 'finreport' && currentData) loadFinReport(currentData.ticker);
-  if (tab === 'maanalysis' && currentData) renderMAAnalysisTab(currentData);
   if (tab === 'granville' && currentData) renderGranvilleTab(currentData);
   if (tab === 'recommendation' && currentData) _autoLoadAiInvCache(currentData.ticker);
 }
@@ -7810,8 +7595,7 @@ function renderTradeOverview(data) {
     });
   }
 
-  // 移動平均線已移至獨立分頁（panel-maanalysis）
-  // 切換至「移動平均線分析」分頁時由 renderMAAnalysisTab() 處理渲染
+  // 均線數值渲染已在主圖表 tab 處理
 }
 
 
@@ -8332,6 +8116,74 @@ function renderGranvilleTab(data) {
   // ── K 線圖 ──
   _drawGranCandleChart(data, granCurrentPeriod);
 
+  // ── 四種均線買賣訊號即時偵測結果 ──────────────────────────
+  const maSigEl = document.getElementById('maSigDetected');
+  if (maSigEl) {
+    const maSigs = maAna.ma_signals || [];
+    if (maSigs.length === 0) {
+      maSigEl.innerHTML = '<div class="text-slate-400 text-sm">近期無觸發均線訊號（回溯5根K棒）。</div>';
+    } else {
+      const sigTypeLabel = { price_cross_up:'訊號①', price_cross_down:'訊號②', golden_cross:'訊號③', death_cross:'訊號④' };
+      const sigTypeName  = { price_cross_up:'價格上破 MA', price_cross_down:'價格下破 MA', golden_cross:'黃金交叉', death_cross:'死亡交叉' };
+      maSigEl.innerHTML = maSigs.map(sig => {
+        const isBuy  = sig.signal === 'buy';
+        const col    = isBuy ? '#10b981' : '#ef4444';
+        const bg     = isBuy ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
+        const bdr    = isBuy ? '#10b98150' : '#ef444450';
+        const strMap = { strong:'強', moderate:'中', weak:'弱（縮量）' };
+        const volIcon = sig.volume_confirm === true ? '🔊 放量確認' : sig.volume_confirm === false ? '🔇 量能不足' : '';
+        const typeLabel = sigTypeLabel[sig.signal_type] || '';
+        return `<div class="rounded-xl p-4 border" style="background:${bg};border-color:${bdr}">
+          <div class="flex flex-wrap items-center gap-2 mb-2">
+            <span class="font-black text-sm" style="color:${col}">${typeLabel}【${sig.name}】</span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:${bg};color:${col};border:1px solid ${bdr}">${strMap[sig.strength]||'中'}</span>
+            ${isBuy ? '<span class="signal-tag signal-buy">買入</span>' : '<span class="signal-tag signal-sell">賣出</span>'}
+            ${volIcon ? `<span class="text-xs text-slate-400">${volIcon}</span>` : ''}
+          </div>
+          <div class="text-slate-300 text-sm leading-relaxed">${sig.description || ''}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── 均線交叉預測（移植自舊 MA 分析 Tab）─────────────────────
+  const granCrossSec = document.getElementById('granCrossSection');
+  if (granCrossSec) {
+    const cross520  = maAna.cross_5_20  || {};
+    const cross2060 = maAna.cross_20_60 || {};
+    const crossPairs = [
+      { label:'MA5 / MA20（短×中）', data: cross520  },
+      { label:'MA20 / MA60（中×長）', data: cross2060 },
+    ];
+    const activeCrosses = crossPairs.filter(c => c.data.cross_type && c.data.cross_type !== 'none');
+    if (activeCrosses.length === 0) {
+      granCrossSec.innerHTML = '<div class="text-slate-400 text-xs">預測 30 個交易日內無均線交叉訊號。</div>';
+    } else {
+      granCrossSec.innerHTML = activeCrosses.map(cp => {
+        const d = cp.data;
+        const isGolden = d.cross_type === 'golden';
+        const col = isGolden ? '#fbbf24' : '#f43f5e';
+        const bg  = isGolden ? 'rgba(251,191,36,0.07)' : 'rgba(244,63,94,0.07)';
+        const bdr = isGolden ? '#fbbf2440' : '#f43f5e40';
+        const icon = isGolden ? '★' : '✕';
+        const name = isGolden ? '黃金交叉（訊號③）' : '死亡交叉（訊號④）';
+        const urgency = d.est_days != null && d.est_days <= 10 ? '⚠ 緊急：' : '';
+        const confMap = { high:'高', medium:'中', low:'低' };
+        const conf = confMap[d.confidence] || d.confidence || '--';
+        const daysText = d.est_days != null ? `預估 <strong style="color:${col}">${d.est_days}</strong> 個交易日（約 ${d.est_calendar_days||'--'} 自然日）後出現` : '預測期內';
+        return `<div class="rounded-lg p-3 border text-sm" style="background:${bg};border-color:${bdr}">
+          <div class="flex flex-wrap items-center gap-2 mb-1">
+            <span style="color:${col}" class="font-black">${icon} ${name}</span>
+            <span class="text-xs text-slate-400 font-bold">${cp.label}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full" style="background:${bg};color:${col};border:1px solid ${bdr}">信心：${conf}</span>
+          </div>
+          <div class="text-slate-300">${urgency}${daysText}</div>
+          <div class="text-slate-500 text-xs mt-1">${d.details || ''}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
 }
 
 function _drawGranCandleChart(data, period) {
@@ -8373,6 +8225,37 @@ function _drawGranCandleChart(data, period) {
     else
       granRuleData[sig.rule][sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.010 : closes[sig.idx] * 1.010;
   });
+
+  // ── 黃金交叉 / 死亡交叉計算 ─────────────────────────────
+  // 偵測 MA5×MA20 及 MA20×MA60 的實際交叉點
+  const crossGolden520  = new Array(n).fill(null);
+  const crossDeath520   = new Array(n).fill(null);
+  const crossGolden2060 = new Array(n).fill(null);
+  const crossDeath2060  = new Array(n).fill(null);
+
+  for (let i = 1; i < n; i++) {
+    const s1 = ma1[i - 1], s2 = ma1[i];   // MA5
+    const m1 = ma2[i - 1], m2 = ma2[i];   // MA20
+    const l1 = ma3[i - 1], l2 = ma3[i];   // MA60
+    // MA5×MA20
+    if (s1 != null && s2 != null && m1 != null && m2 != null) {
+      if (s1 <= m1 && s2 > m2) {
+        // 黃金交叉：標記在低點下方
+        crossGolden520[i] = lows[i] != null ? lows[i] * 0.975 : closes[i] * 0.975;
+      } else if (s1 >= m1 && s2 < m2) {
+        // 死亡交叉：標記在高點上方
+        crossDeath520[i]  = highs[i] != null ? highs[i] * 1.025 : closes[i] * 1.025;
+      }
+    }
+    // MA20×MA60
+    if (m1 != null && m2 != null && l1 != null && l2 != null) {
+      if (m1 <= l1 && m2 > l2) {
+        crossGolden2060[i] = lows[i] != null ? lows[i] * 0.962 : closes[i] * 0.962;
+      } else if (m1 >= l1 && m2 < l2) {
+        crossDeath2060[i]  = highs[i] != null ? highs[i] * 1.038 : closes[i] * 1.038;
+      }
+    }
+  }
 
   // ── Y 軸範圍（只基於 K 棒 high/low）──
   const validLows  = lows.filter(v => v != null && isFinite(v));
@@ -8440,26 +8323,54 @@ function _drawGranCandleChart(data, period) {
       const circleNums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
       chart.data.datasets.forEach((ds) => {
         const rule = numMap[ds.label];
-        if (!rule) return;
-        const gl = GRANVILLE_LABELS[rule];
-        if (!gl) return;
-        const isBuy = gl.type === 'buy';
+        // 葛蘭碧號碼標注
+        if (rule) {
+          const gl = GRANVILLE_LABELS[rule];
+          if (!gl) return;
+          const isBuy = gl.type === 'buy';
+          ds.data.forEach((val, i) => {
+            if (val == null) return;
+            const x = xScale.getPixelForValue(i);
+            const y = yScale.getPixelForValue(val);
+            const offsetY = isBuy ? -22 : 22;
+            const lbl2 = circleNums[rule - 1];
+            c2d.save();
+            c2d.font = 'bold 11px "Noto Sans TC", sans-serif';
+            c2d.textAlign = 'center'; c2d.textBaseline = 'middle';
+            const tw = c2d.measureText(lbl2).width + 4;
+            c2d.fillStyle = 'rgba(15,23,42,0.72)';
+            c2d.beginPath();
+            if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
+            else c2d.rect(x - tw/2, y + offsetY - 7, tw, 14);
+            c2d.fill();
+            c2d.fillStyle = gl.color;
+            c2d.fillText(lbl2, x, y + offsetY);
+            c2d.restore();
+          });
+          return;
+        }
+        // 黃金交叉 / 死亡交叉標注
+        const isGolden = ds.label && ds.label.startsWith('黃金交叉');
+        const isDeath  = ds.label && ds.label.startsWith('死亡交叉');
+        if (!isGolden && !isDeath) return;
+        const isBig    = ds.label.includes('20×60');  // MA20×MA60 用大字
+        const lbl2     = isGolden ? '★' : '✕';
+        const txtCol   = isGolden ? '#fbbf24' : '#f43f5e';
         ds.data.forEach((val, i) => {
           if (val == null) return;
           const x = xScale.getPixelForValue(i);
           const y = yScale.getPixelForValue(val);
-          const offsetY = isBuy ? -22 : 22;
-          const lbl2 = circleNums[rule - 1];
+          const offsetY = isGolden ? -26 : 26;
           c2d.save();
-          c2d.font = 'bold 11px "Noto Sans TC", sans-serif';
+          c2d.font = `${isBig ? 'bold 13px' : 'bold 11px'} "Noto Sans TC", sans-serif`;
           c2d.textAlign = 'center'; c2d.textBaseline = 'middle';
-          const tw = c2d.measureText(lbl2).width + 4;
-          c2d.fillStyle = 'rgba(15,23,42,0.72)';
+          const tw = c2d.measureText(lbl2).width + 6;
+          c2d.fillStyle = 'rgba(15,23,42,0.80)';
           c2d.beginPath();
-          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
-          else c2d.rect(x - tw/2, y + offsetY - 7, tw, 14);
+          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - 8, tw, 16, 3);
+          else c2d.rect(x - tw/2, y + offsetY - 8, tw, 16);
           c2d.fill();
-          c2d.fillStyle = gl.color;
+          c2d.fillStyle = txtCol;
           c2d.fillText(lbl2, x, y + offsetY);
           c2d.restore();
         });
@@ -8489,6 +8400,14 @@ function _drawGranCandleChart(data, period) {
         { type:'line', label:'MA20', data:ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA60
         { type:'line', label:'MA60', data:ma3, borderColor:'#a78bfa', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // 黃金交叉 MA5×MA20（★ 金色向上三角）
+        { type:'line', label:'黃金交叉(5×20)', data:crossGolden520,  borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:crossGolden520.map(v=>v!=null?14:0),  pointHoverRadius:crossGolden520.map(v=>v!=null?16:0),  pointStyle:'star',     pointRotation:0,   pointBackgroundColor:'#fbbf24', pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        // 死亡交叉 MA5×MA20（✕ 紅色向下三角）
+        { type:'line', label:'死亡交叉(5×20)', data:crossDeath520,   borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:crossDeath520.map(v=>v!=null?14:0),   pointHoverRadius:crossDeath520.map(v=>v!=null?16:0),   pointStyle:'triangle', pointRotation:180, pointBackgroundColor:'#f43f5e', pointBorderColor:'#fff', pointBorderWidth:1.5, fill:false, spanGaps:false, showLine:false, order:0 },
+        // 黃金交叉 MA20×MA60（★ 深金大星）
+        { type:'line', label:'黃金交叉(20×60)', data:crossGolden2060, borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:crossGolden2060.map(v=>v!=null?17:0), pointHoverRadius:crossGolden2060.map(v=>v!=null?19:0), pointStyle:'star',     pointRotation:0,   pointBackgroundColor:'#f59e0b', pointBorderColor:'#fff', pointBorderWidth:2,   fill:false, spanGaps:false, showLine:false, order:0 },
+        // 死亡交叉 MA20×MA60（✕ 深紅大三角）
+        { type:'line', label:'死亡交叉(20×60)', data:crossDeath2060,  borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:crossDeath2060.map(v=>v!=null?17:0),  pointHoverRadius:crossDeath2060.map(v=>v!=null?19:0),  pointStyle:'triangle', pointRotation:180, pointBackgroundColor:'#be123c', pointBorderColor:'#fff', pointBorderWidth:2,   fill:false, spanGaps:false, showLine:false, order:0 },
         // 葛蘭碧八種訊號（line type, showLine:false，用 pointStyle triangle 標記）
         ...Object.keys(granRuleData).map(r => {
           const rn = parseInt(r);
@@ -8531,6 +8450,9 @@ function _drawGranCandleChart(data, period) {
                   const idx = chart.data.datasets.indexOf(ds);
                   const gl  = Object.values(GRANVILLE_LABELS).find(g => g.short === ds.label);
                   if (gl) return { text: ds.label, fillStyle: gl.color, strokeStyle: gl.color, lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
+                  // 黃金交叉 / 死亡交叉 legend
+                  if (ds.label.startsWith('黃金交叉')) return { text: ds.label, fillStyle: ds.pointBackgroundColor, strokeStyle: ds.pointBackgroundColor, lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#fbbf24' };
+                  if (ds.label.startsWith('死亡交叉')) return { text: ds.label, fillStyle: ds.pointBackgroundColor, strokeStyle: ds.pointBackgroundColor, lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#f43f5e' };
                   return { text: ds.label, fillStyle:'transparent', strokeStyle: ds.borderColor||'#94a3b8', lineWidth:2, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
                 });
             }
@@ -8546,6 +8468,15 @@ function _drawGranCandleChart(data, period) {
               if (glEntry) {
                 if (ctx.parsed?.y == null) return null;
                 return [`${glEntry.full}`, `${glEntry.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`];
+              }
+              // 黃金交叉 / 死亡交叉 tooltip
+              if (lbl.startsWith('黃金交叉')) {
+                if (ctx.parsed?.y == null) return null;
+                return [`★ ${lbl}`, '📈 訊號③ 買點：短均線向上穿越長均線'];
+              }
+              if (lbl.startsWith('死亡交叉')) {
+                if (ctx.parsed?.y == null) return null;
+                return [`✕ ${lbl}`, '📉 訊號④ 賣點：短均線向下穿越長均線'];
               }
               if (lbl === 'OHLC') {
                 const dir = closes[i] >= effectiveOpens[i] ? '▲ 上漲' : '▼ 下跌';
