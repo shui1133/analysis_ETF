@@ -8549,37 +8549,48 @@ function _drawGranCandleChart(data, period) {
   };
 
   granCandleChart = new Chart(ctx, {
-    type: 'bar',   // category 軸，與 MACD 相同，zoom resetZoom() 才能正確運作
+    type: 'line',   // 純折線圖，不再用 bar 型別（避免 bar 渲染干擾）
     data: {
       labels: labels,
       datasets: [
+        // 隱形 dummy 折線（撐 category 軸 + 提供 tooltip 觸發，完全不可見）
+        {
+          label: '_dummy',
+          data: closes,
+          borderColor: 'rgba(0,0,0,0)',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: false,
+          spanGaps: false,
+          order: 99,
+        },
         // MA5
-        { type:'line', label:'MA5',  data:ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        { label:'MA5',  data:ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA20
-        { type:'line', label:'MA20', data:ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        { label:'MA20', data:ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA60
-        { type:'line', label:'MA60', data:ma3, borderColor:'#a78bfa', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // ★ 黃金交叉（合併 MA5×MA20 + MA20×MA60）：大金星
+        { label:'MA60', data:ma3, borderColor:'#a78bfa', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // ★ 黃金交叉：單一大金色五角星
         {
-          type:'line', label:'黃金交叉', data:crossGolden,
+          label:'黃金交叉', data:crossGolden,
           borderColor:'rgba(0,0,0,0)', borderWidth:0,
-          pointRadius:      crossGolden.map(v => v != null ? 18 : 0),
-          pointHoverRadius: crossGolden.map(v => v != null ? 20 : 0),
+          pointRadius:      crossGolden.map(v => v != null ? 20 : 0),
+          pointHoverRadius: crossGolden.map(v => v != null ? 22 : 0),
           pointStyle: 'star', pointRotation: 0,
-          pointBackgroundColor: '#fbbf24', pointBorderColor: '#fff', pointBorderWidth: 2,
+          pointBackgroundColor: '#fbbf24', pointBorderColor: '#fbbf24', pointBorderWidth: 0,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
-        // ✕ 死亡交叉（合併 MA5×MA20 + MA20×MA60）：大紅 X（倒三角）
+        // ✕ 死亡交叉：單一大紅色 X
         {
-          type:'line', label:'死亡交叉', data:crossDeath,
+          label:'死亡交叉', data:crossDeath,
           borderColor:'rgba(0,0,0,0)', borderWidth:0,
-          pointRadius:      crossDeath.map(v => v != null ? 18 : 0),
-          pointHoverRadius: crossDeath.map(v => v != null ? 20 : 0),
+          pointRadius:      crossDeath.map(v => v != null ? 20 : 0),
+          pointHoverRadius: crossDeath.map(v => v != null ? 22 : 0),
           pointStyle: 'crossRot', pointRotation: 0,
-          pointBackgroundColor: 'rgba(0,0,0,0)', pointBorderColor: '#f43f5e', pointBorderWidth: 3,
+          pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth: 3,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
-        // 葛蘭碧八種訊號（line type, showLine:false，用 pointStyle triangle 標記）
+        // 葛蘭碧八種訊號（showLine:false，用 pointStyle triangle 標記）
         // 標記大小依強度：strong=13, moderate=10, weak=7
         ...Object.keys(granRuleData).map(r => {
           const rn = parseInt(r);
@@ -8590,14 +8601,12 @@ function _drawGranCandleChart(data, period) {
             return str === 'strong' ? 13 : str === 'weak' ? 7 : 10;
           });
           const hoverRadii = radii.map(r2 => r2 > 0 ? r2 + 2 : 0);
-          // 弱訊號（縮量）降低不透明度
           const colors = granRuleData[rn].map((v, i) => {
             if (v == null) return 'rgba(0,0,0,0)';
             const str = granRuleStrength[rn][i];
             return str === 'weak' ? gl.color + '99' : gl.color;
           });
           return {
-            type: 'line',
             label: gl.short,
             data: granRuleData[rn],
             borderColor: 'rgba(0,0,0,0)',
@@ -8626,14 +8635,16 @@ function _drawGranCandleChart(data, period) {
         legend: {
           labels: {
             color:'#94a3b8', font:{size:10}, boxWidth:12, padding:8,
-            filter: item => true,
+            filter: item => item.text !== '_dummy',
             generateLabels: (chart) => {
-              return chart.data.datasets.map(ds => {
+              return chart.data.datasets
+                .filter(ds => ds.label !== '_dummy')
+                .map(ds => {
                   const idx = chart.data.datasets.indexOf(ds);
                   const gl  = Object.values(GRANVILLE_LABELS).find(g => g.short === ds.label);
                   if (gl) return { text: ds.label, fillStyle: gl.color, strokeStyle: gl.color, lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
                   if (ds.label === '黃金交叉') return { text:'★ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#fbbf24' };
-                  if (ds.label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'rgba(0,0,0,0)', strokeStyle:'#f43f5e', lineWidth:2, datasetIndex:idx, hidden:false, fontColor:'#f43f5e' };
+                  if (ds.label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#f43f5e' };
                   return { text: ds.label, fillStyle:'transparent', strokeStyle: ds.borderColor||'#94a3b8', lineWidth:2, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
                 });
             }
@@ -8645,6 +8656,7 @@ function _drawGranCandleChart(data, period) {
             label: ctx => {
               const i   = ctx.dataIndex;
               const lbl = ctx.dataset.label || '';
+              if (lbl === '_dummy') return null;
               const glEntry = Object.values(GRANVILLE_LABELS).find(g => g.short === lbl);
               if (glEntry) {
                 if (ctx.parsed?.y == null) return null;
@@ -8652,26 +8664,10 @@ function _drawGranCandleChart(data, period) {
                 const strMap = { strong:'強訊號 ✓', moderate:'中等訊號', weak:'弱訊號（謹慎）' };
                 const strText = sig ? (strMap[sig.strength] || '') : '';
                 const noteText = sig?.note || '';
-                return [
-                  `${glEntry.full}`,
-                  `${glEntry.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`,
-                  strText,
-                  noteText,
-                ].filter(Boolean);
+                return [ `${glEntry.full}`, `${glEntry.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`, strText, noteText ].filter(Boolean);
               }
-              // 黃金交叉 / 死亡交叉 tooltip
-              if (lbl.startsWith('黃金交叉')) {
-                if (ctx.parsed?.y == null) return null;
-                return [`★ ${lbl}`, '📈 訊號③ 買點：短均線向上穿越長均線'];
-              }
-              if (lbl.startsWith('死亡交叉')) {
-                if (ctx.parsed?.y == null) return null;
-                return [`✕ ${lbl}`, '📉 訊號④ 賣點：短均線向下穿越長均線'];
-              }
-              if (lbl === 'OHLC') {
-                const val = ctx.parsed?.y;
-                return val != null ? `收盤：${val.toFixed(2)}` : null;
-              }
+              if (lbl === '黃金交叉') { if (ctx.parsed?.y == null) return null; return ['★ 黃金交叉','📈 買點：短均線向上穿越長均線']; }
+              if (lbl === '死亡交叉') { if (ctx.parsed?.y == null) return null; return ['✕ 死亡交叉','📉 賣點：短均線向下穿越長均線']; }
               const val = ctx.parsed?.y;
               return val != null ? `${lbl}: ${val.toFixed(2)}` : null;
             }
@@ -8680,12 +8676,7 @@ function _drawGranCandleChart(data, period) {
         zoom: {
           pan: { enabled: true, mode: 'x', modifierKey: null },
           zoom: {
-            drag: {
-              enabled: true,
-              backgroundColor: 'rgba(59,130,246,0.15)',
-              borderColor: 'rgba(59,130,246,0.6)',
-              borderWidth: 1,
-            },
+            drag: { enabled: true, backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.6)', borderWidth: 1 },
             wheel: { enabled: true, speed: 0.1 },
             pinch: { enabled: true },
             mode: 'x',
