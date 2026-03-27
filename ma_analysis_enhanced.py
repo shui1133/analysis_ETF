@@ -123,152 +123,244 @@ def bias_warning(bias: float | None, ma_period: int = 20) -> dict:
 def calc_granville_signals(
     close_series: list[float],
     ma_series: list[float],
-    lookback: int = 5,
+    lookback: int = 10,
     ma_period: int = 20,
+    volume_series: list[float] | None = None,
 ) -> list[dict]:
     """
-    對最近 lookback 筆資料判斷葛蘭碧法則觸發。
-    返回觸發的法則清單，每筆包含：
-      rule       : 法則編號 1~8
-      signal     : 'buy' | 'sell'
-      name       : 中文名稱
-      description: 說明
-      strength   : 'strong' | 'moderate' | 'weak'
-      index      : 觸發位置（-1 = 最新）
+    嚴謹版葛蘭碧法則偵測。
 
-    ma_period 用於動態取得乖離率門檻（對應 bias_warning 的天期門檻表）。
+    ══ 實務標記原則 ══
+    不是字面符合就標，而是同時滿足下列先決條件才標：
+      A. 趨勢確認：MA 斜率 + 最近 10 根 K 棒位置（60%+ 在均線上/下方）
+      B. 量價佐證：突破型（①⑤）必須放量；乖離型（③⑥）須達極端門檻；
+                   回測型（②⑦）位置要精確
+      C. 冷卻機制：同一法則 10 根 K 棒內不重複標記
+
+    返回觸發的法則清單，每筆包含：
+      rule        : 法則編號 1~8
+      signal      : 'buy' | 'sell'
+      name        : 中文名稱
+      description : 說明
+      strength    : 'strong' | 'moderate' | 'weak'
+      note        : 量價佐證說明
+      index       : 觸發位置（-1 = 最新）
     """
-    # ── 依 ma_period 動態取得葛蘭碧法則 3/6 的乖離率門檻 ──────────────
-    _THRESHOLDS: dict[int, tuple[float, float]] = {
-        5:   (-3.0,   3.5),
-        6:   (-3.0,   3.5),
-        10:  (-4.5,   5.0),
-        12:  (-4.5,   5.0),
-        20:  (-7.0,   8.0),
-        24:  (-7.0,   8.0),
-        60:  (-11.0, 11.0),
-        72:  (-11.0, 11.0),
-        120: (-15.0, 15.0),
-        200: (-20.0, 20.0),
-    }
-    if ma_period in _THRESHOLDS:
-        _granville_oversold_thr, _granville_overbought_thr = _THRESHOLDS[ma_period]
-    else:
-        extra = (ma_period - 20) / 10
-        _granville_oversold_thr  = -7.0 - extra * 1.0
-        _granville_overbought_thr =  8.0 + extra * 1.0
-    n = min(lookback, len(close_series), len(ma_series))
-    if n < 3:
+    n_all = len(close_series)
+    n_ma  = len(ma_series)
+    n     = min(n_all, n_ma)
+    has_vol = volume_series is not None and len(volume_series) >= n
+    if n < 15:
         return []
 
-    prices = close_series[-n:]
-    mas    = ma_series[-n:]
+    prices = close_series
+    mas    = ma_series
+
+    # ── 均線斜率（5 日）──────────────────────────────────────────
+    def ma_slope5(i: int) -> float:
+        if i < 5:
+            return 0.0
+        return mas[i] - mas[i - 5]
+
+    def ma_trend_up(i: int) -> bool:
+        return ma_slope5(i) > (mas[i] * 0.002) if mas[i] else False
+
+    def ma_trend_down(i: int) -> bool:
+        return ma_slope5(i) < -(mas[i] * 0.005) if mas[i] else False  # 下彎門檻更嚴格（>0.5%才算明顯下彎）
+
+    def ma_flat(i: int) -> bool:
+        # 走平：斜率絕對值 < 0.5%，或斜率已由負轉正趨勢（5日加速收斂）
+        slope = ma_slope5(i)
+        abs_slope = abs(slope)
+        if abs_slope < (mas[i] * 0.005):
+            return True
+        # 斜率收斂：最近 3 日斜率比 3 日前改善 30%
+        if i >= 6 and mas[i] and mas[i - 3]:
+            prev_slope = mas[i - 3] - mas[i - 8] if i >= 8 and mas[i - 8] else slope
+            if slope < 0 and abs(slope) < abs(prev_slope) * 0.7:
+                return True  # 下彎斜率快速收斂，視為趨於走平
+        return False
+
+    # ── 趨勢環境（最近 10 根 K 棒）────────────────────────────────
+    def is_bull_trend(i: int) -> bool:
+        if i < 10:
+            return False
+        above = sum(1 for k in range(i - 10, i + 1)
+                    if prices[k] is not None and mas[k] is not None and prices[k] > mas[k])
+        return above >= 7 and (ma_trend_up(i) or ma_flat(i))
+
+    def is_bear_trend(i: int) -> bool:
+        if i < 10:
+            return False
+        below = sum(1 for k in range(i - 10, i + 1)
+                    if prices[k] is not None and mas[k] is not None and prices[k] < mas[k])
+        return below >= 7 and (ma_trend_down(i) or ma_flat(i))
+
+    # ── 量能計算（近 10 日均量）────────────────────────────────────
+    def avg_vol10(i: int) -> float | None:
+        if not has_vol or i < 10:
+            return None
+        vals = [volume_series[k] for k in range(i - 10, i) if volume_series[k] and volume_series[k] > 0]
+        return sum(vals) / len(vals) if vals else None
+
+    def is_vol_boom(i: int) -> bool | None:
+        avg = avg_vol10(i)
+        if avg is None:
+            return None
+        return volume_series[i] >= avg * 1.3
+
+    def is_vol_shrink(i: int) -> bool | None:
+        avg = avg_vol10(i)
+        if avg is None:
+            return None
+        return volume_series[i] <= avg * 0.7
+
+    # ── 乖離率極端門檻────────────────────────────────────────────
+    EXTREME_BIAS_BUY  = -10.5
+    EXTREME_BIAS_SELL =  12.0
+    NORMAL_BIAS_SELL  =   8.0
+
+    # ── 同法則冷卻（10 根）────────────────────────────────────────
+    last_sig_idx: dict[int, int] = {}
+
+    def can_mark(rule: int, i: int) -> bool:
+        return (i - last_sig_idx.get(rule, -999)) >= 10
+
+    def mark_sig(rule: int, i: int) -> None:
+        last_sig_idx[rule] = i
+
+    # ── 只計算 lookback 範圍內的最後 N 根 ────────────────────────
+    start = max(10, n - lookback)
     results = []
 
-    # 均線斜率（最近3日）
-    def ma_slope(i: int) -> float:
-        if i < 2:
-            return 0.0
-        return mas[i] - mas[i - 2]
+    for i in range(start, n):
+        p  = prices[i]
+        m  = mas[i]
+        if not p or not m:
+            continue
+        p1 = prices[i - 1] if i >= 1 else None
+        m1 = mas[i - 1]    if i >= 1 else None
+        p2 = prices[i - 2] if i >= 2 else None
+        m2 = mas[i - 2]    if i >= 2 else None
+        if not p1 or not m1:
+            continue
 
-    def prev_cross(i: int) -> str:
-        """判斷最近一次穿越方向（'up','down','none'）"""
-        if i < 1:
-            return 'none'
-        above_now  = prices[i]  > mas[i]
-        above_prev = prices[i-1] > mas[i-1]
-        if not above_prev and above_now:
-            return 'up'
-        if above_prev and not above_now:
-            return 'down'
-        return 'none'
+        bias      = (p - m) / m * 100
+        cross_up  = p1 <= m1 and p > m
+        cross_dn  = p1 >= m1 and p < m
+        above     = p > m
+        below     = p < m
+        bull      = is_bull_trend(i)
+        bear      = is_bear_trend(i)
+        vol_boom  = is_vol_boom(i)
+        vol_shrink= is_vol_shrink(i)
 
-    for i in range(1, n):
-        slope = ma_slope(i)
-        cross = prev_cross(i)
-        p, m  = prices[i], mas[i]
-        bias  = (p - m) / m * 100 if m else 0
+        rule, strength, note = 0, 'moderate', ''
 
-        # ── 買進法則 ────────────────────────────────────────────
-        # 法則 1：起漲買進——均線由降轉平向上，股價由下往上突破
-        if cross == 'up' and slope >= 0:
+        # ① 起漲買進：均線走平/上彎 + 放量上穿 + 前期多在均線下方
+        if cross_up and (ma_trend_up(i) or ma_flat(i)) and can_mark(1, i):
+            prev_below = sum(1 for k in range(max(0, i - 10), i)
+                             if prices[k] is not None and mas[k] is not None and prices[k] < mas[k])
+            prev_below_ratio = prev_below / min(10, i) if i > 0 else 0
+            if prev_below_ratio >= 0.5 or not bull:
+                if vol_boom is True:
+                    rule, strength = 1, 'strong'
+                    note = '放量突破，訊號可靠'
+                elif vol_boom is None:
+                    rule, strength = 1, 'moderate'
+                    note = '量能資料不足'
+                # vol_boom=False → 縮量假突破，不標
+
+        # ② 續漲加碼：多頭環境，精確回測均線後反彈
+        if not rule and bull and not cross_up and above and can_mark(2, i):
+            near_ma    = abs(bias) < 2.0
+            dip_prev   = m1 and p1 and (m1 * 0.995 <= p1 <= m1 * 1.015)
+            bounce_back= p > p1 and p2 is not None and p > p2
+            if near_ma and dip_prev and bounce_back:
+                rule, strength, note = 2, 'moderate', '多頭回測支撐'
+
+        # ③ 超賣反彈：極端負乖離 + 止跌反彈
+        if not rule and below and bias < EXTREME_BIAS_BUY and can_mark(3, i):
+            bouncing = p > p1
+            if bouncing:
+                strength = 'strong' if bias < EXTREME_BIAS_BUY * 1.3 else 'moderate'
+                note = f'極端超賣（乖離 {bias:.1f}%），技術性反彈'
+                rule = 3
+
+        # ④ 末跌買進：逆勢，僅在均線強勢上彎時才標
+        if not rule and cross_dn and ma_trend_up(i) and can_mark(4, i):
+            strong_slope = ma_slope5(i) > (m * 0.008)
+            if strong_slope and bias > -8:
+                rule, strength = 4, 'weak'
+                note = '均線強勢上彎，末跌買進（逆勢，小部位）'
+
+        # ⑤ 趨勢轉空賣出：均線走平/下彎 + 放量跌破 + 前期多在均線上方
+        if not rule and cross_dn and (ma_trend_down(i) or ma_flat(i)) and can_mark(5, i):
+            prev_above = sum(1 for k in range(max(0, i - 10), i)
+                             if prices[k] is not None and mas[k] is not None and prices[k] > mas[k])
+            prev_above_ratio = prev_above / min(10, i) if i > 0 else 0
+            if prev_above_ratio >= 0.5 or not bear:
+                if vol_boom is True:
+                    rule, strength = 5, 'strong'
+                    note = '放量跌破，賣壓沉重'
+                elif vol_boom is False:
+                    rule, strength = 5, 'weak'
+                    note = '縮量跌破，可能只是洗盤，觀察守穩'
+                else:
+                    rule, strength = 5, 'moderate'
+                    note = '量能資料不足'
+
+        # ⑥ 超買回吐：極端正乖離 + 量縮背離
+        if not rule and above and bias > EXTREME_BIAS_SELL and can_mark(6, i):
+            vol_div = vol_shrink is True
+            strength = 'strong' if (bias > EXTREME_BIAS_SELL * 1.2 or vol_div) else 'moderate'
+            note = f'極端超買（乖離 {bias:.1f}%）{"，量縮背離" if vol_div else ""}'
+            rule = 6
+
+        # ⑦ 反彈賣出：空頭環境 + 縮量反彈至均線附近後回落
+        if not rule and bear and below and not cross_dn and can_mark(7, i):
+            near_ma    = bias > -4.0
+            was_bounce = p2 is not None and m2 is not None and p2 < m2 and p1 > p2
+            now_fall   = p < p1
+            if near_ma and was_bounce and now_fall:
+                strength = 'strong' if vol_shrink is True else 'moderate'
+                note = f'空頭反彈失敗{"（縮量誘多）" if vol_shrink is True else ""}'
+                rule = 7
+
+        # ⑧ 空頭賣出：均線下彎中，股價超漲且開始回落
+        if not rule and above and ma_trend_down(i) and bias > NORMAL_BIAS_SELL and can_mark(8, i):
+            price_peaking = p < p1 or vol_shrink is True
+            if price_peaking:
+                rule, strength = 8, 'weak'
+                note = f'均線下彎中股價超漲（乖離 {bias:.1f}%），逢高減碼'
+
+        if rule > 0:
+            mark_sig(rule, i)
+            # 法則對應名稱
+            _names = {
+                1: ('起漲買進', 'buy', '均線走平/上彎，股價放量向上突破'),
+                2: ('續漲加碼', 'buy', '多頭趨勢中，精確回測均線後反彈'),
+                3: ('超賣反彈', 'buy', f'股價大幅低於均線（乖離 {bias:.1f}%），技術性反彈'),
+                4: ('末跌買進', 'buy', '股價跌破均線，但均線仍強勢上彎（逆勢）'),
+                5: ('趨勢轉空', 'sell', '均線走平/下彎，股價向下跌破均線'),
+                6: ('超買回吐', 'sell', f'股價大幅高於均線（乖離 {bias:.1f}%），逢高出脫'),
+                7: ('反彈賣出', 'sell', '空頭趨勢中，反彈至均線附近後再度下跌'),
+                8: ('空頭賣出', 'sell', '均線下彎，股價短暫超漲後開始回落'),
+            }
+            name, signal, desc = _names[rule]
             results.append({
-                'rule': 1, 'signal': 'buy',
-                'name': '起漲買進',
-                'description': '均線由下降轉平且向上，股價突破均線',
-                'strength': 'strong', 'index': i - n,
+                'rule':        rule,
+                'signal':      signal,
+                'name':        name,
+                'description': desc,
+                'strength':    strength,
+                'note':        note,
+                'index':       i - n,
+                'bias':        round(bias, 2),
             })
 
-        # 法則 2：續漲加碼——股價在均線上方，拉回至均線後反彈（未跌破）
-        if prices[i-1] > mas[i-1] and cross == 'none' and p > m and bias < 3:
-            if i >= 2 and prices[i-1] < prices[i-2]:  # 前日有回調
-                results.append({
-                    'rule': 2, 'signal': 'buy',
-                    'name': '續漲加碼',
-                    'description': '股價在均線上方回測均線後反彈',
-                    'strength': 'moderate', 'index': i - n,
-                })
-
-        # 法則 3：超賣反彈——股價在均線下方，且負乖離過大（超賣）
-        # 門檻依 ma_period 動態取得（預設使用 MA20 對應的 -7%）
-        if p < m and bias < _granville_oversold_thr:
-            results.append({
-                'rule': 3, 'signal': 'buy',
-                'name': '超賣反彈',
-                'description': f'股價大幅低於均線（乖離 {bias:.1f}%），技術性反彈機會',
-                'strength': 'moderate', 'index': i - n,
-            })
-
-        # 法則 4：末跌買進——股價從均線上方跌至下方，但均線仍上升
-        if cross == 'down' and slope > 0:
-            results.append({
-                'rule': 4, 'signal': 'buy',
-                'name': '末跌買進',
-                'description': '股價跌破均線，但均線仍上升，可能是最後一跌',
-                'strength': 'weak', 'index': i - n,
-            })
-
-        # ── 賣出法則 ────────────────────────────────────────────
-        # 法則 5：趨勢轉空賣出——均線由升轉平向下，股價跌破均線
-        if cross == 'down' and slope <= 0:
-            results.append({
-                'rule': 5, 'signal': 'sell',
-                'name': '趨勢轉空賣出',
-                'description': '均線向下轉折，股價跌破均線，趨勢確認轉空',
-                'strength': 'strong', 'index': i - n,
-            })
-
-        # 法則 6：超買回吐——股價在均線上方，正乖離過大
-        # 門檻依 ma_period 動態取得（預設使用 MA20 對應的 +8%）
-        if p > m and bias > _granville_overbought_thr:
-            results.append({
-                'rule': 6, 'signal': 'sell',
-                'name': '超買回吐',
-                'description': f'股價大幅高於均線（乖離 {bias:.1f}%），漲幅過大逢高賣出',
-                'strength': 'moderate', 'index': i - n,
-            })
-
-        # 法則 7：反彈賣出——股價在均線下方，反彈至均線後再拉回
-        if prices[i-1] < mas[i-1] and cross == 'none' and p < m and bias > -3:
-            if i >= 2 and prices[i-1] > prices[i-2]:  # 前日有反彈
-                results.append({
-                    'rule': 7, 'signal': 'sell',
-                    'name': '反彈賣出',
-                    'description': '股價在均線下方反彈至均線附近，但無法突破，再度下跌',
-                    'strength': 'moderate', 'index': i - n,
-                })
-
-        # 法則 8：空頭賣出——股價在均線上方，但均線已轉空（空頭行情中的短暫超漲）
-        if p > m and slope < 0 and bias > 3:
-            results.append({
-                'rule': 8, 'signal': 'sell',
-                'name': '空頭賣出',
-                'description': '均線已向下，股價短暫反彈至均線上方，應逢高減碼',
-                'strength': 'weak', 'index': i - n,
-            })
-
-    # 只保留最新觸發的（避免重複）
-    seen = set()
+    # 去重：同一法則保留最新觸發
+    seen: set[int] = set()
     unique = []
     for r in reversed(results):
         if r['rule'] not in seen:
@@ -322,155 +414,219 @@ def calc_ma_signals(
     results: list[dict] = []
 
     n_close = len(close_series)
-    if n_close < 3:
+    if n_close < 15:   # 至少 15 根才能判斷趨勢
         return results
 
-    # ── 輔助：量能確認（當日量 > 近 5 日均量）──────────────────
-    def _vol_confirm(idx: int) -> bool | None:
-        """idx 為負數索引（-1=最新）"""
-        if not volume_series or len(volume_series) < 6:
+    # ── 量能確認（近 10 日均量，門檻 1.3x）──────────────────────
+    def _vol_confirm(abs_idx: int) -> bool | None:
+        if not volume_series or len(volume_series) <= abs_idx or abs_idx < 10:
             return None
-        abs_idx = len(volume_series) + idx  # 轉正索引
-        if abs_idx < 5:
+        vals = [volume_series[k] for k in range(abs_idx - 10, abs_idx)
+                if volume_series[k] and volume_series[k] > 0]
+        if not vals:
             return None
-        avg_vol = sum(volume_series[abs_idx - 5: abs_idx]) / 5
-        return volume_series[abs_idx] > avg_vol * 1.1  # 量 > 均量 1.1x 視為放量
+        avg = sum(vals) / len(vals)
+        return volume_series[abs_idx] >= avg * 1.3   # 放量門檻提高到 1.3x
+
+    # ── 均線斜率趨勢判斷（5 日）────────────────────────────────
+    def _ma_slope(ma_arr: list, i: int) -> float:
+        if i < 5 or ma_arr[i] is None or ma_arr[i - 5] is None:
+            return 0.0
+        return ma_arr[i] - ma_arr[i - 5]
+
+    def _ma_up(ma_arr: list, i: int) -> bool:
+        return _ma_slope(ma_arr, i) > (ma_arr[i] * 0.003) if ma_arr[i] else False
+
+    def _ma_down(ma_arr: list, i: int) -> bool:
+        return _ma_slope(ma_arr, i) < -(ma_arr[i] * 0.003) if ma_arr[i] else False
+
+    # ── 趨勢環境判斷（最近 10 根 K 棒在均線上/下方比例）──────────
+    def _bull_env(ma_arr: list, i: int) -> bool:
+        """股價多數在均線上方且均線不下彎 → 多頭環境"""
+        if i < 10:
+            return False
+        above = sum(1 for k in range(i - 10, i + 1)
+                    if k < len(close_series) and k < len(ma_arr)
+                    and close_series[k] is not None and ma_arr[k] is not None
+                    and close_series[k] > ma_arr[k])
+        return above >= 7 and not _ma_down(ma_arr, i)
+
+    def _bear_env(ma_arr: list, i: int) -> bool:
+        """股價多數在均線下方且均線不上彎 → 空頭環境"""
+        if i < 10:
+            return False
+        below = sum(1 for k in range(i - 10, i + 1)
+                    if k < len(close_series) and k < len(ma_arr)
+                    and close_series[k] is not None and ma_arr[k] is not None
+                    and close_series[k] < ma_arr[k])
+        return below >= 7 and not _ma_up(ma_arr, i)
 
     # ──────────────────────────────────────────────────────────
-    # 訊號一 & 二：價格上破 / 下破均線
-    # 對每條均線（MA5 / MA20 / MA60）個別偵測
+    # 訊號① & ②：價格上破 / 下破均線（加入趨勢先決條件）
     # ──────────────────────────────────────────────────────────
     for ma_key in ('ma5', 'ma20', 'ma60'):
         ma_arr = ma_series_dict.get(ma_key)
-        if not ma_arr or len(ma_arr) < 3:
+        if not ma_arr or len(ma_arr) < 15:
             continue
 
-        # 對齊長度（取兩者較短者的末端）
-        n = min(lookback, len(close_series), len(ma_arr))
-        prices = close_series[-n:]
-        mas    = ma_arr[-n:]
-
-        ma_label = ma_key.upper()  # 'MA5' / 'MA20' / 'MA60'
+        n        = min(lookback, len(close_series), len(ma_arr))
+        base_idx = len(close_series) - n   # 在完整序列中的起始位置
+        prices   = close_series[-n:]
+        mas      = ma_arr[-n:]
+        ma_label = ma_key.upper()
 
         for i in range(1, n):
+            abs_i      = base_idx + i      # 完整序列中的絕對索引
             prev_above = prices[i - 1] > mas[i - 1]
             curr_above = prices[i]     > mas[i]
-            neg_idx    = i - n          # 轉成負數索引
+            neg_idx    = i - n
 
-            # 價格上破（買點）
+            # ── 訊號① 價格上破（買點）──────────────────────────
             if not prev_above and curr_above:
-                vol_ok = _vol_confirm(neg_idx)
-                if vol_ok is True:
-                    strength = 'strong'
-                    vol_note = '放量突破，訊號可靠'
-                elif vol_ok is False:
-                    strength = 'weak'
-                    vol_note = '量能不足，注意假突破'
+                # 先決：縮量不標（可能是假突破）
+                vol_ok = _vol_confirm(abs_i)
+                if vol_ok is False:
+                    # 縮量上破：降為弱訊號，僅記錄不計分
+                    results.append({
+                        'signal_type':    'price_cross_up',
+                        'signal':         'buy',
+                        'name':           f'價格上破 {ma_label}',
+                        'description':    f'股價向上穿越 {ma_label}，但量能不足（縮量），注意假突破風險。',
+                        'ma_pair':        ('price', ma_key),
+                        'strength':       'weak',
+                        'volume_confirm': False,
+                        'index':          neg_idx,
+                    })
                 else:
-                    strength = 'moderate'
-                    vol_note = '量能資料不足，建議觀察'
+                    # 趨勢確認：前期應在均線下方才算有效突破（轉折意義）
+                    prev_below_cnt = sum(1 for k in range(max(0, i - 10), i)
+                                        if prices[k] < mas[k])
+                    ratio = prev_below_cnt / min(10, i)
+                    is_breakout = ratio >= 0.4   # 前期至少 40% 在均線下方
+                    ma_not_falling = not _ma_down(ma_arr, abs_i)
 
-                results.append({
-                    'signal_type':    'price_cross_up',
-                    'signal':         'buy',
-                    'name':           f'價格上破 {ma_label}',
-                    'description': (
-                        f'股價由 {ma_label} 下方向上穿越，短期動能轉強（{vol_note}）。'
-                        '進場前建議確認量能放大，避免假突破。'
-                    ),
-                    'ma_pair':        ('price', ma_key),
-                    'strength':       strength,
-                    'volume_confirm': vol_ok,
-                    'index':          neg_idx,
-                })
+                    if is_breakout and ma_not_falling:
+                        strength = 'strong' if vol_ok is True else 'moderate'
+                        vol_note = '放量突破，訊號可靠' if vol_ok is True else '量能資料不足'
+                        results.append({
+                            'signal_type':    'price_cross_up',
+                            'signal':         'buy',
+                            'name':           f'價格上破 {ma_label}',
+                            'description':    (
+                                f'股價由 {ma_label} 下方向上穿越（{vol_note}），'
+                                f'均線{'走平/上彎' if _ma_up(ma_arr, abs_i) else '走平'}，有效突破訊號。'
+                            ),
+                            'ma_pair':        ('price', ma_key),
+                            'strength':       strength,
+                            'volume_confirm': vol_ok,
+                            'index':          neg_idx,
+                        })
 
-            # 價格下破（賣點）
+            # ── 訊號② 價格下破（賣點）──────────────────────────
             elif prev_above and not curr_above:
-                vol_ok = _vol_confirm(neg_idx)
-                if vol_ok is True:
-                    strength = 'strong'
-                    vol_note = '伴隨放量，賣壓沉重'
-                elif vol_ok is False:
-                    strength = 'weak'
-                    vol_note = '量能未放大，可能只是測試支撐'
-                else:
-                    strength = 'moderate'
-                    vol_note = '量能資料不足，建議觀察'
+                vol_ok = _vol_confirm(abs_i)
+                # 先決：均線需不上彎（上升趨勢中的短暫回測不算賣點）
+                ma_not_rising = not _ma_up(ma_arr, abs_i)
 
-                results.append({
-                    'signal_type':    'price_cross_down',
-                    'signal':         'sell',
-                    'name':           f'價格下破 {ma_label}',
-                    'description': (
-                        f'股價由 {ma_label} 上方向下跌破，短期支撐失守（{vol_note}）。'
-                        '若量能持續放大，跌勢可能延續。'
-                    ),
-                    'ma_pair':        ('price', ma_key),
-                    'strength':       strength,
-                    'volume_confirm': vol_ok,
-                    'index':          neg_idx,
-                })
+                prev_above_cnt = sum(1 for k in range(max(0, i - 10), i)
+                                     if prices[k] > mas[k])
+                ratio = prev_above_cnt / min(10, i)
+                meaningful = ratio >= 0.4  # 前期至少 40% 在均線上方
+
+                if ma_not_rising and meaningful:
+                    if vol_ok is True:
+                        strength = 'strong'
+                        vol_note = '伴隨放量，賣壓沉重'
+                    elif vol_ok is False:
+                        strength = 'weak'
+                        vol_note = '量能未放大，可能只是測試支撐'
+                    else:
+                        strength = 'moderate'
+                        vol_note = '量能資料不足'
+                    results.append({
+                        'signal_type':    'price_cross_down',
+                        'signal':         'sell',
+                        'name':           f'價格下破 {ma_label}',
+                        'description':    (
+                            f'股價由 {ma_label} 上方向下跌破（{vol_note}），'
+                            '短期支撐失守。若量能持續放大跌勢可能延續。'
+                        ),
+                        'ma_pair':        ('price', ma_key),
+                        'strength':       strength,
+                        'volume_confirm': vol_ok,
+                        'index':          neg_idx,
+                    })
 
     # ──────────────────────────────────────────────────────────
-    # 訊號三 & 四：均線交叉（黃金交叉 / 死亡交叉）
+    # 訊號③ & ④：均線交叉（黃金交叉 / 死亡交叉）
     # 組合：MA5×MA20、MA5×MA60、MA20×MA60
     # ──────────────────────────────────────────────────────────
     ma_cross_pairs = [
-        ('ma5',  'ma20', '短期×中期', 'moderate'),   # MA5 穿越 MA20
-        ('ma5',  'ma60', '短期×長期', 'strong'),      # MA5 穿越 MA60（較少見，較重要）
-        ('ma20', 'ma60', '中期×長期', 'strong'),      # MA20 穿越 MA60（最重要）
+        ('ma5',  'ma20', '短期×中期', 'moderate'),
+        ('ma5',  'ma60', '短期×長期', 'strong'),
+        ('ma20', 'ma60', '中期×長期', 'strong'),
     ]
 
     for short_key, long_key, pair_label, base_strength in ma_cross_pairs:
         short_arr = ma_series_dict.get(short_key)
         long_arr  = ma_series_dict.get(long_key)
-        if not short_arr or not long_arr or len(short_arr) < 3 or len(long_arr) < 3:
+        if not short_arr or not long_arr or len(short_arr) < 15 or len(long_arr) < 15:
             continue
 
-        n = min(lookback, len(short_arr), len(long_arr))
+        n     = min(lookback, len(short_arr), len(long_arr))
         s_mas = short_arr[-n:]
         l_mas = long_arr[-n:]
-
         short_label = short_key.upper()
         long_label  = long_key.upper()
 
         for i in range(1, n):
-            prev_short_above = s_mas[i - 1] > l_mas[i - 1]
-            curr_short_above = s_mas[i]     > l_mas[i]
-            neg_idx = i - n
+            prev_s_above = s_mas[i - 1] > l_mas[i - 1]
+            curr_s_above = s_mas[i]     > l_mas[i]
+            neg_idx      = i - n
 
-            # 黃金交叉（買點）：短均線由下往上穿越長均線
-            if not prev_short_above and curr_short_above:
+            # 黃金交叉（買點）
+            if not prev_s_above and curr_s_above:
+                # 同時確認：長均線不下彎（否則只是空頭反彈交叉，意義低）
+                abs_i   = len(long_arr) - n + i
+                l_up    = _ma_up(long_arr, min(abs_i, len(long_arr) - 1))
+                l_flat  = not _ma_down(long_arr, min(abs_i, len(long_arr) - 1))
+                strength = base_strength if (l_up or l_flat) else 'weak'
+                note     = '長均線走平/上彎，訊號較可靠' if (l_up or l_flat) else '長均線仍下彎，此交叉為弱訊號'
                 results.append({
                     'signal_type':    'golden_cross',
                     'signal':         'buy',
                     'name':           f'黃金交叉（{short_label}×{long_label}）',
                     'description': (
-                        f'{short_label} 由下往上穿越 {long_label}（{pair_label}），'
-                        '趨勢由空轉多，訊號較穩定。注意：均線為落後指標，'
-                        '行情通常已先走一段，進場需衡量追高風險。'
+                        f'{short_label} 由下往上穿越 {long_label}（{pair_label}），{note}。'
+                        '均線為落後指標，行情通常已先走一段，進場需衡量追高風險。'
                     ),
                     'ma_pair':        (short_key, long_key),
-                    'strength':       base_strength,
-                    'volume_confirm': None,   # 均線交叉不依賴單日量能
+                    'strength':       strength,
+                    'volume_confirm': None,
                     'index':          neg_idx,
+                    'note':           note,
                 })
 
-            # 死亡交叉（賣點）：短均線由上往下穿越長均線
-            elif prev_short_above and not curr_short_above:
+            # 死亡交叉（賣點）
+            elif prev_s_above and not curr_s_above:
+                abs_i   = len(long_arr) - n + i
+                l_down  = _ma_down(long_arr, min(abs_i, len(long_arr) - 1))
+                l_flat  = not _ma_up(long_arr, min(abs_i, len(long_arr) - 1))
+                strength = base_strength if (l_down or l_flat) else 'weak'
+                note     = '長均線走平/下彎，趨勢確認轉空' if (l_down or l_flat) else '長均線仍上彎，此交叉為弱訊號'
                 results.append({
                     'signal_type':    'death_cross',
                     'signal':         'sell',
                     'name':           f'死亡交叉（{short_label}×{long_label}）',
                     'description': (
-                        f'{short_label} 由上往下穿越 {long_label}（{pair_label}），'
-                        '趨勢由多轉空，訊號較穩定。適合用於確認趨勢反轉，'
-                        '而非搶短線，持股者應考慮減碼或出場。'
+                        f'{short_label} 由上往下穿越 {long_label}（{pair_label}），{note}。'
+                        '適合確認趨勢反轉，持股者應考慮減碼或出場。'
                     ),
                     'ma_pair':        (short_key, long_key),
-                    'strength':       base_strength,
+                    'strength':       strength,
                     'volume_confirm': None,
                     'index':          neg_idx,
+                    'note':           note,
                 })
 
     # ── 去重：同 signal_type + ma_pair 只保留最新一筆 ──────────
@@ -482,7 +638,6 @@ def calc_ma_signals(
             seen.add(key)
             unique.append(r)
 
-    # 按時間排序（最新在後）
     unique.sort(key=lambda x: x['index'], reverse=False)
     return unique
 
@@ -743,6 +898,7 @@ def analyze_ma(
     close_series: list[float],
     ind: dict,
     ma_series_dict: Optional[dict] = None,
+    volume_series: list[float] | None = None,
 ) -> dict:
     """
     一次性輸出所有均線分析結果。
@@ -788,9 +944,11 @@ def analyze_ma(
     granville_60 = []
     if ma_series_dict and close_series:
         if ma_series_dict.get('ma20'):
-            granville_20 = calc_granville_signals(close_series, ma_series_dict['ma20'], ma_period=20)
+            granville_20 = calc_granville_signals(close_series, ma_series_dict['ma20'],
+                                                  ma_period=20, volume_series=volume_series)
         if ma_series_dict.get('ma60'):
-            granville_60 = calc_granville_signals(close_series, ma_series_dict['ma60'], ma_period=60)
+            granville_60 = calc_granville_signals(close_series, ma_series_dict['ma60'],
+                                                  ma_period=60, volume_series=volume_series)
 
     # 四種均線買賣訊號
     ma_signals = []
@@ -840,6 +998,7 @@ def enhanced_calc_trend(
     ind: dict,
     ohlcv: list[dict] | None = None,
     ma_series_dict: dict | None = None,
+    volume_series: list[float] | None = None,
 ) -> dict:
     """
     強化版趨勢判斷，整合：
@@ -905,6 +1064,8 @@ def enhanced_calc_trend(
 
     # ── 新增：強化分析 ────────────────────────────────────────
     close_series = ([r['close'] for r in ohlcv] if ohlcv else [close])
+    if not volume_series and ohlcv:
+        volume_series = [r.get('volume') for r in ohlcv]
 
     # 均線排列
     ma_array = classify_ma_array(close, ind)
@@ -915,9 +1076,12 @@ def enhanced_calc_trend(
 
     # 葛蘭碧（需要均線序列）
     granville_signals = []
-    if ma_series_dict and close_series and len(close_series) > 5:
+    if ma_series_dict and close_series and len(close_series) > 10:
         if ma_series_dict.get('ma20'):
-            granville_signals = calc_granville_signals(close_series, ma_series_dict['ma20'], ma_period=20)
+            granville_signals = calc_granville_signals(
+                close_series, ma_series_dict['ma20'],
+                ma_period=20, volume_series=volume_series,
+            )
 
     # 死亡/黃金交叉預測
     cross_5_20  = estimate_cross_days(close_series, 5,  20) if len(close_series) >= 40 else {}

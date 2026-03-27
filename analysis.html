@@ -3863,93 +3863,277 @@ const GRANVILLE_LABELS = {
   8: { short:'⑧賣', full:'⑧空頭賣出', color:'#fca5a5', bg:'rgba(252,165,165,0.18)', type:'sell' },
 };
 
-// ── 計算葛蘭碧八大法則訊號（完整實作，每次發生都標示）────────────
-function calcGranvilleOnSeries(closes, ma2arr) {
+// ── 計算葛蘭碧八大法則訊號（嚴謹版：先決條件過濾 + 量價佐證）────
+function calcGranvilleOnSeries(closes, ma2arr, volumes) {
   /*
-    依葛蘭碧八大法則原文：
-    ①買：MA由降轉平或向上，股價從下方向上穿越MA（黃金突破）
-    ②買：股價在MA上方，回測接近MA但未跌破，再度上揚
-    ③買：股價在MA下方且負乖離過大（超賣），技術性反彈
-    ④買：股價跌破MA但MA仍向上（末跌），可能再趨回MA
+   ══ 實務標記原則 ══
+   不是「字面符合就標」，而是同時滿足以下先決條件才標：
 
-    ⑤賣：MA由升轉平或向下，股價從上方向下穿越MA（死亡突破）
-    ⑥賣：股價在MA上方且正乖離過大（超買），逢高出脫
-    ⑦賣：股價在MA下方，反彈接近MA但未突破又回落
-    ⑧賣：股價在MA下方，短暫突破MA後馬上回落（假突破）
+   先決條件 A：確認趨勢
+     - 上升趨勢（適合找買點 1~3）：MA 斜率向上，且最近 10 根有 60%+ 在 MA 上方
+     - 下降趨勢（適合找賣點 5~7）：MA 斜率向下，且最近 10 根有 60%+ 在 MA 下方
+     - 買點 4 / 賣點 8 屬逆勢，門檻更高
+
+   先決條件 B：量價配合
+     - 突破型（①⑤）：放量突破才算有效（量 > 近 10 日均量 1.3x）
+     - 乖離型（③⑥）：達到「極端」乖離門檻，而非剛過普通門檻
+     - 回測型（②⑦）：前段趨勢清楚，回測位置精確
+
+   先決條件 C：每段趨勢只選最關鍵的 1~2 個點
+     - 同一法則在 10 根 K 棒內不重複標記
   */
   const signals = [];
   const n = Math.min(closes.length, ma2arr.length);
-  if (n < 5) return signals;
+  const hasVol = volumes && volumes.length >= n;
+  if (n < 15) return signals;  // 至少需要 15 根才能判斷趨勢
 
-  // MA20 斜率：用5日前做比較避免雜訊
-  const maSlope = i => {
-    const lookback = Math.min(i, 5);
-    if (lookback < 2) return 0;
-    return ma2arr[i] - ma2arr[i - lookback];
+  // ── 均線斜率（5日）──────────────────────────────────────────
+  const maSlope5 = i => {
+    if (i < 5) return 0;
+    return ma2arr[i] - ma2arr[i - 5];
+  };
+  const maTrendUp   = i => maSlope5(i) > (ma2arr[i] * 0.002);    // 斜率 > 0.2%（正向）
+  const maTrendDown = i => maSlope5(i) < -(ma2arr[i] * 0.005);   // 斜率 < -0.5%（明顯下彎）
+  const maFlat      = i => {
+    const slope = maSlope5(i);
+    if (Math.abs(slope) < (ma2arr[i] * 0.005)) return true;       // 絕對斜率 < 0.5%
+    // 斜率快速收斂（下彎已大幅縮小）視為趨於走平
+    if (i >= 8 && slope < 0) {
+      const prevSlope = ma2arr[i-3] - (ma2arr[i-8] ?? ma2arr[i-3]);
+      if (Math.abs(slope) < Math.abs(prevSlope) * 0.7) return true;
+    }
+    return false;
   };
 
-  // 最近N日 MA 斜率趨勢
-  const maTrendUp   = i => maSlope(i) > 0;
-  const maTrendDown = i => maSlope(i) < 0;
-  const maFlat      = i => Math.abs(maSlope(i)) < (ma2arr[i] * 0.002); // 0.2% 視為走平
+  // ── 趨勢環境判斷（最近 10 根 K 棒）────────────────────────────
+  const isBullTrend = i => {
+    if (i < 10) return false;
+    const start = i - 10;
+    let above = 0;
+    for (let k = start; k <= i; k++) {
+      if (closes[k] != null && ma2arr[k] != null && closes[k] > ma2arr[k]) above++;
+    }
+    return above >= 7 && (maTrendUp(i) || maFlat(i));  // 7/10 根在上方且斜率不明顯下彎
+  };
+  const isBearTrend = i => {
+    if (i < 10) return false;
+    const start = i - 10;
+    let below = 0;
+    for (let k = start; k <= i; k++) {
+      if (closes[k] != null && ma2arr[k] != null && closes[k] < ma2arr[k]) below++;
+    }
+    return below >= 7 && (maTrendDown(i) || maFlat(i));
+  };
 
-  for (let i = 3; i < n; i++) {
+  // ── 量能計算（近 10 日均量）──────────────────────────────────
+  const avgVol10 = i => {
+    if (!hasVol || i < 10) return null;
+    let sum = 0, cnt = 0;
+    for (let k = i - 10; k < i; k++) {
+      if (volumes[k] != null && volumes[k] > 0) { sum += volumes[k]; cnt++; }
+    }
+    return cnt > 0 ? sum / cnt : null;
+  };
+  const isVolBoom   = i => {  // 放量：> 均量 1.3x
+    if (!hasVol) return null;
+    const avg = avgVol10(i);
+    return avg != null ? volumes[i] >= avg * 1.3 : null;
+  };
+  const isVolShrink = i => {  // 縮量：< 均量 0.7x
+    if (!hasVol) return null;
+    const avg = avgVol10(i);
+    return avg != null ? volumes[i] <= avg * 0.7 : null;
+  };
+
+  // ── 同法則去重（10 根冷卻）──────────────────────────────────
+  const lastSigIdx = {};  // rule -> last idx
+  const canMark = (rule, i) => {
+    if (!lastSigIdx[rule]) return true;
+    return (i - lastSigIdx[rule]) >= 10;
+  };
+  const markSig = (rule, i) => { lastSigIdx[rule] = i; };
+
+  // ── 乖離率極端門檻（高於普通門檻 1.5x 才算「極端」）──────────
+  const EXTREME_BIAS_BUY  = -10.5;  // MA20 對應 -7% × 1.5 = -10.5%
+  const EXTREME_BIAS_SELL =  12.0;  // MA20 對應 +8% × 1.5 = 12.0%
+  const NORMAL_BIAS_BUY   =  -7.0;
+  const NORMAL_BIAS_SELL  =   8.0;
+
+  for (let i = 10; i < n; i++) {
     const p  = closes[i],   m  = ma2arr[i];
     const p1 = closes[i-1], m1 = ma2arr[i-1];
     const p2 = closes[i-2], m2 = ma2arr[i-2];
     if (!m || !p || !m1 || !p1) continue;
 
-    const bias      = (p - m) / m * 100;          // 當根乖離率
-    const crossUp   = p1 <= m1 && p > m;           // 本根向上穿越MA
-    const crossDown = p1 >= m1 && p < m;           // 本根向下穿越MA
+    const bias      = (p - m) / m * 100;
+    const crossUp   = p1 <= m1 && p > m;
+    const crossDown = p1 >= m1 && p < m;
     const aboveNow  = p > m;
     const belowNow  = p < m;
+    const bull      = isBullTrend(i);
+    const bear      = isBearTrend(i);
+    const volBoom   = isVolBoom(i);
+    const volShrink = isVolShrink(i);
 
-    // 前幾根是否整體在MA下方回測過（用於②）
-    const prevDipNearMA = p2 > m2 && p1 >= m1 * 0.995 && p1 <= m1 * 1.02;
+    let rule = 0, strength = 'moderate', note = '';
 
-    let rule = 0;
-
-    if (crossUp && (maTrendUp(i) || maFlat(i))) {
-      // ①買：MA走平或向上，股價向上穿越MA
-      rule = 1;
-    } else if (aboveNow && !crossUp && prevDipNearMA && p > p1) {
-      // ②買：股價在MA上方，前一根回測接近MA，本根再度上揚
-      rule = 2;
-    } else if (belowNow && bias < -5) {
-      // ③買：股價在MA下方且負乖離 >5%（超賣）
-      rule = 3;
-    } else if (crossDown && maTrendUp(i)) {
-      // ④買：股價向下穿越MA，但MA仍向上（末跌買進）
-      rule = 4;
-    } else if (crossDown && (maTrendDown(i) || maFlat(i))) {
-      // ⑤賣：MA走平或向下，股價向下穿越MA
-      rule = 5;
-    } else if (aboveNow && bias > 5) {
-      // ⑥賣：股價在MA上方且正乖離 >5%（超買）
-      rule = 6;
-    } else if (belowNow && !crossDown && p2 < m2 && p1 >= m1 * 0.97 && p1 <= m1 * 1.005 && p < p1) {
-      // ⑦賣：股價在MA下方，反彈接近MA後再度下跌（未突破MA）
-      rule = 7;
-    } else if (crossUp && maTrendDown(i) && p < m * 1.015) {
-      // ⑧賣：MA向下，股價短暫突破MA但幅度極小（假突破，馬上回落可能）
-      // 保守條件：MA向下且突破幅度 <1.5%
-      rule = 8;
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ① 起漲買進：均線走平/上彎 + 股價放量上穿
+    //    嚴格條件：趨勢轉折初期（前10根多數低於均線）+ 放量
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (crossUp && (maTrendUp(i) || maFlat(i)) && canMark(1, i)) {
+      // 計算前 10 根低於均線的比例（轉折前多數應在均線下方）
+      let prevBelow = 0;
+      for (let k = Math.max(0, i-10); k < i; k++) {
+        if (closes[k] != null && ma2arr[k] != null && closes[k] < ma2arr[k]) prevBelow++;
+      }
+      const prevBelowRatio = prevBelow / Math.min(10, i);
+      // 先決：前期有足夠的「在均線下方」歷史，或是打完整理區的突破
+      if (prevBelowRatio >= 0.5 || (!bull)) {
+        if (volBoom === true) {
+          strength = 'strong';
+          note = '放量突破，訊號可靠';
+          rule = 1;
+        } else if (volBoom === false) {
+          // 縮量突破不標，可能是假突破
+          strength = 'weak';
+          note = '縮量突破，注意假突破風險，暫不標記';
+          // rule = 0; 不標
+        } else {
+          // 量能資料不足，仍標但降強度
+          strength = 'moderate';
+          note = '量能資料不足';
+          rule = 1;
+        }
+      }
     }
 
-    if (rule > 0) signals.push({ idx: i, rule });
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ② 續漲加碼：上升趨勢中，回測均線不破再揚
+    //    嚴格條件：確認多頭環境 + 回測位置精確（乖離 <2%）+ 不重複
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (bull && !crossUp && aboveNow && canMark(2, i)) {
+      const nearMA    = Math.abs(bias) < 2.0;   // 距均線 <2%（精確回測）
+      const dipPrev   = p1 >= m1 * 0.995 && p1 <= m1 * 1.015;  // 前根貼近均線
+      const bouncBack = p > p1 && p > p2;        // 本根明確反彈
+      if (nearMA && dipPrev && bouncBack) {
+        strength = 'moderate';
+        note = '多頭回測支撐';
+        rule = 2;
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ③ 超賣反彈：負乖離達「極端」門檻 + 有其他超賣佐證
+    //    嚴格條件：乖離 < -10.5%（極端），且出現止跌 K 線（下影線或收紅）
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (belowNow && bias < EXTREME_BIAS_BUY && canMark(3, i)) {
+      // 止跌佐證：本根收盤高於開盤（收紅）或下影線明顯（低點遠低於收盤）
+      // 若無 OHLC 資料（只有收盤），改用「本根收盤 > 前根收盤」
+      const bouncing = p > p1;
+      if (bouncing) {
+        strength = bias < EXTREME_BIAS_BUY * 1.3 ? 'strong' : 'moderate';
+        note = `極端超賣（乖離 ${bias.toFixed(1)}%），技術性反彈`;
+        rule = 3;
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ④ 末跌買進：逆勢高風險，僅在「極度超賣 + 均線仍強上彎」才標
+    //    嚴格條件：maTrendUp 且 bias < -8%（比③寬鬆但有趨勢保護）
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (crossDown && maTrendUp(i) && canMark(4, i)) {
+      // 均線仍強勢上彎（斜率大），且乖離不算太大才標（太大就等③）
+      const strongUpSlope = maSlope5(i) > (ma2arr[i] * 0.008);  // 斜率 > 0.8%
+      if (strongUpSlope && bias > -8) {
+        strength = 'weak';   // 末跌永遠是弱訊號
+        note = '均線強勢上彎，末跌買進（逆勢，小部位）';
+        rule = 4;
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ⑤ 趨勢轉空賣出：均線走平/下彎 + 股價放量跌破 + 跌破前低
+    //    嚴格條件：前段完整上升波 + 放量 + 最好同時跌破前小波低點
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (crossDown && (maTrendDown(i) || maFlat(i)) && canMark(5, i)) {
+      // 前段至少有部分在均線上方（才算完整的轉折）
+      let prevAbove = 0;
+      for (let k = Math.max(0, i-10); k < i; k++) {
+        if (closes[k] != null && ma2arr[k] != null && closes[k] > ma2arr[k]) prevAbove++;
+      }
+      const prevAboveRatio = prevAbove / Math.min(10, i);
+      if (prevAboveRatio >= 0.5 || (!bear)) {
+        if (volBoom === true) {
+          strength = 'strong';
+          note = '放量跌破，賣壓沉重';
+          rule = 5;
+        } else if (volBoom === false) {
+          // 縮量跌破降格為弱訊號，仍標但告知
+          strength = 'weak';
+          note = '縮量跌破，可能只是洗盤，觀察守穩';
+          rule = 5;
+        } else {
+          strength = 'moderate';
+          note = '量能資料不足';
+          rule = 5;
+        }
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ⑥ 超買回吐：正乖離達「極端」門檻 + 價量背離
+    //    嚴格條件：乖離 > +12% + 量縮（價量背離）或出現長上影/高檔K線
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (aboveNow && bias > EXTREME_BIAS_SELL && canMark(6, i)) {
+      // 價量背離：收盤比前根高但量縮（或量不到均量1.0x）
+      const priceMakesNewHigh = p > p1;
+      const volumeDivergence  = volShrink === true;
+      // 不需要強制量縮，但有量縮則升格為 strong
+      if (priceMakesNewHigh || !priceMakesNewHigh) {  // 已過極端門檻就標
+        strength = (bias > EXTREME_BIAS_SELL * 1.2 || volumeDivergence) ? 'strong' : 'moderate';
+        note = `極端超買（乖離 ${bias.toFixed(1)}%）${volumeDivergence ? '，量縮背離' : ''}`;
+        rule = 6;
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ⑦ 反彈賣出：空頭環境中，股價反彈接近均線後再跌
+    //    嚴格條件：確認空頭環境 + 反彈縮量 + 未有效突破
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (bear && belowNow && !crossDown && canMark(7, i)) {
+      const nearMA    = bias > -4.0;              // 接近均線（在均線下方 4% 以內）
+      const wasBounce = p2 < m2 && p1 > p2;       // 前兩根有反彈動作
+      const nowFall   = p < p1;                    // 本根回落
+      if (nearMA && wasBounce && nowFall) {
+        // 縮量反彈更好（誘多特徵），放量則降格
+        strength = (volShrink === true) ? 'strong' : 'moderate';
+        note = `空頭反彈失敗${volShrink === true ? '（縮量誘多）' : ''}`;
+        rule = 7;
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ⑧ 空頭賣出：均線下彎中，股價遠高於下降均線
+    //    嚴格條件：乖離 > +8%（普通門檻即可，因是逆勢高估） + 量縮背離 or 高檔K
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (aboveNow && maTrendDown(i) && bias > NORMAL_BIAS_SELL && canMark(8, i)) {
+      // 高於下降均線才有意義，且需要有「回頭」的跡象
+      const pricePeaking = p < p1 || volShrink === true;  // 開始回落或縮量
+      if (pricePeaking) {
+        strength = 'weak';  // 空頭賣出永遠是弱訊號（逆向操作）
+        note = `均線下彎中股價超漲（乖離 ${bias.toFixed(1)}%），逢高減碼`;
+        rule = 8;
+      }
+    }
+
+    if (rule > 0) {
+      markSig(rule, i);
+      signals.push({ idx: i, rule, strength, note });
+    }
   }
 
-  // 去重：同一根K線只保留最高優先的訊號（買入優先於賣出中取最小rule）
-  // 但不同位置可以重複出現相同規則
-  const byIdx = {};
-  signals.forEach(s => {
-    if (!byIdx[s.idx]) byIdx[s.idx] = s;
-    // 同一根K線：買入訊號(1-4) > 賣出訊號(5-8)，數字小者優先
-    else if (s.rule < byIdx[s.idx].rule) byIdx[s.idx] = s;
-  });
-
-  return Object.values(byIdx).sort((a, b) => a.idx - b.idx);
+  return signals.sort((a, b) => a.idx - b.idx);
 }
 
 // ── 計算MA交叉（買入/賣出訊號）────────────────────────────────
@@ -8050,20 +8234,26 @@ function renderGranvilleTab(data) {
   if (sigList) {
     const allGran = [...gran20.map(g => ({...g, maLabel:'MA20'})), ...gran60.map(g => ({...g, maLabel:'MA60'}))];
     if (allGran.length === 0) {
-      sigList.innerHTML = '<div class="text-slate-400 text-sm">目前無觸發葛蘭碧訊號。</div>';
+      sigList.innerHTML = '<div class="text-slate-400 text-sm">目前無觸發葛蘭碧訊號（嚴謹條件過濾後）。</div>';
     } else {
+      const strMap  = { strong:'強訊號', moderate:'中等', weak:'弱（逆勢）' };
+      const strColr = { strong:'#10b981', moderate:'#94a3b8', weak:'#f59e0b' };
       sigList.innerHTML = allGran.map(g => {
-        const isBuy = g.signal === 'buy';
-        const col   = isBuy ? '#10b981' : '#ef4444';
-        const bg    = isBuy ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
-        const strength = g.strength === 'strong' ? '強' : '中';
+        const isBuy  = g.signal === 'buy';
+        const col    = isBuy ? '#10b981' : '#ef4444';
+        const bg     = isBuy ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
+        const strTxt = strMap[g.strength]  || '中等';
+        const strCol = strColr[g.strength] || '#94a3b8';
+        const noteTxt = g.note ? `<div class="text-xs text-slate-400 mt-1">📋 ${g.note}</div>` : '';
         return `<div class="rounded-xl p-4 border" style="background:${bg};border-color:${col}60">
-          <div class="flex items-center gap-3 mb-2">
+          <div class="flex flex-wrap items-center gap-2 mb-2">
             <span class="font-black text-sm" style="color:${col}">${g.name || ''}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full" style="background:${bg};color:${col};border:1px solid ${col}60">${g.maLabel} · ${strength}訊號</span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:${bg};color:${col};border:1px solid ${col}60">${g.maLabel}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="color:${strCol};background:${strCol}18;border:1px solid ${strCol}50">${strTxt}</span>
             ${isBuy ? '<span class="signal-tag signal-buy">買入</span>' : '<span class="signal-tag signal-sell">賣出</span>'}
           </div>
-          <div class="text-slate-300 text-sm">${g.desc || ''}</div>
+          <div class="text-slate-300 text-sm">${g.description || g.desc || ''}</div>
+          ${noteTxt}
           ${g.bias != null ? `<div class="text-xs text-slate-400 mt-1">乖離率：<span class="mono font-bold ${g.bias>0?'up':'down'}">${g.bias>0?'+':''}${g.bias.toFixed(2)}%</span></div>` : ''}
         </div>`;
       }).join('');
@@ -8203,6 +8393,7 @@ function _drawGranCandleChart(data, period) {
   const opens  = sl(ch.opens);
   const highs  = sl(ch.highs);
   const lows   = sl(ch.lows);
+  const vols   = sl(ch.volumes);  // 成交量（傳入葛蘭碧函數做量能驗證）
   const ma1    = sl(ch.ma1);
   const ma2    = sl(ch.ma2);   // MA20
   const ma3    = sl(ch.ma3);   // MA60
@@ -8213,17 +8404,24 @@ function _drawGranCandleChart(data, period) {
     return (i > 0 && closes[i-1] != null) ? closes[i-1] : closes[i];
   });
 
-  // ── 葛蘭碧訊號計算 ──────────────────────────────────────
-  const granSigs = calcGranvilleOnSeries(closes, ma2);
+  // ── 葛蘭碧訊號計算（嚴謹版：帶入量能資料）─────────────────
+  const granSigs = calcGranvilleOnSeries(closes, ma2, vols);
   const granRuleData = {};
-  for (let r = 1; r <= 8; r++) granRuleData[r] = new Array(n).fill(null);
+  const granRuleStrength = {};  // 各 rule 每根 K 棒的強度
+  for (let r = 1; r <= 8; r++) {
+    granRuleData[r]     = new Array(n).fill(null);
+    granRuleStrength[r] = new Array(n).fill(null);
+  }
   granSigs.forEach(sig => {
     const gl = GRANVILLE_LABELS[sig.rule];
     if (!gl) return;
+    const offset_y = sig.strength === 'strong' ? 0.988 : sig.strength === 'weak' ? 0.994 : 0.990;
+    const offset_y_sell = sig.strength === 'strong' ? 1.012 : sig.strength === 'weak' ? 1.006 : 1.010;
     if (gl.type === 'buy')
-      granRuleData[sig.rule][sig.idx] = lows[sig.idx]  != null ? lows[sig.idx]  * 0.990 : closes[sig.idx] * 0.990;
+      granRuleData[sig.rule][sig.idx] = lows[sig.idx]  != null ? lows[sig.idx]  * offset_y  : closes[sig.idx] * offset_y;
     else
-      granRuleData[sig.rule][sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * 1.010 : closes[sig.idx] * 1.010;
+      granRuleData[sig.rule][sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * offset_y_sell : closes[sig.idx] * offset_y_sell;
+    granRuleStrength[sig.rule][sig.idx] = sig.strength || 'moderate';
   });
 
   // ── 黃金交叉 / 死亡交叉計算 ─────────────────────────────
@@ -8330,21 +8528,32 @@ function _drawGranCandleChart(data, period) {
           const isBuy = gl.type === 'buy';
           ds.data.forEach((val, i) => {
             if (val == null) return;
-            const x = xScale.getPixelForValue(i);
-            const y = yScale.getPixelForValue(val);
+            const str     = granRuleStrength[rule]?.[i] || 'moderate';
+            const x       = xScale.getPixelForValue(i);
+            const y       = yScale.getPixelForValue(val);
             const offsetY = isBuy ? -22 : 22;
-            const lbl2 = circleNums[rule - 1];
+            const lbl2    = circleNums[rule - 1];
+            // 弱訊號縮小字體並降透明度
+            const alpha   = str === 'weak' ? 0.55 : 1.0;
+            const fontSize = str === 'strong' ? 12 : str === 'weak' ? 9 : 10;
             c2d.save();
-            c2d.font = 'bold 11px "Noto Sans TC", sans-serif';
+            c2d.globalAlpha = alpha;
+            c2d.font = `bold ${fontSize}px "Noto Sans TC", sans-serif`;
             c2d.textAlign = 'center'; c2d.textBaseline = 'middle';
             const tw = c2d.measureText(lbl2).width + 4;
-            c2d.fillStyle = 'rgba(15,23,42,0.72)';
+            c2d.fillStyle = 'rgba(15,23,42,0.75)';
             c2d.beginPath();
             if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
             else c2d.rect(x - tw/2, y + offsetY - 7, tw, 14);
             c2d.fill();
             c2d.fillStyle = gl.color;
             c2d.fillText(lbl2, x, y + offsetY);
+            // 強訊號補個小底框強化視覺
+            if (str === 'strong') {
+              c2d.strokeStyle = gl.color;
+              c2d.lineWidth = 0.8;
+              c2d.strokeRect(x - tw/2, y + offsetY - 7, tw, 14);
+            }
             c2d.restore();
           });
           return;
@@ -8409,20 +8618,33 @@ function _drawGranCandleChart(data, period) {
         // 死亡交叉 MA20×MA60（✕ 深紅大三角）
         { type:'line', label:'死亡交叉(20×60)', data:crossDeath2060,  borderColor:'rgba(0,0,0,0)', borderWidth:0, pointRadius:crossDeath2060.map(v=>v!=null?17:0),  pointHoverRadius:crossDeath2060.map(v=>v!=null?19:0),  pointStyle:'triangle', pointRotation:180, pointBackgroundColor:'#be123c', pointBorderColor:'#fff', pointBorderWidth:2,   fill:false, spanGaps:false, showLine:false, order:0 },
         // 葛蘭碧八種訊號（line type, showLine:false，用 pointStyle triangle 標記）
+        // 標記大小依強度：strong=13, moderate=10, weak=7
         ...Object.keys(granRuleData).map(r => {
           const rn = parseInt(r);
           const gl = GRANVILLE_LABELS[rn];
+          const radii = granRuleData[rn].map((v, i) => {
+            if (v == null) return 0;
+            const str = granRuleStrength[rn][i];
+            return str === 'strong' ? 13 : str === 'weak' ? 7 : 10;
+          });
+          const hoverRadii = radii.map(r2 => r2 > 0 ? r2 + 2 : 0);
+          // 弱訊號（縮量）降低不透明度
+          const colors = granRuleData[rn].map((v, i) => {
+            if (v == null) return 'rgba(0,0,0,0)';
+            const str = granRuleStrength[rn][i];
+            return str === 'weak' ? gl.color + '99' : gl.color;
+          });
           return {
             type: 'line',
             label: gl.short,
             data: granRuleData[rn],
             borderColor: 'rgba(0,0,0,0)',
             borderWidth: 0,
-            pointRadius:      granRuleData[rn].map(v => v != null ? 11 : 0),
-            pointHoverRadius: granRuleData[rn].map(v => v != null ? 13 : 0),
+            pointRadius:      radii,
+            pointHoverRadius: hoverRadii,
             pointStyle: 'triangle',
             pointRotation: gl.type === 'buy' ? 0 : 180,
-            pointBackgroundColor: gl.color,
+            pointBackgroundColor: colors,
             pointBorderColor: '#fff',
             pointBorderWidth: 1.5,
             fill: false,
@@ -8467,7 +8689,16 @@ function _drawGranCandleChart(data, period) {
               const glEntry = Object.values(GRANVILLE_LABELS).find(g => g.short === lbl);
               if (glEntry) {
                 if (ctx.parsed?.y == null) return null;
-                return [`${glEntry.full}`, `${glEntry.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`];
+                const sig = granSigs.find(s => s.idx === i && GRANVILLE_LABELS[s.rule]?.short === lbl);
+                const strMap = { strong:'強訊號 ✓', moderate:'中等訊號', weak:'弱訊號（謹慎）' };
+                const strText = sig ? (strMap[sig.strength] || '') : '';
+                const noteText = sig?.note || '';
+                return [
+                  `${glEntry.full}`,
+                  `${glEntry.type==='buy'?'📈 買入訊號':'📉 賣出訊號'}`,
+                  strText,
+                  noteText,
+                ].filter(Boolean);
               }
               // 黃金交叉 / 死亡交叉 tooltip
               if (lbl.startsWith('黃金交叉')) {
