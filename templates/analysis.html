@@ -3904,13 +3904,24 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
     return avg != null ? volumes[i] <= avg * 0.7 : null;
   };
 
-  // ── 同法則去重（10 根冷卻）──────────────────────────────────
-  const lastSigIdx = {};  // rule -> last idx
-  const canMark = (rule, i) => {
-    if (!lastSigIdx[rule]) return true;
-    return (i - lastSigIdx[rule]) >= 10;
+  // ── 同法則去重（需插入其他法則才可重複出現）──────────────────
+  // 規則：同一號碼（如③）連續出現時，只標第一個；
+  //       要等到出現「不同號碼」之後，同號碼才可再次出現。
+  // 例：③→③→④→③  第二個③被跳過，④之後的③可再出現。
+  const markedRulesSet = new Set();  // 上一次「號碼切換後」已出現過的號碼
+  let   lastMarkedRule  = 0;         // 上一個被標記的訊號號碼（0 = 尚無）
+
+  const canMark = (rule, _i) => {
+    return !markedRulesSet.has(rule);  // 若此號碼在本周期已出現過，則不允許
   };
-  const markSig = (rule, i) => { lastSigIdx[rule] = i; };
+  const markSig = (rule, _i) => {
+    if (lastMarkedRule !== rule) {
+      // 號碼切換：清空集合，開始新周期（允許舊號碼再次出現）
+      markedRulesSet.clear();
+      lastMarkedRule = rule;
+    }
+    markedRulesSet.add(rule);
+  };
 
   // ── 乖離率極端門檻（高於普通門檻 1.5x 才算「極端」）──────────
   const EXTREME_BIAS_BUY  = -10.5;  // MA20 對應 -7% × 1.5 = -10.5%
