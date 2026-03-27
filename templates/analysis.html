@@ -3905,22 +3905,21 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
   };
 
   // ── 同法則去重（需插入其他法則才可重複出現）──────────────────
-  // 規則：同一號碼（如③）連續出現時，只標第一個；
+  // 規則：同一號碼（如⑦）連續出現時，只標第一個；
   //       要等到出現「不同號碼」之後，同號碼才可再次出現。
-  // 例：③→③→④→③  第二個③被跳過，④之後的③可再出現。
-  const markedRulesSet = new Set();  // 上一次「號碼切換後」已出現過的號碼
-  let   lastMarkedRule  = 0;         // 上一個被標記的訊號號碼（0 = 尚無）
+  // 例：⑦→⑦→⑤→⑦  第二個⑦被擋，⑤出現後⑦可再標一次。
+  //
+  // blockedRules：目前被封鎖（不可再標）的號碼集合。
+  // 每當有任一號碼被標記，先 clear()（解封所有舊封鎖），
+  // 再把自己 add()（封鎖下一次同號碼）。
+  const blockedRules = new Set();
 
   const canMark = (rule, _i) => {
-    return !markedRulesSet.has(rule);  // 若此號碼在本周期已出現過，則不允許
+    return !blockedRules.has(rule);
   };
   const markSig = (rule, _i) => {
-    if (lastMarkedRule !== rule) {
-      // 號碼切換：清空集合，開始新周期（允許舊號碼再次出現）
-      markedRulesSet.clear();
-      lastMarkedRule = rule;
-    }
-    markedRulesSet.add(rule);
+    blockedRules.clear();   // 解封所有其他號碼
+    blockedRules.add(rule); // 封鎖自己（連續同號只標一次）
   };
 
   // ── 乖離率極端門檻（高於普通門檻 1.5x 才算「極端」）──────────
@@ -8447,14 +8446,14 @@ function _drawGranCandleChart(data, period) {
         { label:'MA20', data:ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA60
         { label:'MA60', data:ma3, borderColor:'#a78bfa', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // ★ 黃金交叉：單一大金色五角星（加大）
+        // ★ 黃金交叉：實心金色五角星（Canvas Image，確保顯示為實心金星）
         {
           label:'黃金交叉', data:crossGolden,
           borderColor:'rgba(0,0,0,0)', borderWidth:0,
-          pointRadius:      crossGolden.map(v => v != null ? 24 : 0),
-          pointHoverRadius: crossGolden.map(v => v != null ? 26 : 0),
-          pointStyle: 'star', pointRotation: 0,
-          pointBackgroundColor: '#fbbf24', pointBorderColor: '#fbbf24', pointBorderWidth: 0,
+          pointRadius:      crossGolden.map(v => v != null ? 14 : 0),
+          pointHoverRadius: crossGolden.map(v => v != null ? 16 : 0),
+          pointStyle: crossGolden.map(v => v != null ? getGoldenStar() : 'circle'),
+          pointBackgroundColor: 'rgba(0,0,0,0)', pointBorderColor: 'rgba(0,0,0,0)', pointBorderWidth: 0,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
         // ✕ 死亡交叉：實心紅色 X（適中大小）
