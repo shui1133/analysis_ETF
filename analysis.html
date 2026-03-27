@@ -1447,8 +1447,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <i class="fa-solid fa-circle-info mr-1"></i>
           <span style="color:#10b981">▲</span> 買入訊號（①②④⑥）&nbsp;&nbsp;
           <span style="color:#ef4444">▼</span> 賣出訊號（③⑤⑦⑧）&nbsp;&nbsp;
-          <span style="color:#fbbf24">★</span> 黃金交叉（短穿長↑，優先顯示）&nbsp;&nbsp;
-          <span style="color:#f43f5e">✕</span> 死亡交叉（短穿長↓，優先顯示）
+          <span style="color:#fbbf24">★</span> 黃金交叉（MA5↑穿 MA120↑）&nbsp;&nbsp;
+          <span style="color:#f43f5e">✕</span> 死亡交叉（MA5↓穿 MA120↓）
         </div>
       </div>
 
@@ -1475,7 +1475,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(52,211,153,0.08);border-color:#34d399aa">
               <div class="font-black mb-1" style="color:#34d399">② 續漲加碼</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 上方，<strong class="text-white">回測接近 MA20 後反彈（未跌破）</strong>。多頭趨勢中逢回檔加碼的最佳時機。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 上方，<strong class="text-white">連續下跌 ≥3 根（未跌破 MA20）後，再連續上漲 ≥3 根</strong>。多頭回測後加碼時機。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(110,231,183,0.08);border-color:#6ee7b7aa">
               <div class="font-black mb-1" style="color:#6ee7b7">④ 末跌買進</div>
@@ -1499,15 +1499,15 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(249,115,22,0.08);border-color:#f97316aa">
               <div class="font-black mb-1" style="color:#f97316">③ 初步賣出</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 上方且<strong class="text-white">正乖離過大</strong>，短期漲幅偏高，可逢高出脫部分持股。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 上方且正乖離偏高，<strong class="text-white">達到波段峰值後連續下跌 ≥3 根</strong>，可逢高出脫部分持股。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(251,146,60,0.08);border-color:#fb923caa">
               <div class="font-black mb-1" style="color:#fb923c">⑦ 續跌賣出</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 下方，反彈<strong class="text-white">接近 MA20 後再度下跌（未能突破）</strong>。空頭趨勢中的減碼時機。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 下方，反彈接近 MA20 後，<strong class="text-white">連續下跌 ≥3 根</strong>（確認被拉回），空頭續跌訊號。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(252,165,165,0.08);border-color:#fca5a5aa">
               <div class="font-black mb-1" style="color:#fca5a5">⑧ 空頭賣出</div>
-              <div class="text-slate-300 text-xs leading-relaxed">空頭環境中，股價<strong class="text-white">短暫突破 MA20 後立即回落</strong>（假突破誘多）。再度跌回均線下方的賣出時機。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">空頭環境（MA20 下彎）中，股價在均線上方正乖離偏高，<strong class="text-white">連續下跌 ≥3 根</strong>，逢高出脫。</div>
             </div>
           </div>
         </div>
@@ -3940,27 +3940,42 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ② 續漲加碼：多頭環境中，股價回測 MA20 不破再上揚
-    //    加碼好時機，確認多頭仍有效
+    // ② 續漲加碼：多頭環境中，股價在均線上方
+    //    連續下跌 ≥3 根後，未跌破 MA20，再連續上漲 ≥3 根
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    if (!rule && bull && !crossUp && aboveNow && canMark(2)) {
-      const nearMA    = Math.abs(bias) < 2.5;
-      const dipPrev   = p1 >= m1 * 0.993 && p1 <= m1 * 1.015;
-      const bouncBack = p > p1 && p2 != null && p > p2;
-      if (nearMA && dipPrev && bouncBack) {
-        rule = 2; strength = 'moderate'; note = '多頭回測 MA20 支撐，加碼時機';
+    if (!rule && bull && aboveNow && canMark(2)) {
+      // 找本根前方「已上漲 ≥3 根」的起點
+      let upCount = 0;
+      for (let k = i; k > i - 6 && k > 0; k--) {
+        if (closes[k] > closes[k-1]) upCount++; else break;
+      }
+      if (upCount >= 3) {
+        // 上漲前是否有連續下跌 ≥3 根（均未跌破 MA20）
+        const dipStart = i - upCount;
+        let downCount = 0;
+        for (let k = dipStart; k > dipStart - 6 && k > 0; k--) {
+          if (closes[k] < closes[k-1] && closes[k] > ma2arr[k]) downCount++;
+          else break;
+        }
+        if (downCount >= 3) {
+          rule = 2; strength = 'moderate'; note = `多頭回測 MA20 後反彈（跌${downCount}根→漲${upCount}根）`;
+        }
       }
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ③ 初步賣出：股價在 MA20 上方，正乖離過大（超買）
-    //    股價短期漲幅已高，可逢高出脫部分持股
+    // ③ 初步賣出：股價在 MA20 上方，達到波段高點後連跌 ≥3 根
+    //    判斷：找到近期峰值（前5根最高），本根已連跌 ≥3 根
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!rule && aboveNow && bias >= BIAS_SELL_MODERATE && canMark(3)) {
-      const pricePeaking = p < p1 || volShrink === true;  // 開始回落或量縮
-      if (pricePeaking || bias >= BIAS_SELL_STRONG) {
-        strength = (bias >= BIAS_SELL_STRONG || (volShrink === true)) ? 'strong' : 'moderate';
-        note = `正乖離 ${bias.toFixed(1)}%，短期漲幅偏高${volShrink === true ? '，量縮背離' : ''}`;
+      // 連跌 ≥3 根
+      let downCount = 0;
+      for (let k = i; k > i - 5 && k > 0; k--) {
+        if (closes[k] < closes[k-1]) downCount++; else break;
+      }
+      if (downCount >= 3) {
+        strength = (bias >= BIAS_SELL_STRONG) ? 'strong' : 'moderate';
+        note = `正乖離 ${bias.toFixed(1)}%，峰值後連跌 ${downCount} 根，逢高出脫`;
         rule = 3;
       }
     }
@@ -3998,7 +4013,7 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
     //    股價偏離均線過遠，有技術性回升可能
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!rule && belowNow && bias <= BIAS_BUY_MODERATE && canMark(6)) {
-      const bouncing = p > p1;  // 本根止跌反彈
+      const bouncing = p > p1;
       if (bouncing || bias <= BIAS_BUY_STRONG) {
         strength = (bias <= BIAS_BUY_STRONG && bouncing) ? 'strong' : 'moderate';
         note = `負乖離 ${bias.toFixed(1)}%，偏離均線過大${bouncing ? '，止跌反彈' : '，持續觀察'}`;
@@ -4008,29 +4023,38 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // ⑦ 續跌賣出：空頭環境中，股價在 MA20 下方
-    //    反彈接近 MA20 後再度下跌（未能突破，減碼時機）
+    //    反彈接近 MA20 後，連跌 ≥3 根才觸發（確認真的被拉回）
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!rule && bear && belowNow && !crossDown && canMark(7)) {
-      const nearMA    = bias > -5.0;
-      const wasBounce = p2 != null && m2 != null && p2 < m2 && p1 > p2;
-      const nowFall   = p < p1;
-      if (nearMA && wasBounce && nowFall) {
+      const nearMA = bias > -6.0;   // 離均線不太遠（均線附近）
+      // 連跌 ≥3 根
+      let downCount = 0;
+      for (let k = i; k > i - 5 && k > 0; k--) {
+        if (closes[k] < closes[k-1]) downCount++; else break;
+      }
+      // 連跌前曾有反彈（第 downCount+1 根前是上漲的）
+      const bounceIdx = i - downCount;
+      const wasBounce = bounceIdx > 0 && bounceIdx < n
+        && closes[bounceIdx] > closes[bounceIdx - 1];  // 反彈起點那根是上漲的
+      if (nearMA && downCount >= 3 && wasBounce) {
         strength = (volShrink === true) ? 'strong' : 'moderate';
-        note = `空頭反彈至均線附近失敗${volShrink === true ? '（縮量誘多）' : ''}，續跌訊號`;
+        note = `空頭反彈至均線附近後連跌 ${downCount} 根，續跌確認${volShrink === true ? '（縮量誘多）' : ''}`;
         rule = 7;
       }
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ⑧ 空頭賣出：空頭環境中，股價短暫突破 MA20 後立即回落
-    //    假突破誘多，再度跌回均線下方
+    // ⑧ 空頭賣出：空頭環境中（MA20 下彎），股價在均線上方
+    //    正乖離偏高且達到局部峰值後連跌 ≥3 根
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    if (!rule && maTrendDown(i) && canMark(8)) {
-      // 本根在均線上方但幅度小（假突破），或前根突破後本根跌回
-      const falseBreakUp  = aboveNow && bias > 0 && bias < 4 && p < p1;  // 突破但馬上回落
-      const pullBackBelow = crossDown && p2 != null && closes[i-2] > ma2arr[i-2] && bias > -3; // 前前根在上方，現在跌回
-      if (falseBreakUp || pullBackBelow) {
-        rule = 8; strength = 'weak'; note = '均線下彎中假突破，空頭賣出（逆向，謹慎）';
+    if (!rule && maTrendDown(i) && aboveNow && bias >= BIAS_SELL_MODERATE && canMark(8)) {
+      let downCount = 0;
+      for (let k = i; k > i - 5 && k > 0; k--) {
+        if (closes[k] < closes[k-1]) downCount++; else break;
+      }
+      if (downCount >= 3) {
+        rule = 8; strength = 'weak';
+        note = `空頭格局中正乖離 ${bias.toFixed(1)}%，峰值後連跌 ${downCount} 根，逢高出脫`;
       }
     }
 
@@ -8226,27 +8250,23 @@ function _drawGranCandleChart(data, period) {
   const offset = ch.dates.length - n;
   const sl = arr => arr.slice(offset);
 
-  const dates  = sl(ch.dates);
   const labels = sl(ch.labels || ch.dates);
   const closes = sl(ch.closes);
-  const opens  = sl(ch.opens);
-  const highs  = sl(ch.highs);
-  const lows   = sl(ch.lows);
-  const vols   = sl(ch.volumes);  // 成交量（傳入葛蘭碧函數做量能驗證）
-  const ma1    = sl(ch.ma1);
-  const ma2    = sl(ch.ma2);   // MA20
-  const ma3    = sl(ch.ma3);   // MA60
+  const vols   = sl(ch.volumes);
 
-  // effectiveOpens fallback
-  const effectiveOpens = opens.map((o, i) => {
-    if (o != null && !isNaN(o)) return o;
-    return (i > 0 && closes[i-1] != null) ? closes[i-1] : closes[i];
-  });
+  // ── 獨立計算葛蘭碧圖所需均線（不受 PERIOD_CFG 限制）──────────
+  // 從完整序列計算，再取末段 n 根
+  const fullCloses = ch.closes;   // 完整收盤價（未裁切）
+  const _sma = p => smaSimple(fullCloses, p).slice(-n);
 
-  // ── 葛蘭碧訊號計算（嚴謹版：帶入量能資料）─────────────────
-  const granSigs = calcGranvilleOnSeries(closes, ma2, vols);
-  const granRuleData = {};
-  const granRuleStrength = {};  // 各 rule 每根 K 棒的強度
+  const ma5   = _sma(5);    // 短天期均線（黃金/死亡交叉用）
+  const ma20  = _sma(20);   // 葛蘭碧主控均線
+  const ma120 = _sma(120);  // 長天期均線（黃金/死亡交叉用）
+
+  // ── 葛蘭碧訊號計算（以 MA20 為主控均線）────────────────────
+  const granSigs = calcGranvilleOnSeries(closes, ma20, vols);
+  const granRuleData     = {};
+  const granRuleStrength = {};
   for (let r = 1; r <= 8; r++) {
     granRuleData[r]     = new Array(n).fill(null);
     granRuleStrength[r] = new Array(n).fill(null);
@@ -8254,9 +8274,8 @@ function _drawGranCandleChart(data, period) {
   granSigs.forEach(sig => {
     const gl = GRANVILLE_LABELS[sig.rule];
     if (!gl) return;
-    // 統一 Y 軸偏移，讓三角形貼近均線：買點標在收盤價下方，賣點標在收盤價上方
-    const offset_y      = 0.990;   // 統一偏移（買點，往下）
-    const offset_y_sell = 1.010;   // 統一偏移（賣點，往上）
+    const offset_y      = 0.990;
+    const offset_y_sell = 1.010;
     if (gl.type === 'buy')
       granRuleData[sig.rule][sig.idx] = closes[sig.idx] * offset_y;
     else
@@ -8264,34 +8283,29 @@ function _drawGranCandleChart(data, period) {
     granRuleStrength[sig.rule][sig.idx] = sig.strength || 'moderate';
   });
 
-  // ── 黃金交叉 / 死亡交叉計算 ─────────────────────────────
-  // 合併 MA5×MA20 與 MA20×MA60 為單一黃金/死亡陣列
-  // 同一 index 若兩組都有，取位置較外側的那個（買點取低、賣點取高）
-  const crossGolden = new Array(n).fill(null);  // 合併黃金交叉
-  const crossDeath  = new Array(n).fill(null);  // 合併死亡交叉
+  // ── 黃金交叉 / 死亡交叉（MA5 穿越 MA120，且兩者同向）────────
+  const crossGolden = new Array(n).fill(null);
+  const crossDeath  = new Array(n).fill(null);
 
-  for (let i = 1; i < n; i++) {
-    const s1 = ma1[i - 1], s2 = ma1[i];   // MA5
-    const m1 = ma2[i - 1], m2 = ma2[i];   // MA20
-    const l1 = ma3[i - 1], l2 = ma3[i];   // MA60
+  for (let i = 2; i < n; i++) {
+    const s1 = ma5[i-1],   s2 = ma5[i];    // MA5
+    const l1 = ma120[i-1], l2 = ma120[i];  // MA120
+    if (s1 == null || s2 == null || l1 == null || l2 == null) continue;
 
-    // MA5×MA20：標記在交叉點（兩條均線的均值）
-    if (s1 != null && s2 != null && m1 != null && m2 != null) {
-      const crossY = (s2 + m2) / 2;   // 交叉瞬間兩線均值 = 交叉點
-      if (s1 <= m1 && s2 > m2) {
-        crossGolden[i] = crossGolden[i] == null ? crossY : Math.min(crossGolden[i], crossY);
-      } else if (s1 >= m1 && s2 < m2) {
-        crossDeath[i]  = crossDeath[i]  == null ? crossY : Math.max(crossDeath[i],  crossY);
-      }
+    const crossY = (s2 + l2) / 2;  // 標在交叉點
+
+    // 黃金交叉：MA5 由下往上穿越 MA120，且兩者均上升
+    const ma5Up  = s2 > ma5[i-2];   // MA5 上升
+    const ma120Up = l2 > l1;         // MA120 上升
+    if (s1 <= l1 && s2 > l2 && ma5Up && ma120Up) {
+      crossGolden[i] = crossY;
     }
-    // MA20×MA60：標記在交叉點
-    if (m1 != null && m2 != null && l1 != null && l2 != null) {
-      const crossY = (m2 + l2) / 2;
-      if (m1 <= l1 && m2 > l2) {
-        crossGolden[i] = crossGolden[i] == null ? crossY : Math.min(crossGolden[i], crossY);
-      } else if (m1 >= l1 && m2 < l2) {
-        crossDeath[i]  = crossDeath[i]  == null ? crossY : Math.max(crossDeath[i],  crossY);
-      }
+
+    // 死亡交叉：MA5 由上往下穿越 MA120，且兩者均下降
+    const ma5Down   = s2 < ma5[i-2];
+    const ma120Down = l2 < l1;
+    if (s1 >= l1 && s2 < l2 && ma5Down && ma120Down) {
+      crossDeath[i] = crossY;
     }
   }
 
@@ -8305,7 +8319,7 @@ function _drawGranCandleChart(data, period) {
     }
   }
 
-  // ── Y 軸範圍（基於收盤價，留適當空間給訊號標記）──
+  // ── Y 軸範圍 ──────────────────────────────────────────────
   const validCloses = closes.filter(v => v != null && isFinite(v));
   const yMin = validCloses.length ? Math.min(...validCloses) * 0.88 : undefined;
   const yMax = validCloses.length ? Math.max(...validCloses) * 1.12 : undefined;
@@ -8389,12 +8403,29 @@ function _drawGranCandleChart(data, period) {
           spanGaps: false,
           order: 99,
         },
-        // MA5
-        { label:'MA5',  data:ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // MA20
-        { label:'MA20', data:ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // MA60
-        { label:'MA60', data:ma3, borderColor:'#a78bfa', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // 股價趨勢線（收盤價，細白線）
+        {
+          label: '股價',
+          data: closes,
+          borderColor: 'rgba(226,232,240,0.75)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.2,
+          spanGaps: false,
+          order: 2,
+        },
+        // MA20（葛蘭碧主控均線，藍色）
+        { label:'MA20', data:ma20, borderColor:'#3b82f6', borderWidth:2.5, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // MA5（交叉用，橙黃色，細）
+        { label:'MA5',  data:ma5,  borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // MA120（交叉用，紫色，細虛線）
+        {
+          label:'MA120', data:ma120,
+          borderColor:'#a78bfa', borderWidth:1.5,
+          borderDash: [6, 3],
+          pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1,
+        },
         // ★ 黃金交叉：實心金色五角星（Canvas Image，確保顯示為實心金星）
         {
           label:'黃金交叉', data:crossGolden,
@@ -8461,6 +8492,7 @@ function _drawGranCandleChart(data, period) {
                   if (gl) return { text: ds.label, fillStyle: gl.color, strokeStyle: gl.color, lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
                   if (ds.label === '黃金交叉') return { text:'★ 黃金交叉', fillStyle:'#fbbf24', strokeStyle:'#fbbf24', lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#fbbf24' };
                   if (ds.label === '死亡交叉') return { text:'✕ 死亡交叉', fillStyle:'#f43f5e', strokeStyle:'#f43f5e', lineWidth:0, datasetIndex:idx, hidden:false, fontColor:'#f43f5e' };
+                  if (ds.label === '股價') return { text:'股價', fillStyle:'transparent', strokeStyle:'rgba(226,232,240,0.75)', lineWidth:2, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
                   return { text: ds.label, fillStyle:'transparent', strokeStyle: ds.borderColor||'#94a3b8', lineWidth:2, datasetIndex:idx, hidden:false, fontColor:'#cbd5e1' };
                 });
             }

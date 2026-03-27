@@ -272,20 +272,44 @@ def calc_granville_signals(
                     note = '量能資料不足'
                 # vol_boom=False → 縮量假突破，不標
 
-        # ② 續漲加碼：多頭環境，精確回測均線後反彈
-        if not rule and bull and not cross_up and above and can_mark(2, i):
-            near_ma    = abs(bias) < 2.5
-            dip_prev   = m1 and p1 and (m1 * 0.993 <= p1 <= m1 * 1.015)
-            bounce_back= p > p1 and p2 is not None and p > p2
-            if near_ma and dip_prev and bounce_back:
-                rule, strength, note = 2, 'moderate', '多頭回測 MA20 支撐，加碼時機'
+        # ② 續漲加碼：多頭環境，股價在均線上方
+        #    連續下跌 ≥3 根（未跌破 MA20）後，再連續上漲 ≥3 根
+        if not rule and bull and above and can_mark(2, i):
+            # 計算本根往前連漲根數
+            up_count = 0
+            for k in range(i, max(i - 7, 0), -1):
+                if prices[k] is not None and prices[k - 1] is not None and prices[k] > prices[k - 1]:
+                    up_count += 1
+                else:
+                    break
+            if up_count >= 3:
+                # 連漲前是否有連跌 ≥3 根（均未跌破均線）
+                dip_start = i - up_count
+                down_count = 0
+                for k in range(dip_start, max(dip_start - 7, 0), -1):
+                    if (prices[k] is not None and prices[k - 1] is not None
+                            and mas[k] is not None
+                            and prices[k] < prices[k - 1]
+                            and prices[k] > mas[k]):
+                        down_count += 1
+                    else:
+                        break
+                if down_count >= 3:
+                    rule, strength = 2, 'moderate'
+                    note = f'多頭回測 MA20 後反彈（跌{down_count}根→漲{up_count}根）'
 
-        # ③ 初步賣出：股價在均線上方，正乖離過大（短期漲幅偏高）
+        # ③ 初步賣出：股價在均線上方，正乖離偏高
+        #    達到波段峰值後連跌 ≥3 根才觸發
         if not rule and above and bias >= BIAS_SELL_MODERATE and can_mark(3, i):
-            price_peaking = p < p1 or vol_shrink is True
-            if price_peaking or bias >= BIAS_SELL_STRONG:
-                strength = 'strong' if (bias >= BIAS_SELL_STRONG or vol_shrink is True) else 'moderate'
-                note = f'正乖離 {bias:.1f}%，短期漲幅偏高{"，量縮背離" if vol_shrink is True else ""}'
+            down_count = 0
+            for k in range(i, max(i - 6, 0), -1):
+                if prices[k] is not None and prices[k - 1] is not None and prices[k] < prices[k - 1]:
+                    down_count += 1
+                else:
+                    break
+            if down_count >= 3:
+                strength = 'strong' if bias >= BIAS_SELL_STRONG else 'moderate'
+                note = f'正乖離 {bias:.1f}%，峰值後連跌 {down_count} 根，逢高出脫'
                 rule = 3
 
         # ④ 末跌買進：逆勢，僅在均線強勢上彎時才標
@@ -319,35 +343,50 @@ def calc_granville_signals(
                 note = f'負乖離 {bias:.1f}%，偏離均線過大{"，止跌反彈" if bouncing else "，持續觀察"}'
                 rule = 6
 
-        # ⑦ 續跌賣出：空頭環境中，反彈接近均線後再度下跌
+        # ⑦ 續跌賣出：空頭環境中，反彈接近均線後連跌 ≥3 根才觸發
         if not rule and bear and below and not cross_dn and can_mark(7, i):
-            near_ma    = bias > -5.0
-            was_bounce = p2 is not None and m2 is not None and p2 < m2 and p1 > p2
-            now_fall   = p < p1
-            if near_ma and was_bounce and now_fall:
+            near_ma = bias > -6.0
+            # 計算連跌根數
+            down_count = 0
+            for k in range(i, max(i - 6, 0), -1):
+                if prices[k] is not None and prices[k - 1] is not None and prices[k] < prices[k - 1]:
+                    down_count += 1
+                else:
+                    break
+            # 連跌前曾有反彈
+            bounce_idx = i - down_count
+            was_bounce = (bounce_idx > 0 and bounce_idx < n
+                          and prices[bounce_idx] is not None and prices[bounce_idx - 1] is not None
+                          and prices[bounce_idx] > prices[bounce_idx - 1])
+            if near_ma and down_count >= 3 and was_bounce:
                 strength = 'strong' if vol_shrink is True else 'moderate'
-                note = f'空頭反彈至均線附近失敗{"（縮量誘多）" if vol_shrink is True else ""}，續跌訊號'
+                note = f'空頭反彈至均線附近後連跌 {down_count} 根，續跌確認{"（縮量誘多）" if vol_shrink is True else ""}'
                 rule = 7
 
-        # ⑧ 空頭賣出：空頭環境中，股價短暫突破均線後回落（假突破）
-        if not rule and ma_trend_down(i) and can_mark(8, i):
-            false_break_up  = above and 0 < bias < 4 and p < p1
-            pull_back_below = cross_dn and p2 is not None and mas[i-2] is not None and prices[i-2] > mas[i-2] and bias > -3
-            if false_break_up or pull_back_below:
+        # ⑧ 空頭賣出：空頭環境（均線下彎）中，股價在均線上方
+        #    正乖離偏高且連跌 ≥3 根才觸發
+        if not rule and ma_trend_down(i) and above and bias >= BIAS_SELL_MODERATE and can_mark(8, i):
+            down_count = 0
+            for k in range(i, max(i - 6, 0), -1):
+                if prices[k] is not None and prices[k - 1] is not None and prices[k] < prices[k - 1]:
+                    down_count += 1
+                else:
+                    break
+            if down_count >= 3:
                 rule, strength = 8, 'weak'
-                note = '均線下彎中假突破，空頭賣出（謹慎）'
+                note = f'空頭格局中正乖離 {bias:.1f}%，峰值後連跌 {down_count} 根，逢高出脫'
 
         if rule > 0:
             mark_sig(rule, i)
             _names = {
                 1: ('起漲買進', 'buy',  '均線走平/上彎，股價放量向上突破'),
-                2: ('續漲加碼', 'buy',  '多頭趨勢中，回測 MA20 支撐後反彈'),
-                3: ('初步賣出', 'sell', f'正乖離 {bias:.1f}%，股價偏離均線過高，短期漲幅已高'),
+                2: ('續漲加碼', 'buy',  '多頭環境中，連跌≥3根未破均線後再連漲≥3根'),
+                3: ('初步賣出', 'sell', f'正乖離 {bias:.1f}%，波段峰值後連跌≥3根，逢高出脫'),
                 4: ('末跌買進', 'buy',  '股價跌破均線，但 MA20 仍強勢上彎（逆勢小部位）'),
                 5: ('趨勢轉空', 'sell', '均線走平/下彎，股價向下跌破 MA20'),
                 6: ('反彈買進', 'buy',  f'負乖離 {bias:.1f}%，股價偏離均線過遠，可能技術性回升'),
-                7: ('續跌賣出', 'sell', '空頭趨勢中，反彈至 MA20 附近失敗再度下跌'),
-                8: ('空頭賣出', 'sell', '均線下彎中股價短暫突破後回落（假突破誘多）'),
+                7: ('續跌賣出', 'sell', '空頭趨勢中，反彈至均線附近後連跌≥3根確認'),
+                8: ('空頭賣出', 'sell', f'空頭環境，正乖離 {bias:.1f}%，峰值後連跌≥3根逢高出脫'),
             }
             name, signal, desc = _names[rule]
             results.append({
