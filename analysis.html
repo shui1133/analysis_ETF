@@ -8433,26 +8433,23 @@ function _drawGranCandleChart(data, period) {
     const s1 = ma1[i - 1], s2 = ma1[i];   // MA5
     const m1 = ma2[i - 1], m2 = ma2[i];   // MA20
     const l1 = ma3[i - 1], l2 = ma3[i];   // MA60
-    const baseY = closes[i] ?? 0;
 
-    // MA5×MA20
+    // MA5×MA20：標記在交叉點（兩條均線的均值）
     if (s1 != null && s2 != null && m1 != null && m2 != null) {
+      const crossY = (s2 + m2) / 2;   // 交叉瞬間兩線均值 = 交叉點
       if (s1 <= m1 && s2 > m2) {
-        const y = (lows[i] ?? baseY) * 0.974;
-        crossGolden[i] = crossGolden[i] == null ? y : Math.min(crossGolden[i], y);
+        crossGolden[i] = crossGolden[i] == null ? crossY : Math.min(crossGolden[i], crossY);
       } else if (s1 >= m1 && s2 < m2) {
-        const y = (highs[i] ?? baseY) * 1.026;
-        crossDeath[i]  = crossDeath[i]  == null ? y : Math.max(crossDeath[i],  y);
+        crossDeath[i]  = crossDeath[i]  == null ? crossY : Math.max(crossDeath[i],  crossY);
       }
     }
-    // MA20×MA60
+    // MA20×MA60：標記在交叉點
     if (m1 != null && m2 != null && l1 != null && l2 != null) {
+      const crossY = (m2 + l2) / 2;
       if (m1 <= l1 && m2 > l2) {
-        const y = (lows[i] ?? baseY) * 0.960;
-        crossGolden[i] = crossGolden[i] == null ? y : Math.min(crossGolden[i], y);
+        crossGolden[i] = crossGolden[i] == null ? crossY : Math.min(crossGolden[i], crossY);
       } else if (m1 >= l1 && m2 < l2) {
-        const y = (highs[i] ?? baseY) * 1.040;
-        crossDeath[i]  = crossDeath[i]  == null ? y : Math.max(crossDeath[i],  y);
+        crossDeath[i]  = crossDeath[i]  == null ? crossY : Math.max(crossDeath[i],  crossY);
       }
     }
   }
@@ -8520,30 +8517,7 @@ function _drawGranCandleChart(data, period) {
           });
           return;
         }
-        // 黃金交叉 / 死亡交叉標注（★ / ✕ 文字標在圖示旁）
-        const isGolden = ds.label === '黃金交叉';
-        const isDeath  = ds.label === '死亡交叉';
-        if (!isGolden && !isDeath) return;
-        const lbl2   = isGolden ? '★' : '✕';
-        const txtCol = isGolden ? '#fbbf24' : '#f43f5e';
-        ds.data.forEach((val, i) => {
-          if (val == null) return;
-          const x = xScale.getPixelForValue(i);
-          const y = yScale.getPixelForValue(val);
-          const offsetY = isGolden ? -28 : 28;
-          c2d.save();
-          c2d.font = 'bold 13px "Noto Sans TC", sans-serif';
-          c2d.textAlign = 'center'; c2d.textBaseline = 'middle';
-          const tw = c2d.measureText(lbl2).width + 6;
-          c2d.fillStyle = 'rgba(15,23,42,0.82)';
-          c2d.beginPath();
-          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - 8, tw, 16, 3);
-          else c2d.rect(x - tw/2, y + offsetY - 8, tw, 16);
-          c2d.fill();
-          c2d.fillStyle = txtCol;
-          c2d.fillText(lbl2, x, y + offsetY);
-          c2d.restore();
-        });
+        // 黃金交叉 / 死亡交叉：由 Chart.js pointStyle 直接渲染，不再用 Canvas 額外繪製
       });
     }
   };
@@ -8570,24 +8544,24 @@ function _drawGranCandleChart(data, period) {
         { label:'MA20', data:ma2, borderColor:'#3b82f6', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA60
         { label:'MA60', data:ma3, borderColor:'#a78bfa', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
-        // ★ 黃金交叉：單一大金色五角星
+        // ★ 黃金交叉：單一大金色五角星（加大）
         {
           label:'黃金交叉', data:crossGolden,
           borderColor:'rgba(0,0,0,0)', borderWidth:0,
-          pointRadius:      crossGolden.map(v => v != null ? 20 : 0),
-          pointHoverRadius: crossGolden.map(v => v != null ? 22 : 0),
+          pointRadius:      crossGolden.map(v => v != null ? 24 : 0),
+          pointHoverRadius: crossGolden.map(v => v != null ? 26 : 0),
           pointStyle: 'star', pointRotation: 0,
           pointBackgroundColor: '#fbbf24', pointBorderColor: '#fbbf24', pointBorderWidth: 0,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
-        // ✕ 死亡交叉：單一大紅色 X
+        // ✕ 死亡交叉：實心紅色 X（適中大小）
         {
           label:'死亡交叉', data:crossDeath,
           borderColor:'rgba(0,0,0,0)', borderWidth:0,
-          pointRadius:      crossDeath.map(v => v != null ? 20 : 0),
-          pointHoverRadius: crossDeath.map(v => v != null ? 22 : 0),
+          pointRadius:      crossDeath.map(v => v != null ? 14 : 0),
+          pointHoverRadius: crossDeath.map(v => v != null ? 16 : 0),
           pointStyle: 'crossRot', pointRotation: 0,
-          pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth: 3,
+          pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth: 4,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
         // 葛蘭碧八種訊號（showLine:false，用 pointStyle triangle 標記）
