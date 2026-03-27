@@ -8254,12 +8254,13 @@ function _drawGranCandleChart(data, period) {
   granSigs.forEach(sig => {
     const gl = GRANVILLE_LABELS[sig.rule];
     if (!gl) return;
-    const offset_y = sig.strength === 'strong' ? 0.988 : sig.strength === 'weak' ? 0.994 : 0.990;
-    const offset_y_sell = sig.strength === 'strong' ? 1.012 : sig.strength === 'weak' ? 1.006 : 1.010;
+    // 統一 Y 軸偏移，讓三角形貼近均線：買點標在收盤價下方，賣點標在收盤價上方
+    const offset_y      = 0.990;   // 統一偏移（買點，往下）
+    const offset_y_sell = 1.010;   // 統一偏移（賣點，往上）
     if (gl.type === 'buy')
-      granRuleData[sig.rule][sig.idx] = lows[sig.idx]  != null ? lows[sig.idx]  * offset_y  : closes[sig.idx] * offset_y;
+      granRuleData[sig.rule][sig.idx] = closes[sig.idx] * offset_y;
     else
-      granRuleData[sig.rule][sig.idx] = highs[sig.idx] != null ? highs[sig.idx] * offset_y_sell : closes[sig.idx] * offset_y_sell;
+      granRuleData[sig.rule][sig.idx] = closes[sig.idx] * offset_y_sell;
     granRuleStrength[sig.rule][sig.idx] = sig.strength || 'moderate';
   });
 
@@ -8316,48 +8317,58 @@ function _drawGranCandleChart(data, period) {
       const c2d    = chart.ctx;
       const xScale = chart.scales.x;
       const yScale = chart.scales.y;
-      const numMap = { '①買':1,'②買':2,'③買':3,'④買':4,'⑤賣':5,'⑥賣':6,'⑦賣':7,'⑧賣':8 };
       const circleNums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
+
+      // numMap：由 gl.short 取得規則號碼（動態對應，不受 short 字串變更影響）
+      const numMap = {};
+      Object.entries(GRANVILLE_LABELS).forEach(([rn, gl]) => { numMap[gl.short] = parseInt(rn); });
+
       chart.data.datasets.forEach((ds) => {
         const rule = numMap[ds.label];
-        // 葛蘭碧號碼標注
-        if (rule) {
-          const gl = GRANVILLE_LABELS[rule];
-          if (!gl) return;
-          const isBuy = gl.type === 'buy';
-          ds.data.forEach((val, i) => {
-            if (val == null) return;
-            const str     = granRuleStrength[rule]?.[i] || 'moderate';
-            const x       = xScale.getPixelForValue(i);
-            const y       = yScale.getPixelForValue(val);
-            const offsetY = isBuy ? -22 : 22;
-            const lbl2    = circleNums[rule - 1];
-            // 弱訊號縮小字體並降透明度
-            const alpha   = str === 'weak' ? 0.55 : 1.0;
-            const fontSize = str === 'strong' ? 12 : str === 'weak' ? 9 : 10;
-            c2d.save();
-            c2d.globalAlpha = alpha;
-            c2d.font = `bold ${fontSize}px "Noto Sans TC", sans-serif`;
-            c2d.textAlign = 'center'; c2d.textBaseline = 'middle';
-            const tw = c2d.measureText(lbl2).width + 4;
-            c2d.fillStyle = 'rgba(15,23,42,0.75)';
-            c2d.beginPath();
-            if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - 7, tw, 14, 3);
-            else c2d.rect(x - tw/2, y + offsetY - 7, tw, 14);
-            c2d.fill();
-            c2d.fillStyle = gl.color;
-            c2d.fillText(lbl2, x, y + offsetY);
-            // 強訊號補個小底框強化視覺
-            if (str === 'strong') {
-              c2d.strokeStyle = gl.color;
-              c2d.lineWidth = 0.8;
-              c2d.strokeRect(x - tw/2, y + offsetY - 7, tw, 14);
-            }
-            c2d.restore();
-          });
-          return;
-        }
-        // 黃金交叉 / 死亡交叉：由 Chart.js pointStyle 直接渲染，不再用 Canvas 額外繪製
+        if (!rule) return;   // 非葛蘭碧訊號 dataset（MA線、交叉等）跳過
+        const gl    = GRANVILLE_LABELS[rule];
+        if (!gl) return;
+        const isBuy = gl.type === 'buy';
+
+        ds.data.forEach((val, i) => {
+          if (val == null) return;
+          const x    = xScale.getPixelForValue(i);
+          const y    = yScale.getPixelForValue(val);
+          const lbl2 = circleNums[rule - 1];
+
+          // 數字標籤：統一字體大小 14px，置於三角形正上方（買）或正下方（賣）
+          const offsetY = isBuy ? -26 : 26;
+
+          c2d.save();
+          c2d.globalAlpha = 1.0;   // 統一不透明
+          c2d.font = 'bold 14px "Noto Sans TC", sans-serif';
+          c2d.textAlign = 'center';
+          c2d.textBaseline = 'middle';
+
+          // 計算文字框寬高
+          const tw = c2d.measureText(lbl2).width + 6;
+          const th = 16;
+
+          // 深色底框（確保在任何均線顏色上都清晰可見）
+          c2d.fillStyle = 'rgba(10,18,36,0.88)';
+          c2d.beginPath();
+          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - th/2, tw, th, 4);
+          else               c2d.rect(      x - tw/2, y + offsetY - th/2, tw, th);
+          c2d.fill();
+
+          // 彩色邊框（與三角形同色）
+          c2d.strokeStyle = gl.color;
+          c2d.lineWidth   = 1.2;
+          c2d.beginPath();
+          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - th/2, tw, th, 4);
+          else               c2d.rect(      x - tw/2, y + offsetY - th/2, tw, th);
+          c2d.stroke();
+
+          // 數字文字
+          c2d.fillStyle = gl.color;
+          c2d.fillText(lbl2, x, y + offsetY);
+          c2d.restore();
+        });
       });
     }
   };
@@ -8404,22 +8415,13 @@ function _drawGranCandleChart(data, period) {
           pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth: 4,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
-        // 葛蘭碧八種訊號（showLine:false，用 pointStyle triangle 標記）
-        // 標記大小依強度：strong=13, moderate=10, weak=7
+        // 葛蘭碧八種訊號（showLine:false，三角形大小統一 12px）
         ...Object.keys(granRuleData).map(r => {
           const rn = parseInt(r);
           const gl = GRANVILLE_LABELS[rn];
-          const radii = granRuleData[rn].map((v, i) => {
-            if (v == null) return 0;
-            const str = granRuleStrength[rn][i];
-            return str === 'strong' ? 13 : str === 'weak' ? 7 : 10;
-          });
-          const hoverRadii = radii.map(r2 => r2 > 0 ? r2 + 2 : 0);
-          const colors = granRuleData[rn].map((v, i) => {
-            if (v == null) return 'rgba(0,0,0,0)';
-            const str = granRuleStrength[rn][i];
-            return str === 'weak' ? gl.color + '99' : gl.color;
-          });
+          const radii      = granRuleData[rn].map(v => v != null ? 12 : 0);
+          const hoverRadii = granRuleData[rn].map(v => v != null ? 14 : 0);
+          const colors     = granRuleData[rn].map(v => v != null ? gl.color : 'rgba(0,0,0,0)');
           return {
             label: gl.short,
             data: granRuleData[rn],
@@ -8430,8 +8432,8 @@ function _drawGranCandleChart(data, period) {
             pointStyle: 'triangle',
             pointRotation: gl.type === 'buy' ? 0 : 180,
             pointBackgroundColor: colors,
-            pointBorderColor: '#fff',
-            pointBorderWidth: 1.5,
+            pointBorderColor: 'rgba(255,255,255,0.6)',
+            pointBorderWidth: 1,
             fill: false,
             spanGaps: false,
             showLine: false,
