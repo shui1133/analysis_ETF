@@ -1446,10 +1446,9 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         <div class="text-xs text-slate-500 mt-2">
           <i class="fa-solid fa-circle-info mr-1"></i>
           <span style="color:#10b981">▲</span> 買入訊號（①②③④）&nbsp;&nbsp;
-          <span style="color:#ef4444">▼</span> 賣出訊號（⑤⑥⑦⑧）&nbsp;&nbsp;
-          <span style="color:#fbbf24">★</span> 黃金交叉（短穿長↑）&nbsp;&nbsp;
-          <span style="color:#f43f5e">✕</span> 死亡交叉（短穿長↓）&nbsp;&nbsp;
-          訊號號碼對應葛蘭碧八大法則（①~④買入、⑤~⑧賣出）
+          <span style="color:#ef4444">▼</span> 賣出訊號（⑤⑥⑧）&nbsp;&nbsp;
+          <span style="color:#fbbf24">★</span> 黃金交叉（短穿長↑，優先顯示）&nbsp;&nbsp;
+          <span style="color:#f43f5e">✕</span> 死亡交叉（短穿長↓，優先顯示）
         </div>
       </div>
 
@@ -8438,10 +8437,8 @@ function _drawGranCandleChart(data, period) {
     // MA5×MA20
     if (s1 != null && s2 != null && m1 != null && m2 != null) {
       if (s1 <= m1 && s2 > m2) {
-        // 黃金交叉：標記在低點下方
         crossGolden520[i] = lows[i] != null ? lows[i] * 0.975 : closes[i] * 0.975;
       } else if (s1 >= m1 && s2 < m2) {
-        // 死亡交叉：標記在高點上方
         crossDeath520[i]  = highs[i] != null ? highs[i] * 1.025 : closes[i] * 1.025;
       }
     }
@@ -8455,60 +8452,23 @@ function _drawGranCandleChart(data, period) {
     }
   }
 
-  // ── Y 軸範圍（只基於 K 棒 high/low）──
-  const validLows  = lows.filter(v => v != null && isFinite(v));
-  const validHighs = highs.filter(v => v != null && isFinite(v));
-  const yMin = validLows.length  ? Math.min(...validLows)  * 0.90 : undefined;
-  const yMax = validHighs.length ? Math.max(...validHighs) * 1.10 : undefined;
-
-  // ── 自訂蠟燭 Plugin（動態 barW，支援縮放後自適應）──
-  const candlePlugin = {
-    id: 'granCandlePlugin',
-    afterDatasetsDraw(chart) {
-      const c2d   = chart.ctx;
-      const xAxis = chart.scales.x;
-      const yAxis = chart.scales.y;
-
-      const minIdx   = Math.max(0, Math.floor(xAxis.min ?? 0));
-      const maxIdx   = Math.min(labels.length - 1, Math.ceil(xAxis.max ?? labels.length - 1));
-      const visCount = Math.max(1, maxIdx - minIdx + 1);
-      const availW   = xAxis.width;
-      const barW     = Math.max(2, Math.min(32, (availW / visCount) * 0.70));
-      const halfW    = barW / 2;
-      const wickW    = Math.max(1, Math.min(2, barW * 0.12));
-
-      for (let i = 0; i < labels.length; i++) {
-        if (i < minIdx - 1 || i > maxIdx + 1) continue;
-        const o = effectiveOpens[i];
-        const c = closes[i];
-        const h = highs[i];
-        const l = lows[i];
-        if (o == null || c == null || isNaN(o) || isNaN(c)) continue;
-
-        const isUp    = c >= o;
-        const bodyClr = isUp ? '#ef4444' : '#16a34a';
-        const xPx    = xAxis.getPixelForValue(i);
-        const yOpen  = yAxis.getPixelForValue(o);
-        const yClose = yAxis.getPixelForValue(c);
-        const yHigh  = h != null ? yAxis.getPixelForValue(h) : Math.min(yOpen, yClose);
-        const yLow   = l != null ? yAxis.getPixelForValue(l) : Math.max(yOpen, yClose);
-        const bodyTop = Math.min(yOpen, yClose);
-        const bodyBot = Math.max(yOpen, yClose);
-        const bodyH   = Math.max(1.5, bodyBot - bodyTop);
-
-        c2d.save();
-        c2d.beginPath(); c2d.strokeStyle = bodyClr; c2d.lineWidth = wickW;
-        c2d.moveTo(xPx, bodyTop); c2d.lineTo(xPx, yHigh); c2d.stroke();
-        c2d.beginPath(); c2d.moveTo(xPx, bodyBot); c2d.lineTo(xPx, yLow); c2d.stroke();
-        c2d.fillStyle = bodyClr;
-        c2d.fillRect(xPx - halfW, bodyTop, barW, bodyH);
-        c2d.strokeStyle = isUp ? 'rgba(239,68,68,0.4)' : 'rgba(22,163,74,0.4)';
-        c2d.lineWidth = 0.5;
-        c2d.strokeRect(xPx - halfW, bodyTop, barW, bodyH);
-        c2d.restore();
+  // ── 衝突消除：同一 index 若有黃金/死亡交叉，葛蘭碧訊號讓位 ──
+  // 黃金/死亡交叉優先，清除該 index 上的所有葛蘭碧標記
+  for (let i = 0; i < n; i++) {
+    const hasCross = crossGolden520[i] != null || crossDeath520[i] != null
+                  || crossGolden2060[i] != null || crossDeath2060[i] != null;
+    if (hasCross) {
+      for (let r = 1; r <= 8; r++) {
+        granRuleData[r][i]     = null;
+        granRuleStrength[r][i] = null;
       }
     }
-  };
+  }
+
+  // ── Y 軸範圍（基於收盤價，留適當空間給訊號標記）──
+  const validCloses = closes.filter(v => v != null && isFinite(v));
+  const yMin = validCloses.length ? Math.min(...validCloses) * 0.88 : undefined;
+  const yMax = validCloses.length ? Math.max(...validCloses) * 1.12 : undefined;
 
   // ── 號碼標註 Plugin（category 軸用 dataIndex）──
   const granLabelPlugin = {
@@ -8592,16 +8552,18 @@ function _drawGranCandleChart(data, period) {
     data: {
       labels: labels,
       datasets: [
-        // 隱形 bar（提供 category 軸索引與 tooltip）
+        // 收盤價折線（提供 category 軸索引、tooltip 與價格參考線）
         {
+          type: 'line',
           label: 'OHLC',
           data: closes,
-          backgroundColor: 'rgba(0,0,0,0)',
-          borderColor:     'rgba(0,0,0,0)',
-          borderWidth: 0,
-          barPercentage: 0.001,
-          categoryPercentage: 0.001,
-          order: 99,
+          borderColor: 'rgba(148,163,184,0.5)',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.2,
+          spanGaps: false,
+          order: 2,
         },
         // MA5
         { type:'line', label:'MA5',  data:ma1, borderColor:'#f59e0b', borderWidth:2, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
@@ -8655,7 +8617,7 @@ function _drawGranCandleChart(data, period) {
         }),
       ]
     },
-    plugins: [candlePlugin, granLabelPlugin],
+    plugins: [granLabelPlugin],
     options: {
       responsive: true, maintainAspectRatio: false,
       animation: { duration: 250 },
@@ -8710,8 +8672,8 @@ function _drawGranCandleChart(data, period) {
                 return [`✕ ${lbl}`, '📉 訊號④ 賣點：短均線向下穿越長均線'];
               }
               if (lbl === 'OHLC') {
-                const dir = closes[i] >= effectiveOpens[i] ? '▲ 上漲' : '▼ 下跌';
-                return [`開:${effectiveOpens[i]?.toFixed(2)||'--'}`, `高:${highs[i]?.toFixed(2)||'--'}`, `低:${lows[i]?.toFixed(2)||'--'}`, `收:${closes[i]?.toFixed(2)||'--'}`, dir];
+                const val = ctx.parsed?.y;
+                return val != null ? `收盤：${val.toFixed(2)}` : null;
               }
               const val = ctx.parsed?.y;
               return val != null ? `${lbl}: ${val.toFixed(2)}` : null;
