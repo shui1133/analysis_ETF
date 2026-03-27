@@ -1450,6 +1450,15 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <span style="color:#fbbf24">★</span> 黃金交叉（MA5↑穿 MA120↑）&nbsp;&nbsp;
           <span style="color:#f43f5e">✕</span> 死亡交叉（MA5↓穿 MA120↓）
         </div>
+        <!-- 預估交叉天數面板 -->
+        <div id="granCrossPredPanel" class="hidden mt-3 rounded-xl p-4 border">
+          <div class="flex items-center gap-2 mb-2">
+            <i class="fa-solid fa-clock-rotate-left text-xs"></i>
+            <span class="text-xs font-bold text-slate-300 uppercase tracking-widest">MA5 / MA120 交叉預測</span>
+          </div>
+          <div id="granCrossPredContent" class="text-sm"></div>
+          <div class="text-xs text-slate-500 mt-2">* 依均線近期斜率線性延伸估算，實際走勢受市場影響可能提前或延後。</div>
+        </div>
       </div>
 
       <!-- ② 葛蘭碧八大法則說明（K線圖下方） -->
@@ -8287,22 +8296,32 @@ function _drawGranCandleChart(data, period) {
   const crossGolden = new Array(n).fill(null);
   const crossDeath  = new Array(n).fill(null);
 
-  for (let i = 2; i < n; i++) {
+  for (let i = 1; i < n; i++) {
     const s1 = ma5[i-1],   s2 = ma5[i];    // MA5
     const l1 = ma120[i-1], l2 = ma120[i];  // MA120
     if (s1 == null || s2 == null || l1 == null || l2 == null) continue;
 
-    const crossY = (s2 + l2) / 2;  // 標在交叉點
+    // 線性插值求精確交叉點的 Y 值
+    // 交叉點在 i-1 到 i 之間，按各線段的斜率求交
+    // 公式：t = (s1-l1) / ((l2-l1)-(s2-s1))，crossY = s1 + t*(s2-s1)
+    const denom = (l2 - l1) - (s2 - s1);
+    let crossY;
+    if (Math.abs(denom) > 1e-10) {
+      const t = (s1 - l1) / denom;
+      crossY = s1 + t * (s2 - s1);
+    } else {
+      crossY = (s2 + l2) / 2;  // 平行時取均值
+    }
 
     // 黃金交叉：MA5 由下往上穿越 MA120，且兩者均上升
-    const ma5Up  = s2 > ma5[i-2];   // MA5 上升
-    const ma120Up = l2 > l1;         // MA120 上升
+    const ma5Up   = i >= 2 && ma5[i-2] != null ? s2 > ma5[i-2] : s2 > s1;
+    const ma120Up = l2 > l1;
     if (s1 <= l1 && s2 > l2 && ma5Up && ma120Up) {
       crossGolden[i] = crossY;
     }
 
     // 死亡交叉：MA5 由上往下穿越 MA120，且兩者均下降
-    const ma5Down   = s2 < ma5[i-2];
+    const ma5Down   = i >= 2 && ma5[i-2] != null ? s2 < ma5[i-2] : s2 < s1;
     const ma120Down = l2 < l1;
     if (s1 >= l1 && s2 < l2 && ma5Down && ma120Down) {
       crossDeath[i] = crossY;
@@ -8552,9 +8571,99 @@ function _drawGranCandleChart(data, period) {
       }
     }
   });
+
+  // ── 預估 MA5/MA120 交叉天數（線性斜率外推）─────────────────
+  _updateGranCrossPred(ma5, ma120, labels, closes);
 }
 
-// ── 重置葛蘭碧K線縮放 ───────────────────────────────────────────
+// ── 預估交叉天數：取最近 N 根斜率線性外推 ─────────────────────
+function _updateGranCrossPred(ma5arr, ma120arr, labels, closes) {
+  const panel   = document.getElementById('granCrossPredPanel');
+  const content = document.getElementById('granCrossPredContent');
+  if (!panel || !content) return;
+
+  const n = ma5arr.length;
+  // 找最後一個非 null 的有效 index
+  let last = n - 1;
+  while (last > 0 && (ma5arr[last] == null || ma120arr[last] == null)) last--;
+  if (last < 5) { panel.classList.add('hidden'); return; }
+
+  const s = ma5arr[last];    // 最新 MA5
+  const l = ma120arr[last];  // 最新 MA120
+  const gap = s - l;         // 正=MA5 在上，負=MA5 在下
+
+  // 用最近 10 根估斜率（每根的平均變化量）
+  const lookback = Math.min(10, last);
+  const slopeS = (ma5arr[last] - ma5arr[last - lookback]) / lookback;    // MA5 斜率/根
+  const slopeL = (ma120arr[last] - ma120arr[last - lookback]) / lookback; // MA120 斜率/根
+
+  // 差距變化率（每根）：gapSlope > 0 → 差距擴大；< 0 → 差距收窄
+  const gapSlope = slopeS - slopeL;
+
+  // 預估天數：gap + gapSlope * d = 0  →  d = -gap / gapSlope
+  let predDays = null;
+  let crossType = null;
+
+  if (Math.abs(gapSlope) > 1e-6) {
+    const d = -gap / gapSlope;
+    if (d > 0 && d <= 60) {  // 只預測 60 個交易日內
+      predDays = Math.round(d);
+      // 判斷交叉類型（目前差距方向 + 收窄趨勢）
+      if (gap > 0 && gapSlope < 0) {
+        crossType = 'death';  // MA5 在上方且差距縮小 → 即將死亡交叉
+      } else if (gap < 0 && gapSlope > 0) {
+        crossType = 'golden'; // MA5 在下方且差距縮小 → 即將黃金交叉
+      }
+    }
+  }
+
+  if (!crossType || predDays == null) {
+    // 無即將到來的交叉，顯示目前位置資訊
+    const gapPct = Math.abs(gap / l * 100).toFixed(2);
+    const posText = gap > 0 ? `MA5 高於 MA120（差距 ${gapPct}%）` : `MA5 低於 MA120（差距 ${gapPct}%）`;
+    panel.className = 'mt-3 rounded-xl p-4 border border-slate-700';
+    content.innerHTML = `<div class="text-slate-400 text-sm">${posText}，近 ${lookback} 根斜率差距趨勢：<span class="font-bold ${gapSlope < 0 ? 'text-red-400' : 'text-emerald-400'}">${gapSlope < 0 ? '▼ 縮小' : '▲ 擴大'}</span>。預測 60 個交易日內無交叉訊號。</div>`;
+    panel.classList.remove('hidden');
+    return;
+  }
+
+  const isGolden = crossType === 'golden';
+  const col  = isGolden ? '#fbbf24' : '#f43f5e';
+  const bg   = isGolden ? 'rgba(251,191,36,0.08)' : 'rgba(244,63,94,0.08)';
+  const bdr  = isGolden ? '#fbbf2440' : '#f43f5e40';
+  const icon = isGolden ? '★ 黃金交叉即將到來' : '✕ 死亡交叉即將到來';
+  const urgency = predDays <= 5 ? '🚨 緊急：' : predDays <= 10 ? '⚠️ 注意：' : '';
+
+  // 預估日期（交易日換算：×7/5 得自然日）
+  const calDays = Math.round(predDays * 7 / 5);
+  const estDate = new Date();
+  estDate.setDate(estDate.getDate() + calDays);
+  const dateStr = estDate.toLocaleDateString('zh-TW', {year:'numeric', month:'2-digit', day:'2-digit'});
+
+  // 預估交叉價格（當前 MA5 + slopeS × predDays）
+  const estPrice = (s + slopeS * predDays).toFixed(2);
+
+  panel.className = `mt-3 rounded-xl p-4 border`;
+  panel.style.background   = bg;
+  panel.style.borderColor  = bdr;
+  content.innerHTML = `
+    <div class="flex flex-wrap items-center gap-2 mb-2">
+      <span class="font-black" style="color:${col}">${urgency}${icon}</span>
+      <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:${bg};color:${col};border:1px solid ${bdr}">MA5 / MA120</span>
+    </div>
+    <div class="text-slate-200 mb-1">
+      預估約 <strong style="color:${col}">${predDays}</strong> 個交易日（約 <strong style="color:${col}">${calDays}</strong> 個自然日）後發生
+    </div>
+    <div class="text-slate-400 text-xs">
+      預估到達日期：<span class="font-bold text-slate-200">${dateStr}</span>　
+      預估交叉價格：<span class="mono font-bold" style="color:${col}">${estPrice}</span>
+    </div>
+    <div class="text-slate-500 text-xs mt-1">
+      目前 MA5=${s.toFixed(2)}，MA120=${l.toFixed(2)}，差距=${gap.toFixed(2)}（${isGolden ? 'MA5在下方' : 'MA5在上方'}），近${lookback}根差距以每日${Math.abs(gapSlope).toFixed(3)}的速度${isGolden ? '縮小' : '縮小'}中。
+    </div>
+  `;
+  panel.classList.remove('hidden');
+}
 function resetGranZoom() {
   if (granCandleChart) granCandleChart.resetZoom();
   const btn = document.getElementById('granResetZoomBtn');
