@@ -1452,46 +1452,6 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
       </div>
 
-      <!-- ★ 四種均線買賣訊號（新增） -->
-      <div class="card p-5">
-        <h3 class="font-bold text-lg text-white mb-4 flex items-center gap-2">
-          <i class="fa-solid fa-arrows-cross text-yellow-400"></i>四種均線買賣訊號
-          <span class="text-slate-400 text-sm font-normal">— 即時偵測結果</span>
-        </h3>
-        <!-- 訊號定義說明 -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4 text-xs">
-          <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.07);border-color:#10b98150">
-            <div class="font-black mb-1" style="color:#10b981">訊號① 價格上破 MA（買點）</div>
-            <div class="text-slate-300 leading-relaxed">股價從均線下方向上穿越，短期動能轉強。需搭配放量確認，避免假突破。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.07);border-color:#ef444450">
-            <div class="font-black mb-1" style="color:#ef4444">訊號② 價格下破 MA（賣點）</div>
-            <div class="text-slate-300 leading-relaxed">股價從均線上方向下跌破，短期支撐失守。伴隨量能放大時賣壓更重。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(251,191,36,0.07);border-color:#fbbf2450">
-            <div class="font-black mb-1" style="color:#fbbf24">訊號③ 黃金交叉（買點）</div>
-            <div class="text-slate-300 leading-relaxed">短期均線由下往上穿越長期均線，趨勢由空轉多。訊號穩定但屬落後指標，行情通常已先走一段。</div>
-          </div>
-          <div class="rounded-lg p-3 border" style="background:rgba(244,63,94,0.07);border-color:#f43f5e50">
-            <div class="font-black mb-1" style="color:#f43f5e">訊號④ 死亡交叉（賣點）</div>
-            <div class="text-slate-300 leading-relaxed">短期均線由上往下穿越長期均線，趨勢由多轉空。適合確認趨勢反轉，而非搶短線。</div>
-          </div>
-        </div>
-        <!-- 即時偵測結果 -->
-        <div id="maSigDetected" class="space-y-2">
-          <div class="text-slate-400 text-sm">請先查詢個股以顯示均線訊號。</div>
-        </div>
-        <!-- 均線交叉預測（移自舊 MA 分析 Tab） -->
-        <div class="mt-4 border-t border-slate-700 pt-4">
-          <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-            <i class="fa-solid fa-clock-rotate-left"></i> 均線交叉預測（未來 30 個交易日）
-          </div>
-          <div id="granCrossSection" class="space-y-2">
-            <div class="text-slate-500 text-xs">載入中...</div>
-          </div>
-        </div>
-      </div>
-
       <!-- ② 葛蘭碧八大法則說明（K線圖下方） -->
 
       <!-- ② MA20 葛蘭碧八大法則進出 -->
@@ -8304,74 +8264,6 @@ function renderGranvilleTab(data) {
 
   // ── K 線圖 ──
   _drawGranCandleChart(data, granCurrentPeriod);
-
-  // ── 四種均線買賣訊號即時偵測結果 ──────────────────────────
-  const maSigEl = document.getElementById('maSigDetected');
-  if (maSigEl) {
-    const maSigs = maAna.ma_signals || [];
-    if (maSigs.length === 0) {
-      maSigEl.innerHTML = '<div class="text-slate-400 text-sm">近期無觸發均線訊號（回溯5根K棒）。</div>';
-    } else {
-      const sigTypeLabel = { price_cross_up:'訊號①', price_cross_down:'訊號②', golden_cross:'訊號③', death_cross:'訊號④' };
-      const sigTypeName  = { price_cross_up:'價格上破 MA', price_cross_down:'價格下破 MA', golden_cross:'黃金交叉', death_cross:'死亡交叉' };
-      maSigEl.innerHTML = maSigs.map(sig => {
-        const isBuy  = sig.signal === 'buy';
-        const col    = isBuy ? '#10b981' : '#ef4444';
-        const bg     = isBuy ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
-        const bdr    = isBuy ? '#10b98150' : '#ef444450';
-        const strMap = { strong:'強', moderate:'中', weak:'弱（縮量）' };
-        const volIcon = sig.volume_confirm === true ? '🔊 放量確認' : sig.volume_confirm === false ? '🔇 量能不足' : '';
-        const typeLabel = sigTypeLabel[sig.signal_type] || '';
-        return `<div class="rounded-xl p-4 border" style="background:${bg};border-color:${bdr}">
-          <div class="flex flex-wrap items-center gap-2 mb-2">
-            <span class="font-black text-sm" style="color:${col}">${typeLabel}【${sig.name}】</span>
-            <span class="text-xs px-2 py-0.5 rounded-full font-bold" style="background:${bg};color:${col};border:1px solid ${bdr}">${strMap[sig.strength]||'中'}</span>
-            ${isBuy ? '<span class="signal-tag signal-buy">買入</span>' : '<span class="signal-tag signal-sell">賣出</span>'}
-            ${volIcon ? `<span class="text-xs text-slate-400">${volIcon}</span>` : ''}
-          </div>
-          <div class="text-slate-300 text-sm leading-relaxed">${sig.description || ''}</div>
-        </div>`;
-      }).join('');
-    }
-  }
-
-  // ── 均線交叉預測（移植自舊 MA 分析 Tab）─────────────────────
-  const granCrossSec = document.getElementById('granCrossSection');
-  if (granCrossSec) {
-    const cross520  = maAna.cross_5_20  || {};
-    const cross2060 = maAna.cross_20_60 || {};
-    const crossPairs = [
-      { label:'MA5 / MA20（短×中）', data: cross520  },
-      { label:'MA20 / MA60（中×長）', data: cross2060 },
-    ];
-    const activeCrosses = crossPairs.filter(c => c.data.cross_type && c.data.cross_type !== 'none');
-    if (activeCrosses.length === 0) {
-      granCrossSec.innerHTML = '<div class="text-slate-400 text-xs">預測 30 個交易日內無均線交叉訊號。</div>';
-    } else {
-      granCrossSec.innerHTML = activeCrosses.map(cp => {
-        const d = cp.data;
-        const isGolden = d.cross_type === 'golden';
-        const col = isGolden ? '#fbbf24' : '#f43f5e';
-        const bg  = isGolden ? 'rgba(251,191,36,0.07)' : 'rgba(244,63,94,0.07)';
-        const bdr = isGolden ? '#fbbf2440' : '#f43f5e40';
-        const icon = isGolden ? '★' : '✕';
-        const name = isGolden ? '黃金交叉（訊號③）' : '死亡交叉（訊號④）';
-        const urgency = d.est_days != null && d.est_days <= 10 ? '⚠ 緊急：' : '';
-        const confMap = { high:'高', medium:'中', low:'低' };
-        const conf = confMap[d.confidence] || d.confidence || '--';
-        const daysText = d.est_days != null ? `預估 <strong style="color:${col}">${d.est_days}</strong> 個交易日（約 ${d.est_calendar_days||'--'} 自然日）後出現` : '預測期內';
-        return `<div class="rounded-lg p-3 border text-sm" style="background:${bg};border-color:${bdr}">
-          <div class="flex flex-wrap items-center gap-2 mb-1">
-            <span style="color:${col}" class="font-black">${icon} ${name}</span>
-            <span class="text-xs text-slate-400 font-bold">${cp.label}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full" style="background:${bg};color:${col};border:1px solid ${bdr}">信心：${conf}</span>
-          </div>
-          <div class="text-slate-300">${urgency}${daysText}</div>
-          <div class="text-slate-500 text-xs mt-1">${d.details || ''}</div>
-        </div>`;
-      }).join('');
-    }
-  }
 
 }
 
