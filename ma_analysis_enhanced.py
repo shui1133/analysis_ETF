@@ -215,11 +215,6 @@ def calc_granville_signals(
             return None
         return volume_series[i] <= avg * 0.7
 
-    # ── 乖離率極端門檻────────────────────────────────────────────
-    EXTREME_BIAS_BUY  = -10.5
-    EXTREME_BIAS_SELL =  12.0
-    NORMAL_BIAS_SELL  =   8.0
-
     # ── 同法則冷卻（10 根）────────────────────────────────────────
     last_sig_idx: dict[int, int] = {}
 
@@ -228,6 +223,12 @@ def calc_granville_signals(
 
     def mark_sig(rule: int, i: int) -> None:
         last_sig_idx[rule] = i
+
+    # ── 乖離率門檻（MA20）─────────────────────────────────────
+    BIAS_SELL_MODERATE = 5.0    # ③ 普通正乖離賣出門檻
+    BIAS_SELL_STRONG   = 8.0    # ③ 強力正乖離
+    BIAS_BUY_MODERATE  = -5.0   # ⑥ 普通負乖離買進門檻
+    BIAS_BUY_STRONG    = -8.0   # ⑥ 強力負乖離
 
     # ── 只計算 lookback 範圍內的最後 N 根 ────────────────────────
     start = max(10, n - lookback)
@@ -262,7 +263,7 @@ def calc_granville_signals(
             prev_below = sum(1 for k in range(max(0, i - 10), i)
                              if prices[k] is not None and mas[k] is not None and prices[k] < mas[k])
             prev_below_ratio = prev_below / min(10, i) if i > 0 else 0
-            if prev_below_ratio >= 0.5 or not bull:
+            if prev_below_ratio >= 0.4 or not bull:
                 if vol_boom is True:
                     rule, strength = 1, 'strong'
                     note = '放量突破，訊號可靠'
@@ -273,33 +274,33 @@ def calc_granville_signals(
 
         # ② 續漲加碼：多頭環境，精確回測均線後反彈
         if not rule and bull and not cross_up and above and can_mark(2, i):
-            near_ma    = abs(bias) < 2.0
-            dip_prev   = m1 and p1 and (m1 * 0.995 <= p1 <= m1 * 1.015)
+            near_ma    = abs(bias) < 2.5
+            dip_prev   = m1 and p1 and (m1 * 0.993 <= p1 <= m1 * 1.015)
             bounce_back= p > p1 and p2 is not None and p > p2
             if near_ma and dip_prev and bounce_back:
-                rule, strength, note = 2, 'moderate', '多頭回測支撐'
+                rule, strength, note = 2, 'moderate', '多頭回測 MA20 支撐，加碼時機'
 
-        # ③ 超賣反彈：極端負乖離 + 止跌反彈
-        if not rule and below and bias < EXTREME_BIAS_BUY and can_mark(3, i):
-            bouncing = p > p1
-            if bouncing:
-                strength = 'strong' if bias < EXTREME_BIAS_BUY * 1.3 else 'moderate'
-                note = f'極端超賣（乖離 {bias:.1f}%），技術性反彈'
+        # ③ 初步賣出：股價在均線上方，正乖離過大（短期漲幅偏高）
+        if not rule and above and bias >= BIAS_SELL_MODERATE and can_mark(3, i):
+            price_peaking = p < p1 or vol_shrink is True
+            if price_peaking or bias >= BIAS_SELL_STRONG:
+                strength = 'strong' if (bias >= BIAS_SELL_STRONG or vol_shrink is True) else 'moderate'
+                note = f'正乖離 {bias:.1f}%，短期漲幅偏高{"，量縮背離" if vol_shrink is True else ""}'
                 rule = 3
 
         # ④ 末跌買進：逆勢，僅在均線強勢上彎時才標
         if not rule and cross_dn and ma_trend_up(i) and can_mark(4, i):
-            strong_slope = ma_slope5(i) > (m * 0.008)
+            strong_slope = ma_slope5(i) > (m * 0.006)
             if strong_slope and bias > -8:
                 rule, strength = 4, 'weak'
-                note = '均線強勢上彎，末跌買進（逆勢，小部位）'
+                note = 'MA20 仍上升，末跌買進（逆勢，小部位）'
 
         # ⑤ 趨勢轉空賣出：均線走平/下彎 + 放量跌破 + 前期多在均線上方
         if not rule and cross_dn and (ma_trend_down(i) or ma_flat(i)) and can_mark(5, i):
             prev_above = sum(1 for k in range(max(0, i - 10), i)
                              if prices[k] is not None and mas[k] is not None and prices[k] > mas[k])
             prev_above_ratio = prev_above / min(10, i) if i > 0 else 0
-            if prev_above_ratio >= 0.5 or not bear:
+            if prev_above_ratio >= 0.4 or not bear:
                 if vol_boom is True:
                     rule, strength = 5, 'strong'
                     note = '放量跌破，賣壓沉重'
@@ -310,42 +311,43 @@ def calc_granville_signals(
                     rule, strength = 5, 'moderate'
                     note = '量能資料不足'
 
-        # ⑥ 超買回吐：極端正乖離 + 量縮背離
-        if not rule and above and bias > EXTREME_BIAS_SELL and can_mark(6, i):
-            vol_div = vol_shrink is True
-            strength = 'strong' if (bias > EXTREME_BIAS_SELL * 1.2 or vol_div) else 'moderate'
-            note = f'極端超買（乖離 {bias:.1f}%）{"，量縮背離" if vol_div else ""}'
-            rule = 6
+        # ⑥ 反彈買進：股價在均線下方，負乖離過大（超賣，可能技術性回升）
+        if not rule and below and bias <= BIAS_BUY_MODERATE and can_mark(6, i):
+            bouncing = p > p1
+            if bouncing or bias <= BIAS_BUY_STRONG:
+                strength = 'strong' if (bias <= BIAS_BUY_STRONG and bouncing) else 'moderate'
+                note = f'負乖離 {bias:.1f}%，偏離均線過大{"，止跌反彈" if bouncing else "，持續觀察"}'
+                rule = 6
 
-        # ⑦ 反彈賣出：空頭環境 + 縮量反彈至均線附近後回落
+        # ⑦ 續跌賣出：空頭環境中，反彈接近均線後再度下跌
         if not rule and bear and below and not cross_dn and can_mark(7, i):
-            near_ma    = bias > -4.0
+            near_ma    = bias > -5.0
             was_bounce = p2 is not None and m2 is not None and p2 < m2 and p1 > p2
             now_fall   = p < p1
             if near_ma and was_bounce and now_fall:
                 strength = 'strong' if vol_shrink is True else 'moderate'
-                note = f'空頭反彈失敗{"（縮量誘多）" if vol_shrink is True else ""}'
+                note = f'空頭反彈至均線附近失敗{"（縮量誘多）" if vol_shrink is True else ""}，續跌訊號'
                 rule = 7
 
-        # ⑧ 空頭賣出：均線下彎中，股價超漲且開始回落
-        if not rule and above and ma_trend_down(i) and bias > NORMAL_BIAS_SELL and can_mark(8, i):
-            price_peaking = p < p1 or vol_shrink is True
-            if price_peaking:
+        # ⑧ 空頭賣出：空頭環境中，股價短暫突破均線後回落（假突破）
+        if not rule and ma_trend_down(i) and can_mark(8, i):
+            false_break_up  = above and 0 < bias < 4 and p < p1
+            pull_back_below = cross_dn and p2 is not None and mas[i-2] is not None and prices[i-2] > mas[i-2] and bias > -3
+            if false_break_up or pull_back_below:
                 rule, strength = 8, 'weak'
-                note = f'均線下彎中股價超漲（乖離 {bias:.1f}%），逢高減碼'
+                note = '均線下彎中假突破，空頭賣出（謹慎）'
 
         if rule > 0:
             mark_sig(rule, i)
-            # 法則對應名稱
             _names = {
-                1: ('起漲買進', 'buy', '均線走平/上彎，股價放量向上突破'),
-                2: ('續漲加碼', 'buy', '多頭趨勢中，精確回測均線後反彈'),
-                3: ('超賣反彈', 'buy', f'股價大幅低於均線（乖離 {bias:.1f}%），技術性反彈'),
-                4: ('末跌買進', 'buy', '股價跌破均線，但均線仍強勢上彎（逆勢）'),
-                5: ('趨勢轉空', 'sell', '均線走平/下彎，股價向下跌破均線'),
-                6: ('超買回吐', 'sell', f'股價大幅高於均線（乖離 {bias:.1f}%），逢高出脫'),
-                7: ('反彈賣出', 'sell', '空頭趨勢中，反彈至均線附近後再度下跌'),
-                8: ('空頭賣出', 'sell', '均線下彎，股價短暫超漲後開始回落'),
+                1: ('起漲買進', 'buy',  '均線走平/上彎，股價放量向上突破'),
+                2: ('續漲加碼', 'buy',  '多頭趨勢中，回測 MA20 支撐後反彈'),
+                3: ('初步賣出', 'sell', f'正乖離 {bias:.1f}%，股價偏離均線過高，短期漲幅已高'),
+                4: ('末跌買進', 'buy',  '股價跌破均線，但 MA20 仍強勢上彎（逆勢小部位）'),
+                5: ('趨勢轉空', 'sell', '均線走平/下彎，股價向下跌破 MA20'),
+                6: ('反彈買進', 'buy',  f'負乖離 {bias:.1f}%，股價偏離均線過遠，可能技術性回升'),
+                7: ('續跌賣出', 'sell', '空頭趨勢中，反彈至 MA20 附近失敗再度下跌'),
+                8: ('空頭賣出', 'sell', '均線下彎中股價短暫突破後回落（假突破誘多）'),
             }
             name, signal, desc = _names[rule]
             results.append({
