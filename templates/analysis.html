@@ -8343,6 +8343,63 @@ function _drawGranCandleChart(data, period) {
   const yMin = validCloses.length ? Math.min(...validCloses) * 0.88 : undefined;
   const yMax = validCloses.length ? Math.max(...validCloses) * 1.12 : undefined;
 
+  // ── Canvas 直接繪製交叉標記（金星 / 紅X），完全可靠 ─────────
+  const crossDrawPlugin = {
+    id: 'crossDrawPlugin',
+    afterDatasetsDraw(chart) {
+      const c2d    = chart.ctx;
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+
+      // 繪製五角星（實心金色）
+      const drawStar = (cx, cy, r) => {
+        c2d.save();
+        c2d.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const angle = (k * Math.PI / 5) - Math.PI / 2;
+          const rad   = k % 2 === 0 ? r : r * 0.42;
+          const x = cx + rad * Math.cos(angle);
+          const y = cy + rad * Math.sin(angle);
+          k === 0 ? c2d.moveTo(x, y) : c2d.lineTo(x, y);
+        }
+        c2d.closePath();
+        c2d.fillStyle = '#fbbf24';
+        c2d.fill();
+        c2d.strokeStyle = 'rgba(255,255,255,0.6)';
+        c2d.lineWidth   = 1;
+        c2d.stroke();
+        c2d.restore();
+      };
+
+      // 繪製 X（粗紅色）
+      const drawX = (cx, cy, r) => {
+        c2d.save();
+        c2d.strokeStyle = '#f43f5e';
+        c2d.lineWidth   = 4;
+        c2d.lineCap     = 'round';
+        const d = r * 0.72;
+        c2d.beginPath();
+        c2d.moveTo(cx - d, cy - d); c2d.lineTo(cx + d, cy + d);
+        c2d.moveTo(cx + d, cy - d); c2d.lineTo(cx - d, cy + d);
+        c2d.stroke();
+        c2d.restore();
+      };
+
+      // 從 dataset 取資料並繪製
+      chart.data.datasets.forEach(ds => {
+        if (ds.label !== '黃金交叉' && ds.label !== '死亡交叉') return;
+        const isGolden = ds.label === '黃金交叉';
+        ds.data.forEach((val, i) => {
+          if (val == null) return;
+          const x = xScale.getPixelForValue(i);
+          const y = yScale.getPixelForValue(val);
+          if (isGolden) drawStar(x, y, 14);
+          else          drawX(x, y, 14);
+        });
+      });
+    }
+  };
+
   // ── 號碼標註 Plugin（category 軸用 dataIndex）──
   const granLabelPlugin = {
     id: 'granLabelPlugin',
@@ -8445,24 +8502,18 @@ function _drawGranCandleChart(data, period) {
           borderDash: [6, 3],
           pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1,
         },
-        // ★ 黃金交叉：實心金色五角星（Canvas Image，確保顯示為實心金星）
+        // ★ 黃金交叉 / ✕ 死亡交叉：用隱形 dataset 記錄位置，由 crossDrawPlugin 繪製
+        // 隱形 dataset（只存資料，不渲染點）
         {
           label:'黃金交叉', data:crossGolden,
           borderColor:'rgba(0,0,0,0)', borderWidth:0,
-          pointRadius:      crossGolden.map(v => v != null ? 14 : 0),
-          pointHoverRadius: crossGolden.map(v => v != null ? 16 : 0),
-          pointStyle: crossGolden.map(v => v != null ? getGoldenStar() : 'circle'),
-          pointBackgroundColor: 'rgba(0,0,0,0)', pointBorderColor: 'rgba(0,0,0,0)', pointBorderWidth: 0,
+          pointRadius: 0, pointHoverRadius: 0,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
-        // ✕ 死亡交叉：實心紅色 X（適中大小）
         {
           label:'死亡交叉', data:crossDeath,
           borderColor:'rgba(0,0,0,0)', borderWidth:0,
-          pointRadius:      crossDeath.map(v => v != null ? 14 : 0),
-          pointHoverRadius: crossDeath.map(v => v != null ? 16 : 0),
-          pointStyle: 'crossRot', pointRotation: 0,
-          pointBackgroundColor: '#f43f5e', pointBorderColor: '#f43f5e', pointBorderWidth: 4,
+          pointRadius: 0, pointHoverRadius: 0,
           fill:false, spanGaps:false, showLine:false, order:0,
         },
         // 葛蘭碧八種訊號（showLine:false，三角形大小統一 12px）
@@ -8492,7 +8543,7 @@ function _drawGranCandleChart(data, period) {
         }),
       ]
     },
-    plugins: [granLabelPlugin],
+    plugins: [crossDrawPlugin, granLabelPlugin],
     options: {
       responsive: true, maintainAspectRatio: false,
       animation: { duration: 250 },
