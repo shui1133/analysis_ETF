@@ -52,24 +52,51 @@ def calc_bias(close: float, ma_value: float | None) -> float | None:
 def bias_warning(bias: float | None, ma_period: int = 20) -> dict:
     """
     依乖離率給出警示等級。
-    警戒值參考（以 MA20 為例）：
-      正乖離 > +5%   → 超買警示
-      負乖離 < -5%   → 超賣機會
-    對不同週期均線乘以比例係數。
+    警戒值依各天期均線個別設定（參考 OANDA 技術分析教學門檻）：
+      MA6  (≈MA5)  : 負乖離 < -3.0%  買點；正乖離 > +3.5%  賣點
+      MA12 (≈MA10) : 負乖離 < -4.5%  買點；正乖離 > +5.0%  賣點
+      MA24 (≈MA20) : 負乖離 < -7.0%  買點；正乖離 > +8.0%  賣點
+      MA72 (≈MA60) : 負乖離 < -11.0% 買點；正乖離 > +11.0% 賣點
+    極度超買/超賣門檻 = 上述門檻 × 1.5
     """
     if bias is None:
         return {'level': 'neutral', 'text': '無資料', 'color': '#94a3b8'}
 
-    # 週期越長，合理乖離越大，係數調整
-    scale = {5: 0.5, 10: 0.7, 20: 1.0, 60: 2.0, 120: 3.0, 200: 4.0}.get(ma_period, 1.0)
-    overbought = 5.0 * scale
-    oversold   = -5.0 * scale
+    # ── 各天期均線的個別門檻（來源：OANDA 外匯/技術分析教學整理）──
+    # 格式：ma_period -> (oversold_threshold, overbought_threshold)
+    # 負值=超賣買點門檻，正值=超買賣點門檻
+    _THRESHOLDS: dict[int, tuple[float, float]] = {
+        5:   (-3.0,   3.5),   # MA5  ≈ MA6  ：-3% / +3.5%
+        6:   (-3.0,   3.5),   # MA6        ：-3% / +3.5%
+        10:  (-4.5,   5.0),   # MA10 ≈ MA12：-4.5% / +5%
+        12:  (-4.5,   5.0),   # MA12       ：-4.5% / +5%
+        20:  (-7.0,   8.0),   # MA20 ≈ MA24：-7% / +8%
+        24:  (-7.0,   8.0),   # MA24       ：-7% / +8%
+        60:  (-11.0, 11.0),   # MA60 ≈ MA72：-11% / +11%
+        72:  (-11.0, 11.0),   # MA72       ：-11% / +11%
+        120: (-15.0, 15.0),   # MA120（外插估算）
+        200: (-20.0, 20.0),   # MA200（外插估算）
+    }
 
-    if bias > overbought * 1.5:
+    # 若找不到對應天期，依線性內插估算門檻
+    if ma_period in _THRESHOLDS:
+        oversold, overbought = _THRESHOLDS[ma_period]
+    else:
+        # 以 MA20 為基準，每多 10 日 ±1% 線性外插
+        base_oversold, base_overbought = -7.0, 8.0
+        extra = (ma_period - 20) / 10
+        oversold   = base_oversold  - extra * 1.0
+        overbought = base_overbought + extra * 1.0
+
+    # 極度超買/超賣門檻 = 門檻 × 1.5
+    extreme_overbought = overbought * 1.5
+    extreme_oversold   = oversold   * 1.5   # 負值 × 1.5 → 更負
+
+    if bias > extreme_overbought:
         return {'level': 'extreme_overbought', 'text': f'極度超買（{bias:+.1f}%）', 'color': '#b91c1c'}
     elif bias > overbought:
         return {'level': 'overbought',         'text': f'超買警示（{bias:+.1f}%）',  'color': '#dc2626'}
-    elif bias < oversold * 1.5:
+    elif bias < extreme_oversold:
         return {'level': 'extreme_oversold',   'text': f'極度超賣（{bias:+.1f}%）', 'color': '#15803d'}
     elif bias < oversold:
         return {'level': 'oversold',           'text': f'超賣機會（{bias:+.1f}%）', 'color': '#16a34a'}
@@ -85,6 +112,7 @@ def calc_granville_signals(
     close_series: list[float],
     ma_series: list[float],
     lookback: int = 5,
+    ma_period: int = 20,
 ) -> list[dict]:
     """
     對最近 lookback 筆資料判斷葛蘭碧法則觸發。
@@ -95,7 +123,28 @@ def calc_granville_signals(
       description: 說明
       strength   : 'strong' | 'moderate' | 'weak'
       index      : 觸發位置（-1 = 最新）
+
+    ma_period 用於動態取得乖離率門檻（對應 bias_warning 的天期門檻表）。
     """
+    # ── 依 ma_period 動態取得葛蘭碧法則 3/6 的乖離率門檻 ──────────────
+    _THRESHOLDS: dict[int, tuple[float, float]] = {
+        5:   (-3.0,   3.5),
+        6:   (-3.0,   3.5),
+        10:  (-4.5,   5.0),
+        12:  (-4.5,   5.0),
+        20:  (-7.0,   8.0),
+        24:  (-7.0,   8.0),
+        60:  (-11.0, 11.0),
+        72:  (-11.0, 11.0),
+        120: (-15.0, 15.0),
+        200: (-20.0, 20.0),
+    }
+    if ma_period in _THRESHOLDS:
+        _granville_oversold_thr, _granville_overbought_thr = _THRESHOLDS[ma_period]
+    else:
+        extra = (ma_period - 20) / 10
+        _granville_oversold_thr  = -7.0 - extra * 1.0
+        _granville_overbought_thr =  8.0 + extra * 1.0
     n = min(lookback, len(close_series), len(ma_series))
     if n < 3:
         return []
@@ -149,7 +198,8 @@ def calc_granville_signals(
                 })
 
         # 法則 3：超賣反彈——股價在均線下方，且負乖離過大（超賣）
-        if p < m and bias < -6:
+        # 門檻依 ma_period 動態取得（預設使用 MA20 對應的 -7%）
+        if p < m and bias < _granville_oversold_thr:
             results.append({
                 'rule': 3, 'signal': 'buy',
                 'name': '超賣反彈',
@@ -177,7 +227,8 @@ def calc_granville_signals(
             })
 
         # 法則 6：超買回吐——股價在均線上方，正乖離過大
-        if p > m and bias > 6:
+        # 門檻依 ma_period 動態取得（預設使用 MA20 對應的 +8%）
+        if p > m and bias > _granville_overbought_thr:
             results.append({
                 'rule': 6, 'signal': 'sell',
                 'name': '超買回吐',
@@ -503,9 +554,9 @@ def analyze_ma(
     granville_60 = []
     if ma_series_dict and close_series:
         if ma_series_dict.get('ma20'):
-            granville_20 = calc_granville_signals(close_series, ma_series_dict['ma20'])
+            granville_20 = calc_granville_signals(close_series, ma_series_dict['ma20'], ma_period=20)
         if ma_series_dict.get('ma60'):
-            granville_60 = calc_granville_signals(close_series, ma_series_dict['ma60'])
+            granville_60 = calc_granville_signals(close_series, ma_series_dict['ma60'], ma_period=60)
 
     # 死亡/黃金交叉預測（三組）
     cross_5_20  = estimate_cross_days(close_series, 5,  20)
@@ -623,7 +674,7 @@ def enhanced_calc_trend(
     granville_signals = []
     if ma_series_dict and close_series and len(close_series) > 5:
         if ma_series_dict.get('ma20'):
-            granville_signals = calc_granville_signals(close_series, ma_series_dict['ma20'])
+            granville_signals = calc_granville_signals(close_series, ma_series_dict['ma20'], ma_period=20)
 
     # 死亡/黃金交叉預測
     cross_5_20  = estimate_cross_days(close_series, 5,  20) if len(close_series) >= 40 else {}
