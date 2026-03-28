@@ -2093,6 +2093,58 @@ def _generate_recommendation(ticker, close, ind, trend, chip, info, div_yield, s
     rec['rating_color'] = _color
     rec['rating_bg']    = _bg
     rec['rating_icon']  = _icon
+
+    # ── 目標價修正：確保與評級方向一致 ─────────────────────────
+    # 問題根源：enhanced 模組以舊門檻計算目標價（≥6才是買進），
+    # 但 app.py 覆蓋後門檻不同（≥3就算買進），導致目標價方向與評級矛盾。
+    # 規則：買進/強力買進 → 目標價必須 > 現價；賣出/減碼 → 目標價必須 < 現價
+    _tp   = rec.get('target_price')
+    _tt   = rec.get('target_type', 'none')
+    _ma20 = ind.get('ma20')
+    _ma60 = ind.get('ma60')
+    _ma_center = round(_ma20 * 0.6 + _ma60 * 0.4, 1) if (_ma20 and _ma60) else None
+
+    if _rating in ('買進', '強力買進'):
+        # 目標價必須 > 現價
+        if _tp is None or _tp <= close:
+            # 以均線中心或壓力位（取較高者）向上估算
+            _norm = _score / 2
+            _base = max(close, _ma_center) if _ma_center else close
+            _tp   = round(_base * (1 + (_norm - 2) * 0.03), 1)
+            if _tp <= close:
+                _tp = round(close * 1.05, 1)   # 至少 +5%
+            _tt = 'upside'
+            rec['target_desc'] = '上漲目標（均線+趨勢溢價）'
+        elif _tt != 'upside':
+            _tt = 'upside'
+            rec['target_desc'] = '上漲目標（均線+趨勢溢價）'
+
+    elif _rating in ('賣出', '減碼'):
+        # 目標價必須 < 現價
+        if _tp is None or _tp >= close:
+            _norm = _score / 2
+            _downside_pct = max(_norm * 0.025, -0.15)
+            _base = min(close, _ma_center) if _ma_center else close
+            _tp   = round(_base * (1 + _downside_pct), 1)
+            if _tp >= close:
+                _tp = round(close * 0.95, 1)   # 至少 -5%
+            _tt = 'downside'
+            rec['target_desc'] = '下行風險位（現價-弱勢折價）'
+        elif _tt != 'downside':
+            _tt = 'downside'
+            rec['target_desc'] = '下行風險位（現價-弱勢折價）'
+
+    elif _rating == '持有':
+        # 持有：目標價為合理估值（均線中心），不限方向
+        if _tp is None and _ma_center:
+            _tp = _ma_center
+            _tt = 'fair'
+            rec['target_desc'] = '合理估值（均線中心）'
+
+    rec['target_price'] = _tp
+    rec['target_type']  = _tt
+    # ── 目標價修正結束 ─────────────────────────────────────────
+
     # 補充 summary（原版需要）
     rec['summary'] = _build_summary(
         ticker, close, trend, rec['rating'],
