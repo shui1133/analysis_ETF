@@ -1447,8 +1447,9 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <i class="fa-solid fa-circle-info mr-1"></i>
           <span style="color:#10b981">▲</span> 買入訊號（①②④⑥）&nbsp;&nbsp;
           <span style="color:#ef4444">▼</span> 賣出訊號（③⑤⑦⑧）&nbsp;&nbsp;
-          <span style="color:#fbbf24">★</span> 黃金交叉（MA5↑穿 MA120↑）&nbsp;&nbsp;
-          <span style="color:#f43f5e">✕</span> 死亡交叉（MA5↓穿 MA120↓）
+          <span style="color:#fbbf24">★</span> 黃金交叉（MA5↑穿 MA120↑，兩者均上升）&nbsp;&nbsp;
+          <span style="color:#f43f5e">✕</span> 死亡交叉（MA5↓穿 MA120↓，兩者均下降）&nbsp;&nbsp;
+          <span style="color:#14b8a6">━</span> MA60（季線）
         </div>
         <!-- 預估交叉天數面板 -->
         <div id="granCrossPredPanel" class="hidden mt-3 rounded-xl p-4 border">
@@ -1480,19 +1481,19 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.08);border-color:#10b981aa">
               <div class="font-black mb-1" style="color:#10b981">① 起漲買進</div>
-              <div class="text-slate-300 text-xs leading-relaxed">MA20 由下降轉水平且向上，股價<strong class="text-white">由下往上突破 MA20</strong>。最強買入時機，放量確認更可靠。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">平均線由下降逐漸轉為<strong class="text-white">水平且往上趨勢</strong>，而股價由下往上突破平均線時，為最強起漲買入時機，放量確認更可靠。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(52,211,153,0.08);border-color:#34d399aa">
-              <div class="font-black mb-1" style="color:#34d399">② 續漲加碼</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 上方，<strong class="text-white">連續下跌 ≥3 根（未跌破 MA20）後，再連續上漲 ≥3 根</strong>。多頭回測後加碼時機。</div>
+              <div class="font-black mb-1" style="color:#34d399">② 續漲買進</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價趨勢線位於均線<strong class="text-white">上方</strong>，股價突然下跌（<strong class="text-white">至少連續下跌 2 天</strong>），但未跌至均線下方又反彈（<strong class="text-white">至少連續上漲 2 天</strong>），此時為加碼時機。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(110,231,183,0.08);border-color:#6ee7b7aa">
-              <div class="font-black mb-1" style="color:#6ee7b7">④ 末跌買進</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價<strong class="text-white">跌破 MA20</strong>，但 MA20 仍在上升趨勢。多頭環境的短線買機，逆勢操作需謹慎控制部位。</div>
+              <div class="font-black mb-1" style="color:#6ee7b7">④ 漲勢末跌買進</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價由均線<strong class="text-white">上方跌至均線下方</strong>，但均線仍處於上升趨勢階段，為漲勢最後買進機會，逆勢操作需控制部位。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(167,243,208,0.08);border-color:#a7f3d0aa">
               <div class="font-black mb-1" style="color:#a7f3d0">⑥ 反彈買進</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價跌至 MA20 下方且<strong class="text-white">負乖離過大</strong>，偏離均線過遠，股價可能技術性回升靠近均線。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價跌至均線<strong class="text-white">下方且偏離均線很遠</strong>（負乖離過大），此時股價可能再趨近均線，為技術性反彈買入時機（均線下方，宜謹慎）。</div>
             </div>
           </div>
         </div>
@@ -1503,20 +1504,20 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.08);border-color:#ef4444aa">
-              <div class="font-black mb-1" style="color:#ef4444">⑤ 趨勢轉空</div>
-              <div class="text-slate-300 text-xs leading-relaxed">MA20 由上升轉水平且向下，股價<strong class="text-white">由上往下跌破 MA20</strong>。最強賣出訊號，建議及時減碼或出場。</div>
+              <div class="font-black mb-1" style="color:#ef4444">⑤ 趨勢轉空賣出</div>
+              <div class="text-slate-300 text-xs leading-relaxed">平均線由上升逐漸轉為<strong class="text-white">水平且往下趨勢</strong>，而股價由上往下突破平均線時，為最強轉空賣出訊號，建議及時減碼或出場。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(249,115,22,0.08);border-color:#f97316aa">
               <div class="font-black mb-1" style="color:#f97316">③ 初步賣出</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 上方且正乖離偏高，<strong class="text-white">達到波段峰值後連續下跌 ≥3 根</strong>，可逢高出脫部分持股。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價位於平均線<strong class="text-white">上方且不斷上漲偏離均線</strong>，表短期漲幅已高（股價達該波段峰值後<strong class="text-white">連續下跌 2 天</strong>），可逢高出脫部分持股。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(251,146,60,0.08);border-color:#fb923caa">
               <div class="font-black mb-1" style="color:#fb923c">⑦ 續跌賣出</div>
-              <div class="text-slate-300 text-xs leading-relaxed">股價在 MA20 下方，反彈接近 MA20 後，<strong class="text-white">連續下跌 ≥3 根</strong>（確認被拉回），空頭續跌訊號。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價趨勢線位於均線<strong class="text-white">下方</strong>，股價突然上漲，但未超越均線又被拉回（<strong class="text-white">連續下跌 2 天</strong>確認），空頭續跌賣出訊號。</div>
             </div>
             <div class="rounded-lg p-3 border" style="background:rgba(252,165,165,0.08);border-color:#fca5a5aa">
               <div class="font-black mb-1" style="color:#fca5a5">⑧ 空頭賣出</div>
-              <div class="text-slate-300 text-xs leading-relaxed">空頭環境（MA20 下彎）中，股價在均線上方正乖離偏高，<strong class="text-white">連續下跌 ≥3 根</strong>，逢高出脫。</div>
+              <div class="text-slate-300 text-xs leading-relaxed">股價位於平均線<strong class="text-white">上方且不斷上漲偏離均線</strong>，表短期漲幅已高（空頭環境 MA20 下彎，峰值後<strong class="text-white">連續下跌 2 天</strong>），可逢高出脫。</div>
             </div>
           </div>
         </div>
@@ -3949,40 +3950,40 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ② 續漲加碼：多頭環境中，股價在均線上方
-    //    連續下跌 ≥3 根後，未跌破 MA20，再連續上漲 ≥3 根
+    // ② 續漲買進：多頭環境中，股價在均線上方
+    //    連續下跌 ≥2 根後，未跌破均線，再連續上漲 ≥2 根
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!rule && bull && aboveNow && canMark(2)) {
-      // 找本根前方「已上漲 ≥3 根」的起點
+      // 找本根前方「已上漲 ≥2 根」的起點
       let upCount = 0;
       for (let k = i; k > i - 6 && k > 0; k--) {
         if (closes[k] > closes[k-1]) upCount++; else break;
       }
-      if (upCount >= 3) {
-        // 上漲前是否有連續下跌 ≥3 根（均未跌破 MA20）
+      if (upCount >= 2) {
+        // 上漲前是否有連續下跌 ≥2 根（均未跌破均線）
         const dipStart = i - upCount;
         let downCount = 0;
         for (let k = dipStart; k > dipStart - 6 && k > 0; k--) {
           if (closes[k] < closes[k-1] && closes[k] > ma2arr[k]) downCount++;
           else break;
         }
-        if (downCount >= 3) {
-          rule = 2; strength = 'moderate'; note = `多頭回測 MA20 後反彈（跌${downCount}根→漲${upCount}根）`;
+        if (downCount >= 2) {
+          rule = 2; strength = 'moderate'; note = `多頭回測均線後反彈（跌${downCount}根→漲${upCount}根）`;
         }
       }
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ③ 初步賣出：股價在 MA20 上方，達到波段高點後連跌 ≥3 根
-    //    判斷：找到近期峰值（前5根最高），本根已連跌 ≥3 根
+    // ③ 初步賣出：股價在 MA20 上方，達到波段高點後連跌 ≥2 根
+    //    判斷：找到近期峰值（前5根最高），本根已連跌 ≥2 根
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!rule && aboveNow && bias >= BIAS_SELL_MODERATE && canMark(3)) {
-      // 連跌 ≥3 根
+      // 連跌 ≥2 根
       let downCount = 0;
       for (let k = i; k > i - 5 && k > 0; k--) {
         if (closes[k] < closes[k-1]) downCount++; else break;
       }
-      if (downCount >= 3) {
+      if (downCount >= 2) {
         strength = (bias >= BIAS_SELL_STRONG) ? 'strong' : 'moderate';
         note = `正乖離 ${bias.toFixed(1)}%，峰值後連跌 ${downCount} 根，逢高出脫`;
         rule = 3;
@@ -4032,11 +4033,11 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // ⑦ 續跌賣出：空頭環境中，股價在 MA20 下方
-    //    反彈接近 MA20 後，連跌 ≥3 根才觸發（確認真的被拉回）
+    //    反彈接近 MA20 後，連跌 ≥2 根才觸發（確認真的被拉回）
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!rule && bear && belowNow && !crossDown && canMark(7)) {
       const nearMA = bias > -6.0;   // 離均線不太遠（均線附近）
-      // 連跌 ≥3 根
+      // 連跌 ≥2 根
       let downCount = 0;
       for (let k = i; k > i - 5 && k > 0; k--) {
         if (closes[k] < closes[k-1]) downCount++; else break;
@@ -4045,7 +4046,7 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
       const bounceIdx = i - downCount;
       const wasBounce = bounceIdx > 0 && bounceIdx < n
         && closes[bounceIdx] > closes[bounceIdx - 1];  // 反彈起點那根是上漲的
-      if (nearMA && downCount >= 3 && wasBounce) {
+      if (nearMA && downCount >= 2 && wasBounce) {
         strength = (volShrink === true) ? 'strong' : 'moderate';
         note = `空頭反彈至均線附近後連跌 ${downCount} 根，續跌確認${volShrink === true ? '（縮量誘多）' : ''}`;
         rule = 7;
@@ -4054,14 +4055,14 @@ function calcGranvilleOnSeries(closes, ma2arr, volumes) {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // ⑧ 空頭賣出：空頭環境中（MA20 下彎），股價在均線上方
-    //    正乖離偏高且達到局部峰值後連跌 ≥3 根
+    //    正乖離偏高且達到局部峰值後連跌 ≥2 根
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (!rule && maTrendDown(i) && aboveNow && bias >= BIAS_SELL_MODERATE && canMark(8)) {
       let downCount = 0;
       for (let k = i; k > i - 5 && k > 0; k--) {
         if (closes[k] < closes[k-1]) downCount++; else break;
       }
-      if (downCount >= 3) {
+      if (downCount >= 2) {
         rule = 8; strength = 'weak';
         note = `空頭格局中正乖離 ${bias.toFixed(1)}%，峰值後連跌 ${downCount} 根，逢高出脫`;
       }
@@ -8270,6 +8271,7 @@ function _drawGranCandleChart(data, period) {
 
   const ma5   = _sma(5);    // 短天期均線（黃金/死亡交叉用）
   const ma20  = _sma(20);   // 葛蘭碧主控均線
+  const ma60  = _sma(60);   // 季線（MA60 環境均線）
   const ma120 = _sma(120);  // 長天期均線（黃金/死亡交叉用）
 
   // ── 葛蘭碧訊號計算（以 MA20 為主控均線）────────────────────
@@ -8495,6 +8497,8 @@ function _drawGranCandleChart(data, period) {
         { label:'MA20', data:ma20, borderColor:'#3b82f6', borderWidth:2.5, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA5（交叉用，橙黃色，細）
         { label:'MA5',  data:ma5,  borderColor:'#f59e0b', borderWidth:1.5, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
+        // MA60（季線，青色，中等粗細）
+        { label:'MA60', data:ma60, borderColor:'#14b8a6', borderWidth:1.8, pointRadius:0, fill:false, tension:.3, spanGaps:false, order:1 },
         // MA120（交叉用，紫色，細虛線）
         {
           label:'MA120', data:ma120,
@@ -9644,7 +9648,7 @@ ${newsSection}
 分析目前均線排列、MACD、RSI、KD 等技術指標所呈現的多空訊號，說明整體技術趨勢是多頭、空頭或盤整。
 
 **二、葛蘭碧法則解讀**
-解讀目前出現的葛蘭碧訊號意義，說明其對短中期操作方向的指引，若無訊號請說明原因。
+解讀目前出現的葛蘭碧訊號意義（以 MA20 為主控均線，參考葛蘭碧八大法則：①起漲買進、②續漲買進、③初步賣出、④漲勢末跌買進、⑤趨勢轉空賣出、⑥反彈買進、⑦續跌賣出、⑧空頭賣出），說明其對短中期操作方向的指引，若無訊號請說明原因。
 
 **三、移動平均線分析**
 分析均線排列型態、乖離率狀況，及是否有黃金交叉或死亡交叉預警，對操作時機的影響。

@@ -273,7 +273,7 @@ def calc_granville_signals(
                 # vol_boom=False → 縮量假突破，不標
 
         # ② 續漲加碼：多頭環境，股價在均線上方
-        #    連續下跌 ≥3 根（未跌破 MA20）後，再連續上漲 ≥3 根
+        #    連續下跌 ≥2 根（未跌破均線）後，再連續上漲 ≥2 根
         if not rule and bull and above and can_mark(2, i):
             # 計算本根往前連漲根數
             up_count = 0
@@ -282,8 +282,8 @@ def calc_granville_signals(
                     up_count += 1
                 else:
                     break
-            if up_count >= 3:
-                # 連漲前是否有連跌 ≥3 根（均未跌破均線）
+            if up_count >= 2:
+                # 連漲前是否有連跌 ≥2 根（均未跌破均線）
                 dip_start = i - up_count
                 down_count = 0
                 for k in range(dip_start, max(dip_start - 7, 0), -1):
@@ -294,12 +294,12 @@ def calc_granville_signals(
                         down_count += 1
                     else:
                         break
-                if down_count >= 3:
+                if down_count >= 2:
                     rule, strength = 2, 'moderate'
-                    note = f'多頭回測 MA20 後反彈（跌{down_count}根→漲{up_count}根）'
+                    note = f'多頭回測 MA均線後反彈（跌{down_count}根→漲{up_count}根）'
 
         # ③ 初步賣出：股價在均線上方，正乖離偏高
-        #    達到波段峰值後連跌 ≥3 根才觸發
+        #    達到波段峰值後連跌 ≥2 根才觸發
         if not rule and above and bias >= BIAS_SELL_MODERATE and can_mark(3, i):
             down_count = 0
             for k in range(i, max(i - 6, 0), -1):
@@ -307,7 +307,7 @@ def calc_granville_signals(
                     down_count += 1
                 else:
                     break
-            if down_count >= 3:
+            if down_count >= 2:
                 strength = 'strong' if bias >= BIAS_SELL_STRONG else 'moderate'
                 note = f'正乖離 {bias:.1f}%，峰值後連跌 {down_count} 根，逢高出脫'
                 rule = 3
@@ -343,7 +343,7 @@ def calc_granville_signals(
                 note = f'負乖離 {bias:.1f}%，偏離均線過大{"，止跌反彈" if bouncing else "，持續觀察"}'
                 rule = 6
 
-        # ⑦ 續跌賣出：空頭環境中，反彈接近均線後連跌 ≥3 根才觸發
+        # ⑦ 續跌賣出：空頭環境中，反彈接近均線後連跌 ≥2 根才觸發
         if not rule and bear and below and not cross_dn and can_mark(7, i):
             near_ma = bias > -6.0
             # 計算連跌根數
@@ -358,13 +358,13 @@ def calc_granville_signals(
             was_bounce = (bounce_idx > 0 and bounce_idx < n
                           and prices[bounce_idx] is not None and prices[bounce_idx - 1] is not None
                           and prices[bounce_idx] > prices[bounce_idx - 1])
-            if near_ma and down_count >= 3 and was_bounce:
+            if near_ma and down_count >= 2 and was_bounce:
                 strength = 'strong' if vol_shrink is True else 'moderate'
                 note = f'空頭反彈至均線附近後連跌 {down_count} 根，續跌確認{"（縮量誘多）" if vol_shrink is True else ""}'
                 rule = 7
 
         # ⑧ 空頭賣出：空頭環境（均線下彎）中，股價在均線上方
-        #    正乖離偏高且連跌 ≥3 根才觸發
+        #    正乖離偏高且連跌 ≥2 根才觸發
         if not rule and ma_trend_down(i) and above and bias >= BIAS_SELL_MODERATE and can_mark(8, i):
             down_count = 0
             for k in range(i, max(i - 6, 0), -1):
@@ -372,21 +372,21 @@ def calc_granville_signals(
                     down_count += 1
                 else:
                     break
-            if down_count >= 3:
+            if down_count >= 2:
                 rule, strength = 8, 'weak'
                 note = f'空頭格局中正乖離 {bias:.1f}%，峰值後連跌 {down_count} 根，逢高出脫'
 
         if rule > 0:
             mark_sig(rule, i)
             _names = {
-                1: ('起漲買進', 'buy',  '均線走平/上彎，股價放量向上突破'),
-                2: ('續漲加碼', 'buy',  '多頭環境中，連跌≥3根未破均線後再連漲≥3根'),
-                3: ('初步賣出', 'sell', f'正乖離 {bias:.1f}%，波段峰值後連跌≥3根，逢高出脫'),
-                4: ('末跌買進', 'buy',  '股價跌破均線，但 MA20 仍強勢上彎（逆勢小部位）'),
-                5: ('趨勢轉空', 'sell', '均線走平/下彎，股價向下跌破 MA20'),
-                6: ('反彈買進', 'buy',  f'負乖離 {bias:.1f}%，股價偏離均線過遠，可能技術性回升'),
-                7: ('續跌賣出', 'sell', '空頭趨勢中，反彈至均線附近後連跌≥3根確認'),
-                8: ('空頭賣出', 'sell', f'空頭環境，正乖離 {bias:.1f}%，峰值後連跌≥3根逢高出脫'),
+                1: ('起漲買進', 'buy',  '平均線由下降轉水平/上揚，股價由下往上突破 MA20，為啟動漲勢的關鍵訊號'),
+                2: ('續漲買進', 'buy',  f'股價在 MA20 上方，連跌{down_count}根（未破均線）後連漲{up_count}根反彈，多頭回測後的加碼時機'),
+                3: ('初步賣出', 'sell', f'股價在 MA20 上方且正乖離 {bias:.1f}%，達波段峰值後連跌{down_count}根，短期漲幅已高可逢高出脫'),
+                4: ('漲勢末跌買進', 'buy',  '股價由均線上方跌至均線下方，但 MA20 仍處上升趨勢，為漲勢中的最後買進機會（逆勢，小部位）'),
+                5: ('趨勢轉空賣出', 'sell', '平均線由上升轉水平/下彎，股價由上往下跌破 MA20，趨勢由多轉空的關鍵賣出訊號'),
+                6: ('反彈買進', 'buy',  f'股價跌至 MA20 下方且負乖離 {bias:.1f}%，偏離均線過遠，技術性回升機會（均線下，謹慎）'),
+                7: ('續跌賣出', 'sell', f'股價在 MA20 下方，反彈未超越均線後連跌{down_count}根確認再度轉弱，空頭延續賣出'),
+                8: ('空頭賣出', 'sell', f'均線下彎空頭格局中，股價位於 MA20 上方且正乖離 {bias:.1f}%，達局部峰值後連跌{down_count}根，逢高出脫'),
             }
             name, signal, desc = _names[rule]
             results.append({
@@ -600,12 +600,13 @@ def calc_ma_signals(
 
     # ──────────────────────────────────────────────────────────
     # 訊號③ & ④：均線交叉（黃金交叉 / 死亡交叉）
-    # 組合：MA5×MA20、MA5×MA60、MA20×MA60
+    # 主要定義：MA5×MA120（短×長），且兩者都需同向
+    # 輔助組合：MA5×MA20、MA20×MA60（參考用）
     # ──────────────────────────────────────────────────────────
     ma_cross_pairs = [
-        ('ma5',  'ma20', '短期×中期', 'moderate'),
-        ('ma5',  'ma60', '短期×長期', 'strong'),
-        ('ma20', 'ma60', '中期×長期', 'strong'),
+        ('ma5',  'ma120', '短期×長期', 'strong'),   # ★ 主要交叉：MA5×MA120
+        ('ma5',  'ma20',  '短期×中期', 'moderate'),  # 輔助
+        ('ma20', 'ma60',  '中期×長期', 'strong'),    # 輔助
     ]
 
     for short_key, long_key, pair_label, base_strength in ma_cross_pairs:
@@ -615,28 +616,46 @@ def calc_ma_signals(
             continue
 
         n     = min(lookback, len(short_arr), len(long_arr))
-        s_mas = short_arr[-n:]
-        l_mas = long_arr[-n:]
+        # 需要額外 2 根計算方向（前 2 根斜率）
+        n_ext = min(n + 2, len(short_arr), len(long_arr))
+        s_mas = short_arr[-n_ext:]
+        l_mas = long_arr[-n_ext:]
         short_label = short_key.upper()
         long_label  = long_key.upper()
+        offset_ext = n_ext - n   # 對齊到 n 長度的偏移
 
         for i in range(1, n):
-            prev_s_above = s_mas[i - 1] > l_mas[i - 1]
-            curr_s_above = s_mas[i]     > l_mas[i]
+            i_ext = i + offset_ext   # 在 ext 陣列中的索引
+            if i_ext < 2:
+                continue
+            prev_s_above = s_mas[i_ext - 1] > l_mas[i_ext - 1]
+            curr_s_above = s_mas[i_ext]     > l_mas[i_ext]
             neg_idx      = i - n
 
-            # 黃金交叉（買點）
+            # 短均線方向（前2根）
+            s_up   = s_mas[i_ext] > s_mas[i_ext - 2] if s_mas[i_ext - 2] is not None else s_mas[i_ext] > s_mas[i_ext - 1]
+            s_down = s_mas[i_ext] < s_mas[i_ext - 2] if s_mas[i_ext - 2] is not None else s_mas[i_ext] < s_mas[i_ext - 1]
+
+            # 黃金交叉（買點）：短均線由下往上穿越長均線，且兩者都上升
             if not prev_s_above and curr_s_above:
-                # 同時確認：長均線不下彎（否則只是空頭反彈交叉，意義低）
-                abs_i   = len(long_arr) - n + i
+                abs_i   = len(long_arr) - n_ext + i_ext
                 l_up    = _ma_up(long_arr, min(abs_i, len(long_arr) - 1))
                 l_flat  = not _ma_down(long_arr, min(abs_i, len(long_arr) - 1))
-                strength = base_strength if (l_up or l_flat) else 'weak'
-                note     = '長均線走平/上彎，訊號較可靠' if (l_up or l_flat) else '長均線仍下彎，此交叉為弱訊號'
+                # ★ 嚴謹定義：黃金交叉需短均線上升 AND 長均線也上升
+                both_up = s_up and l_up
+                if both_up:
+                    strength = base_strength
+                    note = f'{short_label} 上升穿越 {long_label}，兩者均上升，黃金交叉訊號強'
+                elif l_flat and s_up:
+                    strength = 'moderate'
+                    note = f'{short_label} 上升穿越 {long_label}，{long_label} 走平，訊號中等'
+                else:
+                    strength = 'weak'
+                    note = f'{short_label} 穿越 {long_label}，但方向不一致，訊號偏弱'
                 results.append({
                     'signal_type':    'golden_cross',
                     'signal':         'buy',
-                    'name':           f'黃金交叉（{short_label}×{long_label}）',
+                    'name':           f'黃金交叉（{short_label}↑穿{long_label}↑）',
                     'description': (
                         f'{short_label} 由下往上穿越 {long_label}（{pair_label}），{note}。'
                         '均線為落後指標，行情通常已先走一段，進場需衡量追高風險。'
@@ -648,17 +667,26 @@ def calc_ma_signals(
                     'note':           note,
                 })
 
-            # 死亡交叉（賣點）
+            # 死亡交叉（賣點）：短均線由上往下穿越長均線，且兩者都下降
             elif prev_s_above and not curr_s_above:
-                abs_i   = len(long_arr) - n + i
+                abs_i   = len(long_arr) - n_ext + i_ext
                 l_down  = _ma_down(long_arr, min(abs_i, len(long_arr) - 1))
                 l_flat  = not _ma_up(long_arr, min(abs_i, len(long_arr) - 1))
-                strength = base_strength if (l_down or l_flat) else 'weak'
-                note     = '長均線走平/下彎，趨勢確認轉空' if (l_down or l_flat) else '長均線仍上彎，此交叉為弱訊號'
+                # ★ 嚴謹定義：死亡交叉需短均線下降 AND 長均線也下降
+                both_down = s_down and l_down
+                if both_down:
+                    strength = base_strength
+                    note = f'{short_label} 下降穿越 {long_label}，兩者均下降，死亡交叉趨勢確認'
+                elif l_flat and s_down:
+                    strength = 'moderate'
+                    note = f'{short_label} 下降穿越 {long_label}，{long_label} 走平，訊號中等'
+                else:
+                    strength = 'weak'
+                    note = f'{short_label} 穿越 {long_label}，但方向不一致，訊號偏弱'
                 results.append({
                     'signal_type':    'death_cross',
                     'signal':         'sell',
-                    'name':           f'死亡交叉（{short_label}×{long_label}）',
+                    'name':           f'死亡交叉（{short_label}↓穿{long_label}↓）',
                     'description': (
                         f'{short_label} 由上往下穿越 {long_label}（{pair_label}），{note}。'
                         '適合確認趨勢反轉，持股者應考慮減碼或出場。'
