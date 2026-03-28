@@ -1362,13 +1362,18 @@ def get_stock_analysis(ticker):
                 'resist':   resist,
                 'trend':    trend,
                 # 強化版均線分析（均線排列、乖離率、葛蘭碧、交叉預測）
-                'ma_analysis': {
+                # ★ 修正：優先使用 recommendation 中已計算的 ma_analysis（欄位最完整）
+                # 確保 /api/stock_analysis 回傳的 technical.ma_analysis 與熱門股票
+                # _build_hot_summary 的 ma_analysis 來源一致，避免前端重算時不一致
+                'ma_analysis': recommendation.get('ma_analysis') or {
                     'array':        trend.get('ma_array', {}),
                     'bias_ma20':    trend.get('bias_ma20'),
                     'bias_warn':    trend.get('bias_warn_ma20', {}),
                     'granville':    trend.get('granville', []),
                     'cross_5_20':   trend.get('cross_5_20', {}),
                     'cross_20_60':  trend.get('cross_20_60', {}),
+                    'ma_signals':   trend.get('ma_signals', []),
+                    'ma_signals_summary': trend.get('ma_signals_summary', ''),
                 },
             },
             # 籌碼面
@@ -1484,7 +1489,9 @@ def _fetch_twii_data_raw() -> dict | None:
     recent60 = ohlcv[-60:] if len(ohlcv) >= 60 else ohlcv
     support  = round(min(r['low']  for r in recent60), 2)
     resist   = round(max(r['high'] for r in recent60), 2)
-    trend    = _calc_trend(last['close'], latest_ind)
+    trend    = _calc_trend(last['close'], latest_ind, ohlcv=ohlcv,
+                           ma_series_dict={'ma20': indicators.get('ma20', []),
+                                           'ma60': indicators.get('ma60', [])})
 
     data_out = {
         'ticker':       '0000',
