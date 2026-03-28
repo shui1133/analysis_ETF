@@ -4466,96 +4466,6 @@ function sentimentBadge(s) {
 // Google News
 // ════════════════════════════════════════════════════════════════
 
-// ── 解析 RSS XML 字串為文章陣列（共用）──
-function _parseRssXml(xmlText) {
-  const parser = new DOMParser();
-  const doc    = parser.parseFromString(xmlText, 'text/xml');
-  // 檢查是否為有效 XML（parsererror 代表解析失敗）
-  if (doc.querySelector('parsererror')) throw new Error('RSS XML 解析失敗');
-  const items  = Array.from(doc.querySelectorAll('item'));
-  if (items.length === 0) throw new Error('RSS 無新聞項目');
-  return items.slice(0, 20).map(item => {
-    const title   = item.querySelector('title')?.textContent || '';
-    const link    = item.querySelector('link')?.textContent  || '';
-    const pubDate = item.querySelector('pubDate')?.textContent || '';
-    const desc    = (item.querySelector('description')?.textContent || '')
-                      .replace(/<[^>]*>/g, '').slice(0, 200);
-    const srcEl   = item.querySelector('source');
-    const source  = srcEl?.textContent || (title.match(/ - ([^-]+)$/) || [])[1] || 'Google News';
-    const cleanTitle = title.replace(/ - [^-]+$/, '').trim();
-    return { title: cleanTitle, link, pubDate, desc, source };
-  });
-}
-
-// ── 前端直接抓取 Google News RSS（多策略備援）──
-async function _fetchNewsFromRSS(ticker, displayName) {
-  const query = displayName && displayName !== ticker
-    ? `${displayName} ${ticker} 股票`
-    : `${ticker} 股票`;
-  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-
-  // ── 策略 1：rss2json.com（專為前端設計，有 CORS，免費額度充足）──
-  try {
-    const r2jUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=20`;
-    const resp = await fetch(r2jUrl, { signal: AbortSignal.timeout(12000) });
-    if (!resp.ok) throw new Error(`rss2json HTTP ${resp.status}`);
-    const j = await resp.json();
-    if (j.status !== 'ok' || !j.items || j.items.length === 0) throw new Error(`rss2json status: ${j.status}`);
-    console.log('[RSS] rss2json 成功，文章數:', j.items.length);
-    return j.items.map(item => ({
-      title:   (item.title || '').replace(/ - [^-]+$/, '').trim(),
-      link:    item.link  || item.guid || '',
-      pubDate: item.pubDate || '',
-      desc:    (item.description || '').replace(/<[^>]*>/g, '').slice(0, 200),
-      source:  item.author || (item.title?.match(/ - ([^-]+)$/) || [])[1] || 'Google News'
-    }));
-  } catch(e) {
-    console.warn('[RSS] rss2json 失敗:', e.message);
-  }
-
-  // ── 策略 2：allorigins.win（回傳 JSON.contents，需解析 XML）──
-  try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-    if (!resp.ok) throw new Error(`allorigins HTTP ${resp.status}`);
-    const j = await resp.json();
-    if (!j.contents) throw new Error('allorigins 回傳空內容');
-    const articles = _parseRssXml(j.contents);
-    console.log('[RSS] allorigins 成功，文章數:', articles.length);
-    return articles;
-  } catch(e) {
-    console.warn('[RSS] allorigins 失敗:', e.message);
-  }
-
-  // ── 策略 3：corsproxy.io（直接回傳 XML 文字）──
-  try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(rssUrl)}`;
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-    if (!resp.ok) throw new Error(`corsproxy.io HTTP ${resp.status}`);
-    const xmlText = await resp.text();
-    const articles = _parseRssXml(xmlText);
-    console.log('[RSS] corsproxy.io 成功，文章數:', articles.length);
-    return articles;
-  } catch(e) {
-    console.warn('[RSS] corsproxy.io 失敗:', e.message);
-  }
-
-  // ── 策略 4：feedburner-style jsonp via jsonp.afeld.me ──
-  try {
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}`;
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-    if (!resp.ok) throw new Error(`allorigins/raw HTTP ${resp.status}`);
-    const xmlText = await resp.text();
-    const articles = _parseRssXml(xmlText);
-    console.log('[RSS] allorigins/raw 成功，文章數:', articles.length);
-    return articles;
-  } catch(e) {
-    console.warn('[RSS] allorigins/raw 失敗:', e.message);
-  }
-
-  throw new Error('所有 RSS 策略均失敗');
-}
-
 async function loadNews() {
   if (!currentData) return;
   const ticker = currentData.ticker;
@@ -4573,65 +4483,36 @@ async function loadNews() {
   document.getElementById('newsList').innerHTML = '';
   document.getElementById('newsEmpty').classList.add('hidden');
 
-  const query = displayName && displayName !== ticker ? `${displayName} ${ticker}` : ticker;
-  const gnUrl = `https://news.google.com/search?q=${encodeURIComponent(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-
-  // ── Step 1：呼叫後端 API（與 analysis2 邏輯一致）────────────
   try {
+    // ── 呼叫後端 API（後端直接爬 Google News RSS，避免 CORS 問題）──
     const resp = await fetch(`/api/news/${encodeURIComponent(ticker)}`,
                              { signal: AbortSignal.timeout(20000) });
     const json = await resp.json();
-    console.log('[loadNews] 後端回應:', json.status, '文章數:', json.articles?.length ?? 0);
 
     document.getElementById('newsLoading').classList.add('hidden');
 
-    if (json.status === 'success' && json.articles && json.articles.length > 0) {
-      // 後端成功 → 直接渲染，不走 RSS fallback
-      const articles = json.articles.map(a => ({
-        ...a,
-        sentiment: classifySentiment(a.title + ' ' + (a.desc || ''))
-      }));
-      allNewsData = articles;
-      renderNews(articles);
+    if (json.status !== 'success' || !json.articles || json.articles.length === 0) {
+      document.getElementById('newsError').classList.remove('hidden');
+      document.getElementById('newsErrorMsg').textContent =
+        json.message || '目前無法取得新聞，請稍後再試。';
       return;
     }
 
-    // 後端回應但無資料（status 非 success 或空陣列）→ 嘗試 RSS fallback
-    console.warn('[loadNews] 後端無資料，切換至 RSS fallback. status:', json.status, 'message:', json.message);
-
-  } catch (e) {
-    // 後端超時或網路錯誤 → 嘗試 RSS fallback
-    console.warn('[loadNews] 後端例外，切換至 RSS fallback:', e.message);
-    document.getElementById('newsLoading').classList.add('hidden');
-  }
-
-  // ── Step 2：後端無資料時，改用前端多 proxy RSS 直接抓取 ──────
-  const loadTxt = document.querySelector('#newsLoading .text-slate-400');
-  if (loadTxt) loadTxt.textContent = '正在透過 RSS 搜尋新聞（自動切換備援）...';
-  document.getElementById('newsLoading').classList.remove('hidden');
-
-  try {
-    const rssArticles = await _fetchNewsFromRSS(ticker, displayName);
-    document.getElementById('newsLoading').classList.add('hidden');
-    const tagged = rssArticles.map(a => ({
+    // 加上情緒分類後渲染
+    const articles = json.articles.map(a => ({
       ...a,
       sentiment: classifySentiment(a.title + ' ' + (a.desc || ''))
     }));
-    allNewsData = tagged;
-    renderNews(tagged);
-    return;
-  } catch (e) {
-    console.warn('[loadNews] RSS fallback 失敗:', e.message);
-    document.getElementById('newsLoading').classList.add('hidden');
-  }
 
-  // ── Step 3：兩者皆失敗，顯示錯誤並提供 Google News 直連 ──────
-  document.getElementById('newsError').classList.remove('hidden');
-  document.getElementById('newsErrorMsg').innerHTML =
-    `目前無法取得新聞，請稍後再試。&nbsp;` +
-    `<a href="${gnUrl}" target="_blank" ` +
-    `style="color:#60a5fa;text-decoration:underline;font-weight:bold;">` +
-    `在 Google News 搜尋 ${displayName} →</a>`;
+    allNewsData = articles;
+    renderNews(articles);
+
+  } catch (e) {
+    document.getElementById('newsLoading').classList.add('hidden');
+    document.getElementById('newsError').classList.remove('hidden');
+    document.getElementById('newsErrorMsg').textContent = '新聞載入逾時，請稍後重試。';
+    console.warn('loadNews 失敗:', e.message);
+  }
 }
 
 function renderNews(articles) {
