@@ -307,7 +307,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         <i class="fa-solid fa-file-invoice-dollar mr-1"></i>財報分析
       </button>
       <button class="tab-btn" onclick="switchTab('frontier')" id="tab-frontier">
-        <i class="fa-solid fa-chart-scatter mr-1"></i>效益邊緣線
+        <i class="fa-solid fa-chart-scatter mr-1"></i>效益前緣線
       </button>
       <button class="tab-btn" onclick="switchTab('sim')" id="tab-sim">
         <i class="fa-solid fa-chart-line mr-1"></i>SIM分析
@@ -727,7 +727,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           <span class="text-xs px-2.5 py-1 rounded-full" style="background:#1e3a5f;color:#93c5fd;">🏦 基本面指標</span>
           <span class="text-xs px-2.5 py-1 rounded-full" style="background:#1e3a5f;color:#93c5fd;">📋 交易概況</span>
           <span class="text-xs px-2.5 py-1 rounded-full" style="background:#1e3a5f;color:#93c5fd;">📑 財務報表</span>
-          <span class="text-xs px-2.5 py-1 rounded-full" style="background:#1e3a5f;color:#93c5fd;">🔀 效益邊緣線</span>
+          <span class="text-xs px-2.5 py-1 rounded-full" style="background:#1e3a5f;color:#93c5fd;">🔀 效益前緣線</span>
           <span class="text-xs px-2.5 py-1 rounded-full" style="background:#1e3a5f;color:#93c5fd;">📰 近一週新聞</span>
         </div>
 
@@ -930,11 +930,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
     </div>
 
 
-    <!-- ═══ Tab: 效益邊緣線 Efficient Frontier ══════════════════ -->
+    <!-- ═══ Tab: 效益前緣線 Efficient Frontier ══════════════════ -->
     <div id="panel-frontier" class="hidden space-y-4">
       <div class="card p-5">
         <h3 class="font-bold text-lg text-white mb-1 flex items-center gap-2">
-          <i class="fa-solid fa-chart-scatter text-yellow-400"></i>效益邊緣線分析
+          <i class="fa-solid fa-chart-scatter text-yellow-400"></i>效益前緣線分析
           <span class="text-slate-400 text-sm font-normal">（Efficient Frontier）</span>
         </h3>
         <p class="text-slate-500 text-xs mb-1">輸入2~15支股票代碼，系統從 yfinance 取得歷史資料，計算最佳投資組合邊緣。</p>
@@ -1003,7 +1003,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           </div>
         </div>
 
-        <!-- 效益邊緣線圖表 -->
+        <!-- 效益前緣線圖表 -->
         <div id="efChartWrap" class="hidden">
           <div class="chart-wrap" style="height:480px">
             <canvas id="efChart"></canvas>
@@ -1032,7 +1032,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
       <!-- 說明 -->
       <div class="rounded-xl bg-slate-800/40 border border-slate-700/30 p-3 text-xs text-slate-500">
         <i class="fa-solid fa-circle-info mr-1 text-blue-400"></i>
-        效益邊緣線顯示在給定報酬率下風險最小的投資組合軌跡。
+        效益前緣線顯示在給定報酬率下風險最小的投資組合軌跡。
         顏色深淺代表夏普比率（Sharpe Ratio），★ 為最小變異組合（MVP），◆ 為最大夏普比率組合（MSP）。
         計算基於歷史資料，不代表未來績效保證。
       </div>
@@ -5007,7 +5007,7 @@ window.addEventListener('load', () => {
 });
 
 // ════════════════════════════════════════════════════════════════
-// 效益邊緣線 (Efficient Frontier)
+// 效益前緣線 (Efficient Frontier)
 // ════════════════════════════════════════════════════════════════
 
 async function runEfficientFrontier() {
@@ -5087,7 +5087,7 @@ function renderEfficientFrontier(d) {
   document.getElementById('ef-msp-sharpe').textContent = msp.sharpe.toFixed(3);
   document.getElementById('efSummary').classList.remove('hidden');
 
-  // ── 效益邊緣線圖表 ──────────────────────────────────────────
+  // ── 效益前緣線圖表 ──────────────────────────────────────────
   const ctx = document.getElementById('efChart');
   if (charts.ef) { charts.ef.destroy(); charts.ef = null; }
   document.getElementById('efChartWrap').classList.remove('hidden');
@@ -5123,7 +5123,7 @@ function renderEfficientFrontier(d) {
         // 效率前緣曲線
         {
           type:            'line',
-          label:           '效益邊緣線',
+          label:           '效益前緣線',
           data:            ef.risk.map((r,i) => ({x: r*100, y: ef.ret[i]*100})),
           borderColor:     '#7dd3fc',
           backgroundColor: 'transparent',
