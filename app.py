@@ -720,6 +720,11 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         'target_type':  rec.get('target_type', 'none'),
         'reasons_buy':  rec.get('reasons_buy', []),
         'reasons_sell': rec.get('reasons_sell', []),
+        # ★ 新增：ma_analysis 供前端 renderRecommendation 重算評分用
+        # 確保熱門股票點入後投資建議頁的評級與熱門表格一致
+        'ma_analysis':   rec.get('ma_analysis', {}),
+        'fund_score':    rec.get('fund_score', 0),
+        'price_position': rec.get('price_position'),
         # ★ 修正：加入近 1260 日完整 chart 陣列，供個股頁成交量圖使用
         # _summaryToDataFormat 的 chart.volumes 目前為空陣列導致圖表空白
         'chart': (lambda rows: {

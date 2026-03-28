@@ -3207,7 +3207,7 @@ function renderRecommendation(data) {
   const techItems=[];
   // ── 完全對齊後端 enhanced_generate_recommendation 邏輯重新計算技術面分數 ──
   let _techScoreCalc = 0;
-  const _maAna = (data.technical||{}).ma_analysis || {};
+  const _maAna = (data.technical||{}).ma_analysis || rec.ma_analysis || {};
 
   // 1. 均線排列（array_score >= 3 → +2；>= 1 → +1；<= -3 → -2；<= -1 → -1）
   if(_maAna.array&&_maAna.array.label){
@@ -7289,6 +7289,9 @@ function _summaryToDataFormat(code, s) {
         color:   s.trend_color,
         signals: [],
       },
+      // ★ 修正：帶入後端計算好的 ma_analysis（含葛蘭碧、交叉預測、乖離率等）
+      // 確保 renderRecommendation 重算時能取得完整資料，與熱門表格評級一致
+      ma_analysis: s.ma_analysis || {},
     },
     fundamentals: {
       pe_ratio:   s.pe_ratio,
@@ -7300,15 +7303,20 @@ function _summaryToDataFormat(code, s) {
       '52w_low':  s['52w_low'],
     },
     recommendation: {
-      rating:       s.rating,
-      total_score:  s.rating_score,
-      rating_color: s.rating_color,
-      rating_bg:    s.rating_bg,
-      rating_icon:  s.rating_icon,
-      target_price: s.target_price,
-      target_type:  s.target_type,
-      reasons_buy:  s.reasons_buy  || [],
-      reasons_sell: s.reasons_sell || [],
+      rating:         s.rating,
+      total_score:    s.rating_score,
+      rating_color:   s.rating_color,
+      rating_bg:      s.rating_bg,
+      rating_icon:    s.rating_icon,
+      target_price:   s.target_price,
+      target_type:    s.target_type,
+      reasons_buy:    s.reasons_buy  || [],
+      reasons_sell:   s.reasons_sell || [],
+      // ★ 修正：補入 fund_score / price_position / ma_analysis
+      // renderRecommendation 重算技術分時需要這些欄位
+      fund_score:     s.fund_score    || 0,
+      price_position: s.price_position != null ? s.price_position : null,
+      ma_analysis:    s.ma_analysis   || {},
     },
     // ★ 修正：直接使用後端傳來的完整 chart 陣列（含 volumes），
     // 解決成交量圖空白問題（原本 closes/volumes 為空陣列）
