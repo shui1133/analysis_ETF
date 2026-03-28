@@ -4555,53 +4555,65 @@ async function loadNews() {
   document.getElementById('newsList').innerHTML = '';
   document.getElementById('newsEmpty').classList.add('hidden');
 
-  let articles = [];
+  const query = displayName && displayName !== ticker ? `${displayName} ${ticker}` : ticker;
+  const gnUrl = `https://news.google.com/search?q=${encodeURIComponent(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
 
-  // ── Step 1：呼叫後端 API ──────────────────────────────────────
+  // ── Step 1：呼叫後端 API（與 analysis2 邏輯一致）────────────
   try {
     const resp = await fetch(`/api/news/${encodeURIComponent(ticker)}`,
                              { signal: AbortSignal.timeout(20000) });
     const json = await resp.json();
+    console.log('[loadNews] 後端回應:', json.status, '文章數:', json.articles?.length ?? 0);
+
+    document.getElementById('newsLoading').classList.add('hidden');
+
     if (json.status === 'success' && json.articles && json.articles.length > 0) {
-      articles = json.articles;
+      // 後端成功 → 直接渲染，不走 RSS fallback
+      const articles = json.articles.map(a => ({
+        ...a,
+        sentiment: classifySentiment(a.title + ' ' + (a.desc || ''))
+      }));
+      allNewsData = articles;
+      renderNews(articles);
+      return;
     }
+
+    // 後端回應但無資料（status 非 success 或空陣列）→ 嘗試 RSS fallback
+    console.warn('[loadNews] 後端無資料，切換至 RSS fallback. status:', json.status, 'message:', json.message);
+
   } catch (e) {
-    console.warn('loadNews 後端失敗，切換至 RSS fallback:', e.message);
+    // 後端超時或網路錯誤 → 嘗試 RSS fallback
+    console.warn('[loadNews] 後端例外，切換至 RSS fallback:', e.message);
+    document.getElementById('newsLoading').classList.add('hidden');
   }
 
-  // ── Step 2：後端無資料時，改用前端 RSS proxy 直接抓取（多 proxy 自動容錯）──
-  if (articles.length === 0) {
-    const loadTxt = document.querySelector('#newsLoading .text-slate-400');
-    if (loadTxt) loadTxt.textContent = '正在透過 RSS 搜尋新聞（自動切換備援）...';
-    try {
-      articles = await _fetchNewsFromRSS(ticker, displayName);
-    } catch (e) {
-      console.warn('RSS fallback 失敗:', e.message);
-    }
-  }
+  // ── Step 2：後端無資料時，改用前端多 proxy RSS 直接抓取 ──────
+  const loadTxt = document.querySelector('#newsLoading .text-slate-400');
+  if (loadTxt) loadTxt.textContent = '正在透過 RSS 搜尋新聞（自動切換備援）...';
+  document.getElementById('newsLoading').classList.remove('hidden');
 
-  document.getElementById('newsLoading').classList.add('hidden');
-
-  if (articles.length === 0) {
-    // ── Step 3：兩者皆失敗，顯示錯誤並提供 Google News 直連 ──
-    const query = displayName && displayName !== ticker ? `${displayName} ${ticker}` : ticker;
-    const gnUrl = `https://news.google.com/search?q=${encodeURIComponent(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-    document.getElementById('newsError').classList.remove('hidden');
-    document.getElementById('newsErrorMsg').innerHTML =
-      `目前無法取得新聞，請稍後再試。&nbsp;` +
-      `<a href="${gnUrl}" target="_blank" ` +
-      `style="color:#60a5fa;text-decoration:underline;font-weight:bold;">` +
-      `在 Google News 搜尋 ${displayName} →</a>`;
+  try {
+    const rssArticles = await _fetchNewsFromRSS(ticker, displayName);
+    document.getElementById('newsLoading').classList.add('hidden');
+    const tagged = rssArticles.map(a => ({
+      ...a,
+      sentiment: classifySentiment(a.title + ' ' + (a.desc || ''))
+    }));
+    allNewsData = tagged;
+    renderNews(tagged);
     return;
+  } catch (e) {
+    console.warn('[loadNews] RSS fallback 失敗:', e.message);
+    document.getElementById('newsLoading').classList.add('hidden');
   }
 
-  // 加上情緒分類後渲染
-  const tagged = articles.map(a => ({
-    ...a,
-    sentiment: classifySentiment(a.title + ' ' + (a.desc || ''))
-  }));
-  allNewsData = tagged;
-  renderNews(tagged);
+  // ── Step 3：兩者皆失敗，顯示錯誤並提供 Google News 直連 ──────
+  document.getElementById('newsError').classList.remove('hidden');
+  document.getElementById('newsErrorMsg').innerHTML =
+    `目前無法取得新聞，請稍後再試。&nbsp;` +
+    `<a href="${gnUrl}" target="_blank" ` +
+    `style="color:#60a5fa;text-decoration:underline;font-weight:bold;">` +
+    `在 Google News 搜尋 ${displayName} →</a>`;
 }
 
 function renderNews(articles) {
