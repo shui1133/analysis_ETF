@@ -241,8 +241,6 @@ def calc_granville_signals(
             continue
         p1 = prices[i - 1] if i >= 1 else None
         m1 = mas[i - 1]    if i >= 1 else None
-        p2 = prices[i - 2] if i >= 2 else None
-        m2 = mas[i - 2]    if i >= 2 else None
         if not p1 or not m1:
             continue
 
@@ -257,9 +255,19 @@ def calc_granville_signals(
         vol_shrink= is_vol_shrink(i)
 
         rule, strength, note = 0, 'moderate', ''
+<<<<<<< HEAD
         up_count, down_count = 0, 0   # ★ 修正：確保所有 rule 分支都有預設值，避免 UnboundLocalError
+=======
+        up_count, down_count = 0, 0
+        mark_idx = i   # 預設標在當根，offset 法則會調整
+>>>>>>> 21988a5 (更新 analysis.html5)
 
-        # ① 起漲買進：均線走平/上彎 + 放量上穿 + 前期多在均線下方
+        # ══════════════════════════════════════════════════════
+        # ① 起漲買進
+        # 條件：均線走平/上彎 + 股價由下往上突破 MA20
+        #       + 前期多數 K 棒在均線下方（確認是突破而非假穿）
+        # 標記：交叉當根（即時標記）
+        # ══════════════════════════════════════════════════════
         if cross_up and (ma_trend_up(i) or ma_flat(i)) and can_mark(1, i):
             prev_below = sum(1 for k in range(max(0, i - 10), i)
                              if prices[k] is not None and mas[k] is not None and prices[k] < mas[k])
@@ -267,12 +275,16 @@ def calc_granville_signals(
             if prev_below_ratio >= 0.4 or not bull:
                 if vol_boom is True:
                     rule, strength = 1, 'strong'
-                    note = '放量突破，訊號可靠'
+                    note = '放量突破均線，均線走平/上揚，起漲訊號可靠'
                 elif vol_boom is None:
                     rule, strength = 1, 'moderate'
-                    note = '量能資料不足'
-                # vol_boom=False → 縮量假突破，不標
+                    note = '股價突破均線，均線走平/上揚（量能資料不足）'
+                elif vol_boom is False:
+                    # 縮量突破仍標，但強度弱
+                    rule, strength = 1, 'weak'
+                    note = '縮量突破均線，均線走平/上揚，留意是否假突破'
 
+<<<<<<< HEAD
         # ② 續漲加碼：多頭環境，股價在均線上方
         #    連續下跌 ≥2 根（未跌破均線）後，再連續上漲 ≥2 根
         if not rule and bull and above and can_mark(2, i):
@@ -286,41 +298,95 @@ def calc_granville_signals(
             if up_count >= 2:
                 # 連漲前是否有連跌 ≥2 根（均未跌破均線）
                 dip_start = i - up_count
+=======
+        # ══════════════════════════════════════════════════════
+        # ② 續漲買進（谷底回頭標）
+        # 條件：多頭環境（均線上方），連跌 ≥2 根未跌破均線，
+        #       「今天」是反彈第1天（谷底當天）
+        # 標記：谷底當天（即時標記，反彈第1根）
+        # ══════════════════════════════════════════════════════
+        if not rule and bull and above and can_mark(2, i):
+            # 今天是上漲（反彈第1天）
+            today_up = p > p1
+            if today_up:
+                # 往前數連跌根數（昨天開始往前，均未跌破均線）
+>>>>>>> 21988a5 (更新 analysis.html5)
                 down_count = 0
-                for k in range(dip_start, max(dip_start - 7, 0), -1):
+                for k in range(i - 1, max(i - 8, 0), -1):
                     if (prices[k] is not None and prices[k - 1] is not None
                             and mas[k] is not None
-                            and prices[k] < prices[k - 1]
-                            and prices[k] > mas[k]):
+                            and prices[k] < prices[k - 1]   # 下跌
+                            and prices[k] > mas[k]):         # 未跌破均線
                         down_count += 1
                     else:
                         break
                 if down_count >= 2:
+<<<<<<< HEAD
                     rule, strength = 2, 'moderate'
                     note = f'多頭回測 MA均線後反彈（跌{down_count}根→漲{up_count}根）'
 
         # ③ 初步賣出：股價在均線上方，正乖離偏高
         #    達到波段峰值後連跌 ≥2 根才觸發
         if not rule and above and bias >= BIAS_SELL_MODERATE and can_mark(3, i):
+=======
+                    up_count = 1  # 今天是反彈第1天
+                    rule, strength = 2, 'moderate'
+                    note = f'多頭回測均線後反彈（連跌{down_count}根未破均線），谷底加碼時機'
+                    mark_idx = i  # 標在谷底當天（反彈第1根）
+
+        # ══════════════════════════════════════════════════════
+        # ③ 初步賣出（峰值回頭標）
+        # 條件：股價在均線上方，正乖離達門檻（短期漲幅已高），
+        #       確認連跌 ≥3 根後，回頭標在峰值那天
+        # 標記：連跌起點前一天（波段峰值）
+        # ══════════════════════════════════════════════════════
+        if not rule and above and can_mark(3, i):
+            # 往前數連跌根數（今天往前）
+>>>>>>> 21988a5 (更新 analysis.html5)
             down_count = 0
-            for k in range(i, max(i - 6, 0), -1):
+            for k in range(i, max(i - 8, 0), -1):
                 if prices[k] is not None and prices[k - 1] is not None and prices[k] < prices[k - 1]:
                     down_count += 1
                 else:
                     break
+<<<<<<< HEAD
             if down_count >= 2:
                 strength = 'strong' if bias >= BIAS_SELL_STRONG else 'moderate'
                 note = f'正乖離 {bias:.1f}%，峰值後連跌 {down_count} 根，逢高出脫'
                 rule = 3
+=======
+            if down_count >= 3:
+                # 峰值 = 連跌前一天
+                peak_idx = i - down_count
+                if peak_idx >= 0 and prices[peak_idx] is not None and mas[peak_idx] is not None:
+                    peak_price = prices[peak_idx]
+                    peak_ma    = mas[peak_idx]
+                    peak_bias  = (peak_price - peak_ma) / peak_ma * 100
+                    if peak_bias >= BIAS_SELL_MODERATE and peak_price > peak_ma:
+                        strength  = 'strong' if peak_bias >= BIAS_SELL_STRONG else 'moderate'
+                        note      = f'股價在均線上方達波段高點（正乖離{peak_bias:.1f}%），連跌{down_count}根確認，逢高出脫'
+                        rule      = 3
+                        mark_idx  = peak_idx   # ← 回頭標峰值那天
+                        bias      = peak_bias   # 用峰值當天的乖離率顯示
+>>>>>>> 21988a5 (更新 analysis.html5)
 
-        # ④ 末跌買進：逆勢，僅在均線強勢上彎時才標
+        # ══════════════════════════════════════════════════════
+        # ④ 漲勢最後買進
+        # 條件：股價由均線上方跌至均線下方（cross_dn），
+        #       但均線仍在上升趨勢中（多頭格局最後撐一下）
+        # 標記：交叉當根（即時標記）
+        # ══════════════════════════════════════════════════════
         if not rule and cross_dn and ma_trend_up(i) and can_mark(4, i):
-            strong_slope = ma_slope5(i) > (m * 0.006)
-            if strong_slope and bias > -8:
+            strong_slope = ma_slope5(i) > (m * 0.004)
+            if strong_slope:
                 rule, strength = 4, 'weak'
-                note = 'MA20 仍上升，末跌買進（逆勢，小部位）'
+                note = '均線仍上升，股價跌破均線為漲勢中的短暫回測，最後買進機會（逆勢，小部位）'
 
-        # ⑤ 趨勢轉空賣出：均線走平/下彎 + 放量跌破 + 前期多在均線上方
+        # ══════════════════════════════════════════════════════
+        # ⑤ 趨勢轉空賣出
+        # 條件：均線走平/下彎，股價由上往下跌破均線
+        # 標記：交叉當根（即時標記）
+        # ══════════════════════════════════════════════════════
         if not rule and cross_dn and (ma_trend_down(i) or ma_flat(i)) and can_mark(5, i):
             prev_above = sum(1 for k in range(max(0, i - 10), i)
                              if prices[k] is not None and mas[k] is not None and prices[k] > mas[k])
@@ -328,32 +394,47 @@ def calc_granville_signals(
             if prev_above_ratio >= 0.4 or not bear:
                 if vol_boom is True:
                     rule, strength = 5, 'strong'
-                    note = '放量跌破，賣壓沉重'
+                    note = '均線走平/下彎，放量跌破均線，趨勢由多轉空，賣壓沉重'
                 elif vol_boom is False:
                     rule, strength = 5, 'weak'
-                    note = '縮量跌破，可能只是洗盤，觀察守穩'
+                    note = '均線走平/下彎，縮量跌破均線，留意是否洗盤，觀察守穩'
                 else:
                     rule, strength = 5, 'moderate'
-                    note = '量能資料不足'
+                    note = '均線走平/下彎，股價跌破均線，趨勢轉空訊號（量能資料不足）'
 
-        # ⑥ 反彈買進：股價在均線下方，負乖離過大（超賣，可能技術性回升）
+        # ══════════════════════════════════════════════════════
+        # ⑥ 反彈買進（谷底即時標）
+        # 條件：股價在均線下方，負乖離過大（嚴重超賣），
+        #       今天止跌反彈（谷底第1天）
+        # 標記：谷底當天（即時標記）
+        # ══════════════════════════════════════════════════════
         if not rule and below and bias <= BIAS_BUY_MODERATE and can_mark(6, i):
             bouncing = p > p1
             if bouncing or bias <= BIAS_BUY_STRONG:
                 strength = 'strong' if (bias <= BIAS_BUY_STRONG and bouncing) else 'moderate'
-                note = f'負乖離 {bias:.1f}%，偏離均線過大{"，止跌反彈" if bouncing else "，持續觀察"}'
+                note = (f'股價在均線下方且負乖離{bias:.1f}%，偏離均線過遠'
+                        f'{"，今日止跌反彈，技術性回升機會" if bouncing else "，持續觀察是否止跌"}（謹慎）')
                 rule = 6
 
+<<<<<<< HEAD
         # ⑦ 續跌賣出：空頭環境中，反彈接近均線後連跌 ≥2 根才觸發
+=======
+        # ══════════════════════════════════════════════════════
+        # ⑦ 續跌賣出（峰值回頭標）
+        # 條件：空頭環境（均線下方），股價反彈但未超越均線，
+        #       確認連跌 ≥2 根後，回頭標在反彈峰值那天
+        # 標記：連跌起點前一天（反彈峰值）
+        # ══════════════════════════════════════════════════════
+>>>>>>> 21988a5 (更新 analysis.html5)
         if not rule and bear and below and not cross_dn and can_mark(7, i):
-            near_ma = bias > -6.0
-            # 計算連跌根數
+            # 往前數連跌根數
             down_count = 0
-            for k in range(i, max(i - 6, 0), -1):
+            for k in range(i, max(i - 8, 0), -1):
                 if prices[k] is not None and prices[k - 1] is not None and prices[k] < prices[k - 1]:
                     down_count += 1
                 else:
                     break
+<<<<<<< HEAD
             # 連跌前曾有反彈
             bounce_idx = i - down_count
             was_bounce = (bounce_idx > 0 and bounce_idx < n
@@ -367,19 +448,66 @@ def calc_granville_signals(
         # ⑧ 空頭賣出：空頭環境（均線下彎）中，股價在均線上方
         #    正乖離偏高且連跌 ≥2 根才觸發
         if not rule and ma_trend_down(i) and above and bias >= BIAS_SELL_MODERATE and can_mark(8, i):
+=======
+            if down_count >= 2:
+                # 峰值 = 連跌前一天（反彈最高點）
+                peak_idx = i - down_count
+                if peak_idx >= 0 and prices[peak_idx] is not None and mas[peak_idx] is not None:
+                    peak_price = prices[peak_idx]
+                    peak_ma    = mas[peak_idx]
+                    # 確認峰值在均線下方（反彈未超過均線）
+                    if peak_price < peak_ma:
+                        near_ma_peak = (peak_ma - peak_price) / peak_ma * 100 < 8.0
+                        # 確認峰值前有反彈（往前一天是上漲）
+                        was_bounce = (peak_idx > 0 and prices[peak_idx - 1] is not None
+                                      and peak_price > prices[peak_idx - 1])
+                        if was_bounce:
+                            strength  = 'strong' if vol_shrink is True else 'moderate'
+                            note      = (f'空頭格局反彈未突破均線，連跌{down_count}根確認再度轉弱'
+                                         f'{"（縮量誘多後下跌）" if vol_shrink is True else ""}')
+                            rule      = 7
+                            mark_idx  = peak_idx   # ← 回頭標反彈峰值
+
+        # ══════════════════════════════════════════════════════
+        # ⑧ 空頭中賣出（峰值回頭標）
+        # 條件：均線下彎（空頭），股價短暫反彈至均線上方，
+        #       正乖離達門檻後確認連跌 ≥2 根，回頭標峰值
+        # 標記：連跌起點前一天（局部峰值）
+        # ══════════════════════════════════════════════════════
+        if not rule and ma_trend_down(i) and can_mark(8, i):
+            # 往前數連跌根數
+>>>>>>> 21988a5 (更新 analysis.html5)
             down_count = 0
-            for k in range(i, max(i - 6, 0), -1):
+            for k in range(i, max(i - 8, 0), -1):
                 if prices[k] is not None and prices[k - 1] is not None and prices[k] < prices[k - 1]:
                     down_count += 1
                 else:
                     break
             if down_count >= 2:
+<<<<<<< HEAD
                 rule, strength = 8, 'weak'
                 note = f'空頭格局中正乖離 {bias:.1f}%，峰值後連跌 {down_count} 根，逢高出脫'
+=======
+                peak_idx = i - down_count
+                if peak_idx >= 0 and prices[peak_idx] is not None and mas[peak_idx] is not None:
+                    peak_price = prices[peak_idx]
+                    peak_ma    = mas[peak_idx]
+                    peak_bias  = (peak_price - peak_ma) / peak_ma * 100
+                    # 峰值在均線上方且正乖離達門檻
+                    if peak_price > peak_ma and peak_bias >= BIAS_SELL_MODERATE:
+                        strength  = 'weak'
+                        note      = (f'均線下彎空頭格局，股價短暫反彈至均線上方（正乖離{peak_bias:.1f}%）'
+                                     f'，連跌{down_count}根確認回落，逢高出脫')
+                        rule      = 8
+                        mark_idx  = peak_idx   # ← 回頭標局部峰值
+                        bias      = peak_bias
+>>>>>>> 21988a5 (更新 analysis.html5)
 
+        # ── 寫入結果 ─────────────────────────────────────────
         if rule > 0:
-            mark_sig(rule, i)
+            mark_sig(rule, mark_idx)
             _names = {
+<<<<<<< HEAD
                 1: ('起漲買進', 'buy',  '平均線由下降轉水平/上揚，股價由下往上突破 MA20，為啟動漲勢的關鍵訊號'),
                 2: ('續漲買進', 'buy',  f'股價在 MA20 上方，連跌{down_count}根（未破均線）後連漲{up_count}根反彈，多頭回測後的加碼時機'),
                 3: ('初步賣出', 'sell', f'股價在 MA20 上方且正乖離 {bias:.1f}%，達波段峰值後連跌{down_count}根，短期漲幅已高可逢高出脫'),
@@ -388,6 +516,24 @@ def calc_granville_signals(
                 6: ('反彈買進', 'buy',  f'股價跌至 MA20 下方且負乖離 {bias:.1f}%，偏離均線過遠，技術性回升機會（均線下，謹慎）'),
                 7: ('續跌賣出', 'sell', f'股價在 MA20 下方，反彈未超越均線後連跌{down_count}根確認再度轉弱，空頭延續賣出'),
                 8: ('空頭賣出', 'sell', f'均線下彎空頭格局中，股價位於 MA20 上方且正乖離 {bias:.1f}%，達局部峰值後連跌{down_count}根，逢高出脫'),
+=======
+                1: ('起漲買進',   'buy',
+                    '均線由下降轉為走平/上揚，股價由下往上突破均線，為多頭啟動的關鍵買進訊號'),
+                2: ('續漲買進',   'buy',
+                    f'多頭格局中股價在均線上方，連跌{down_count}根回測均線但未跌破，今日反彈為谷底加碼時機'),
+                3: ('初步賣出',   'sell',
+                    f'股價在均線上方偏離過高（正乖離{bias:.1f}%），達波段峰值後連跌{down_count}根確認轉弱，短期漲幅已高可逢高出脫'),
+                4: ('漲勢最後買進', 'buy',
+                    '股價由均線上方跌至均線下方，但均線仍處上升趨勢，為多頭漲勢中的最後買進機會（逆勢操作，控制部位）'),
+                5: ('趨勢轉空賣出', 'sell',
+                    '均線由上升轉為走平/下彎，股價由上往下跌破均線，趨勢由多轉空的關鍵賣出訊號'),
+                6: ('反彈買進',   'buy',
+                    f'股價在均線下方且嚴重偏離（負乖離{bias:.1f}%），今日止跌反彈，技術性回升買進機會（空頭格局需謹慎）'),
+                7: ('續跌賣出',   'sell',
+                    f'空頭格局中股價反彈但未突破均線，連跌{down_count}根確認再度轉弱，峰值為賣出時機'),
+                8: ('空頭中賣出', 'sell',
+                    f'均線下彎空頭格局中，股價短暫反彈至均線上方（正乖離{bias:.1f}%），連跌{down_count}根確認回落，局部峰值逢高出脫'),
+>>>>>>> 21988a5 (更新 analysis.html5)
             }
             name, signal, desc = _names[rule]
             results.append({
@@ -397,7 +543,7 @@ def calc_granville_signals(
                 'description': desc,
                 'strength':    strength,
                 'note':        note,
-                'index':       i - n,
+                'index':       mark_idx - n,   # offset 後的實際標記位置
                 'bias':        round(bias, 2),
             })
 
