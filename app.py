@@ -2797,71 +2797,106 @@ def get_stock_news(ticker):
     try:
         import requests as req
         import xml.etree.ElementTree as ET
+        import re as _re
         import time
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-        ticker  = ticker.strip().upper()
+        ticker = ticker.strip().upper()
+        print(f'  [news] 開始抓取 {ticker} 新聞')
 
-        # 快取 5 分鐘
+        # 快取 10 分鐘（延長，減少重複爬取）
         cache_key = f'news_{ticker}'
         cached    = analysis_cache.get(cache_key)
-        if cached and (time.time() - cached.get('ts', 0)) < 300:
-            return jsonify({'status': 'success', 'articles': cached['data']})
+        if cached and (time.time() - cached.get('ts', 0)) < 600:
+            arts = cached['data']
+            print(f'  [news] 快取命中 {ticker}，共 {len(arts)} 篇')
+            return jsonify({'status': 'success', 'articles': arts})
 
         from data_fetcher import STOCK_NAMES_ZH_BACKEND
         zh_name = STOCK_NAMES_ZH_BACKEND.get(ticker, '')
 
-        # 依序嘗試多個查詢詞
+        # 多個查詢詞，依優先順序嘗試
         query_terms = []
         if zh_name:
-            query_terms.append(zh_name)
+            query_terms.append(zh_name)                    # 例：鴻海
+            query_terms.append(f'{zh_name} 股票')          # 例：鴻海 股票
+            query_terms.append(f'{zh_name} {ticker}')      # 例：鴻海 2317
         query_terms.append(f'{ticker} 台灣股票')
+        query_terms.append(ticker)
 
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                          'AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-        }
+        # 多種 User-Agent 輪替，降低被封鎖機率
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
+            '(KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        ]
 
-        articles = []
+        articles   = []
         seen_titles = set()
 
-        for q in query_terms:
-            try:
-                rss_url = (
-                    f'https://news.google.com/rss/search'
-                    f'?q={req.utils.quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant'
-                )
-                resp = req.get(rss_url, headers=headers, timeout=12)
-                if not resp.ok:
-                    continue
+        for idx, q in enumerate(query_terms):
+            if len(articles) >= 20:
+                break
+            ua = user_agents[idx % len(user_agents)]
+            headers = {
+                'User-Agent': ua,
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+                'Accept-Language': 'zh-TW,zh;q=0.9',
+                'Cache-Control': 'no-cache',
+            }
+            rss_url = (
+                f'https://news.google.com/rss/search'
+                f'?q={req.utils.quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant'
+            )
+            print(f'  [news] 查詢詞「{q}」→ {rss_url[:80]}...')
 
-                root = ET.fromstring(resp.content)
-                for item in root.findall('.//item')[:15]:
-                    title   = (item.findtext('title')   or '').strip()
-                    link    = (item.findtext('link')    or '#').strip()
-                    pub     = (item.findtext('pubDate') or '').strip()
-                    source  = (item.findtext('source')  or 'Google News').strip()
-                    desc    = (item.findtext('description') or '').strip()
-                    # 移除 HTML 標籤
-                    import re as _re
-                    desc = _re.sub(r'<[^>]+>', '', desc).strip()
+            # 最多重試 2 次
+            for attempt in range(2):
+                try:
+                    resp = req.get(
+                        rss_url, headers=headers,
+                        timeout=20,        # 延長 timeout（原 12s 太短）
+                        verify=False,      # Render 環境 SSL 有時有問題
+                        allow_redirects=True,
+                    )
+                    print(f'  [news] HTTP {resp.status_code}, 長度 {len(resp.content)} bytes')
+                    if not resp.ok:
+                        print(f'  [news] 非 2xx，跳過')
+                        break
 
-                    if title and title not in seen_titles:
-                        seen_titles.add(title)
-                        articles.append({
-                            'title':   title,
-                            'link':    link,
-                            'pubDate': pub,
-                            'source':  source,
-                            'desc':    desc[:150],
-                        })
+                    root = ET.fromstring(resp.content)
+                    items = root.findall('.//item')
+                    print(f'  [news] 找到 {len(items)} 筆 item')
 
-                if len(articles) >= 20:
-                    break
-            except Exception as e:
-                print(f'  Google News 查詢「{q}」失敗: {e}')
-                continue
+                    for item in items[:15]:
+                        title  = (item.findtext('title')       or '').strip()
+                        link   = (item.findtext('link')        or '#').strip()
+                        pub    = (item.findtext('pubDate')      or '').strip()
+                        source = (item.findtext('source')       or 'Google News').strip()
+                        desc   = (item.findtext('description')  or '').strip()
+                        desc   = _re.sub(r'<[^>]+>', '', desc).strip()
+
+                        if title and title not in seen_titles:
+                            seen_titles.add(title)
+                            articles.append({
+                                'title':   title,
+                                'link':    link,
+                                'pubDate': pub,
+                                'source':  source,
+                                'desc':    desc[:150],
+                            })
+                    break  # 成功就不重試
+
+                except Exception as e:
+                    print(f'  [news] 查詢「{q}」第{attempt+1}次失敗: {e}')
+                    if attempt == 0:
+                        time.sleep(1)  # 等 1 秒再重試
+
+        print(f'  [news] {ticker} 共收集 {len(articles)} 篇新聞')
 
         # 依時間排序（最新在前）
         def parse_dt(s):
@@ -2872,7 +2907,9 @@ def get_stock_news(ticker):
                 return 0
         articles.sort(key=lambda a: parse_dt(a['pubDate']), reverse=True)
 
-        analysis_cache[cache_key] = {'data': articles, 'ts': time.time()}
+        # 有資料才存快取
+        if articles:
+            analysis_cache[cache_key] = {'data': articles, 'ts': time.time()}
         return jsonify({'status': 'success', 'articles': articles})
 
     except Exception as e:
