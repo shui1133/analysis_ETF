@@ -8444,7 +8444,7 @@ function _drawGranCandleChart(data, period) {
     }
   }
 
-  // ── Y 軸動態範圍：納入收盤價 + 全部均線的上下限，再取 ±10% ──
+  // ── Y 軸動態範圍：納入收盤價 + 全部均線的上下限，再取 ±5% ──
   // 確保任何均線（MA5/20/60/120）都不會超出 Y 軸而擠在邊緣
   const _allVals = [
     ...closes,
@@ -8454,9 +8454,10 @@ function _drawGranCandleChart(data, period) {
   if (_allVals.length) {
     const _lo = Math.min(..._allVals);
     const _hi = Math.max(..._allVals);
-    const _pad = (_hi - _lo) || _lo * 0.1;   // 若所有值相同，用值的 10% 當 padding
-    yMin = Math.floor((_lo - _pad * 1.0) * 10) / 10;   // 下方留 100% 波動幅度
-    yMax = Math.ceil ((_hi + _pad * 1.0) * 10) / 10;   // 上方留 100% 波動幅度
+    const _range = (_hi - _lo) || _lo * 0.1;   // 若所有值相同，用值的 10% 當 range
+    const _pad = _range * 0.05;                 // ±5% of range
+    yMin = Math.floor((_lo - _pad) * 10) / 10;
+    yMax = Math.ceil ((_hi + _pad) * 10) / 10;
   }
 
   // ── Canvas 直接繪製交叉標記（金星 / 紅X），完全可靠 ─────────
@@ -8525,56 +8526,78 @@ function _drawGranCandleChart(data, period) {
       const yScale = chart.scales.y;
       const circleNums = ['①','②','③','④','⑤','⑥','⑦','⑧'];
 
-      // numMap：由 gl.short 取得規則號碼（動態對應，不受 short 字串變更影響）
+      // numMap：由 gl.short 取得規則號碼
       const numMap = {};
       Object.entries(GRANVILLE_LABELS).forEach(([rn, gl]) => { numMap[gl.short] = parseInt(rn); });
 
+      // ── 第一步：收集所有需要繪製的標籤，並按索引分組 ──────
+      // 結構：labelMap[dataIndex] = [ {rule, gl, val, isBuy}, ... ]
+      const labelMap = {};
       chart.data.datasets.forEach((ds) => {
         const rule = numMap[ds.label];
-        if (!rule) return;   // 非葛蘭碧訊號 dataset（MA線、交叉等）跳過
+        if (!rule) return;
         const gl    = GRANVILLE_LABELS[rule];
         if (!gl) return;
         const isBuy = gl.type === 'buy';
-
         ds.data.forEach((val, i) => {
           if (val == null) return;
-          const x    = xScale.getPixelForValue(i);
-          const y    = yScale.getPixelForValue(val);
-          const lbl2 = circleNums[rule - 1];
-
-          // 數字標籤：統一字體大小 14px，置於三角形正上方（買）或正下方（賣）
-          const offsetY = isBuy ? -26 : 26;
-
-          c2d.save();
-          c2d.globalAlpha = 1.0;   // 統一不透明
-          c2d.font = 'bold 14px "Noto Sans TC", sans-serif';
-          c2d.textAlign = 'center';
-          c2d.textBaseline = 'middle';
-
-          // 計算文字框寬高
-          const tw = c2d.measureText(lbl2).width + 6;
-          const th = 16;
-
-          // 深色底框（確保在任何均線顏色上都清晰可見）
-          c2d.fillStyle = 'rgba(10,18,36,0.88)';
-          c2d.beginPath();
-          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - th/2, tw, th, 4);
-          else               c2d.rect(      x - tw/2, y + offsetY - th/2, tw, th);
-          c2d.fill();
-
-          // 彩色邊框（與三角形同色）
-          c2d.strokeStyle = gl.color;
-          c2d.lineWidth   = 1.2;
-          c2d.beginPath();
-          if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - th/2, tw, th, 4);
-          else               c2d.rect(      x - tw/2, y + offsetY - th/2, tw, th);
-          c2d.stroke();
-
-          // 數字文字
-          c2d.fillStyle = gl.color;
-          c2d.fillText(lbl2, x, y + offsetY);
-          c2d.restore();
+          if (!labelMap[i]) labelMap[i] = [];
+          labelMap[i].push({ rule, gl, val, isBuy });
         });
+      });
+
+      // ── 第二步：逐索引繪製，有重疊時錯開 offsetY ──────────
+      Object.entries(labelMap).forEach(([idxStr, entries]) => {
+        const i = parseInt(idxStr);
+
+        // 依 buy/sell 分組（buy 往上疊，sell 往下疊）
+        const buyEntries  = entries.filter(e => e.isBuy);
+        const sellEntries = entries.filter(e => !e.isBuy);
+
+        const drawGroup = (group, baseOffset, step) => {
+          group.forEach((entry, stackIdx) => {
+            const { rule, gl, val } = entry;
+            const x  = xScale.getPixelForValue(i);
+            const y  = yScale.getPixelForValue(val);
+            // 每疊一個標籤，往同方向再移 step px（buy往上多移，sell往下多移）
+            const offsetY = baseOffset + stackIdx * step;
+            const lbl2 = circleNums[rule - 1];
+
+            c2d.save();
+            c2d.globalAlpha = 1.0;
+            c2d.font = 'bold 14px "Noto Sans TC", sans-serif';
+            c2d.textAlign = 'center';
+            c2d.textBaseline = 'middle';
+
+            const tw = c2d.measureText(lbl2).width + 6;
+            const th = 16;
+
+            // 深色底框
+            c2d.fillStyle = 'rgba(10,18,36,0.88)';
+            c2d.beginPath();
+            if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - th/2, tw, th, 4);
+            else               c2d.rect(      x - tw/2, y + offsetY - th/2, tw, th);
+            c2d.fill();
+
+            // 彩色邊框
+            c2d.strokeStyle = gl.color;
+            c2d.lineWidth   = 1.2;
+            c2d.beginPath();
+            if (c2d.roundRect) c2d.roundRect(x - tw/2, y + offsetY - th/2, tw, th, 4);
+            else               c2d.rect(      x - tw/2, y + offsetY - th/2, tw, th);
+            c2d.stroke();
+
+            // 數字文字
+            c2d.fillStyle = gl.color;
+            c2d.fillText(lbl2, x, y + offsetY);
+            c2d.restore();
+          });
+        };
+
+        // buy 標籤：基準 -26px，往上疊 -18px/個（遠離股價）
+        drawGroup(buyEntries,  -26, -18);
+        // sell 標籤：基準 +26px，往下疊 +18px/個（遠離股價）
+        drawGroup(sellEntries, +26, +18);
       });
     }
   };
@@ -8748,11 +8771,12 @@ function _drawGranCandleChart(data, period) {
             }
 
             if (visibleVals.length) {
-              const lo  = Math.min(...visibleVals);
-              const hi  = Math.max(...visibleVals);
-              const pad = (hi - lo) || lo * 0.1;
-              scale.min = Math.floor((lo - pad * 1.0) * 10) / 10;
-              scale.max = Math.ceil ((hi + pad * 1.0) * 10) / 10;
+              const lo    = Math.min(...visibleVals);
+              const hi    = Math.max(...visibleVals);
+              const range = (hi - lo) || lo * 0.1;
+              const pad   = range * 0.05;          // ±5% of visible range
+              scale.min = Math.floor((lo - pad) * 10) / 10;
+              scale.max = Math.ceil ((hi + pad) * 10) / 10;
             } else {
               // 無可視資料時 fallback 到初始靜態範圍
               if (yMin !== undefined) scale.min = yMin;
