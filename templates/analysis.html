@@ -3254,11 +3254,13 @@ function renderRecommendation(data) {
   }
 
   // 4. 交叉預測（10日內 ±2，10~20日 ±1）
-  const _c520=_maAna.cross_5_20||{}, _c2060=_maAna.cross_20_60||{};
-  if(_c520.cross_type==='death'){ const s=_c520.est_days<=10?-2:-1; _techScoreCalc+=s; techItems.push(`MA5/20 死亡交叉預警 ${_c520.est_days}日（${s}）`); }
-  if(_c520.cross_type==='golden'){ const s=_c520.est_days<=10?2:1; _techScoreCalc+=s; techItems.push(`MA5/20 黃金交叉預警 ${_c520.est_days}日（+${s}）`); }
-  if(_c2060.cross_type==='death'){ const s=_c2060.est_days<=10?-2:-1; _techScoreCalc+=s; techItems.push(`MA20/60 死亡交叉預警 ${_c2060.est_days}日（${s}）`); }
-  if(_c2060.cross_type==='golden'){ const s=_c2060.est_days<=10?2:1; _techScoreCalc+=s; techItems.push(`MA20/60 黃金交叉預警 ${_c2060.est_days}日（+${s}）`); }
+  const _c5120=_maAna.cross_5_120||{}, _c520=_maAna.cross_5_20||{}, _c2060=_maAna.cross_20_60||{};
+  if(_c5120.cross_type==='death'){  const s=_c5120.est_days<=10?-2:-1; _techScoreCalc+=s; techItems.push(`MA5/120 死亡交叉預警 ${_c5120.est_days}日（${s}）`); }
+  if(_c5120.cross_type==='golden'){ const s=_c5120.est_days<=10?2:1;  _techScoreCalc+=s; techItems.push(`MA5/120 黃金交叉預警 ${_c5120.est_days}日（+${s}）`); }
+  if(_c520.cross_type==='death'){   const s=_c520.est_days<=10?-2:-1;  _techScoreCalc+=s; techItems.push(`MA5/20 死亡交叉預警 ${_c520.est_days}日（${s}）`); }
+  if(_c520.cross_type==='golden'){  const s=_c520.est_days<=10?2:1;   _techScoreCalc+=s; techItems.push(`MA5/20 黃金交叉預警 ${_c520.est_days}日（+${s}）`); }
+  if(_c2060.cross_type==='death'){  const s=_c2060.est_days<=10?-2:-1; _techScoreCalc+=s; techItems.push(`MA20/60 死亡交叉預警 ${_c2060.est_days}日（${s}）`); }
+  if(_c2060.cross_type==='golden'){ const s=_c2060.est_days<=10?2:1;  _techScoreCalc+=s; techItems.push(`MA20/60 黃金交叉預警 ${_c2060.est_days}日（+${s}）`); }
 
   // 5. MACD > 0 ±1
   if(macd!=null){ const s=macd>0?1:-1; _techScoreCalc+=s; techItems.push(macd>0?'MACD>0（+1）':'MACD<0（-1）'); }
@@ -3356,15 +3358,17 @@ function renderRecommendation(data) {
     if (targetDesc) targetDesc.textContent='資料不足';
   }
 
-  // ▼ 死亡/黃金交叉警示橫幅
-  const maAna = (data.technical||{}).ma_analysis || rec.ma_analysis || {};
-  const c520  = maAna.cross_5_20  || {};
-  const c2060 = maAna.cross_20_60 || {};
+  // ▼ 死亡/黃金交叉警示橫幅（以 MA5/MA120 為主，與葛蘭碧頁統一）
+  const maAna   = (data.technical||{}).ma_analysis || rec.ma_analysis || {};
+  const c5120   = maAna.cross_5_120 || {};
+  const c520    = maAna.cross_5_20  || {};
+  const c2060   = maAna.cross_20_60 || {};
   const deathAlert  = document.getElementById('deathCrossAlert');
   const goldenAlert = document.getElementById('goldenCrossAlert');
   if (deathAlert) deathAlert.classList.add('hidden');
   if (goldenAlert) goldenAlert.classList.add('hidden');
   const allCross = [
+    {key:'MA5/MA120', d: c5120},   // ★ 主要（與葛蘭碧頁一致）
     {key:'MA5/MA20',  d: c520},
     {key:'MA20/MA60', d: c2060},
   ];
@@ -9683,6 +9687,7 @@ async function generateAIInvestment() {
       `- 均線排列：${maAna.array?.label || '--'}（評分 ${maAna.array?.score ?? '--'}）`,
       `- 趨勢描述：${maAna.trend?.description || '--'}`,
       `- 乖離率狀態：${maAna.bias_warn?.text || '正常'}`,
+      `- MA5/120 交叉預測：${maAna.cross_5_120?.cross_type === 'golden' ? `黃金交叉預計 ${maAna.cross_5_120.est_days} 日後` : maAna.cross_5_120?.cross_type === 'death' ? `死亡交叉預計 ${maAna.cross_5_120.est_days} 日後` : '無明確交叉訊號'}`,
       `- MA5/20 交叉預測：${maAna.cross_5_20?.cross_type === 'golden' ? `黃金交叉預計 ${maAna.cross_5_20.est_days} 日後` : maAna.cross_5_20?.cross_type === 'death' ? `死亡交叉預計 ${maAna.cross_5_20.est_days} 日後` : '無明確交叉訊號'}`,
       `- MA20/60 交叉預測：${maAna.cross_20_60?.cross_type === 'golden' ? `黃金交叉預計 ${maAna.cross_20_60.est_days} 日後` : maAna.cross_20_60?.cross_type === 'death' ? `死亡交叉預計 ${maAna.cross_20_60.est_days} 日後` : '無明確交叉訊號'}`,
     ].join('\n');

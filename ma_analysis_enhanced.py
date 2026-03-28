@@ -1099,15 +1099,18 @@ def analyze_ma(
     if ma_series_dict and close_series:
         ma_signals = calc_ma_signals(close_series, ma_series_dict)
 
-    # 死亡/黃金交叉預測（三組）
-    cross_5_20  = estimate_cross_days(close_series, 5,  20)
-    cross_20_60 = estimate_cross_days(close_series, 20, 60)
-    cross_5_60  = estimate_cross_days(close_series, 5,  60)
+    # 死亡/黃金交叉預測（四組，新增 MA5/MA120 與葛蘭碧頁統一）
+    cross_5_20  = estimate_cross_days(close_series, 5,   20)
+    cross_20_60 = estimate_cross_days(close_series, 20,  60)
+    cross_5_60  = estimate_cross_days(close_series, 5,   60)
+    cross_5_120 = estimate_cross_days(close_series, 5,  120)
 
     # 文字摘要
     parts = [f'均線型態：{array["label"]}（{array["detail"]}）']
     if bias['ma20'] is not None:
         parts.append(f'MA20 乖離率：{bias["ma20"]:+.1f}%（{bias_warn["ma20"]["text"]}）')
+    if cross_5_120['cross_type'] != 'none':
+        parts.append(f'MA5/MA120：{cross_5_120["est_date_hint"]}')
     if cross_5_20['cross_type'] != 'none':
         parts.append(f'MA5/MA20：{cross_5_20["est_date_hint"]}')
     if cross_20_60['cross_type'] != 'none':
@@ -1127,6 +1130,7 @@ def analyze_ma(
         'cross_5_20': cross_5_20,
         'cross_20_60': cross_20_60,
         'cross_5_60': cross_5_60,
+        'cross_5_120': cross_5_120,
         'ma_signals': ma_signals,              # ← 新增四種均線買賣訊號
         'ma_signals_summary': format_ma_signals_summary(ma_signals),
         'summary': '；'.join(parts),
@@ -1227,9 +1231,10 @@ def enhanced_calc_trend(
                 ma_period=20, volume_series=volume_series,
             )
 
-    # 死亡/黃金交叉預測
-    cross_5_20  = estimate_cross_days(close_series, 5,  20) if len(close_series) >= 40 else {}
-    cross_20_60 = estimate_cross_days(close_series, 20, 60) if len(close_series) >= 120 else {}
+    # 死亡/黃金交叉預測（新增 MA5/MA120 與葛蘭碧頁統一）
+    cross_5_20  = estimate_cross_days(close_series, 5,   20) if len(close_series) >= 40  else {}
+    cross_20_60 = estimate_cross_days(close_series, 20,  60) if len(close_series) >= 120 else {}
+    cross_5_120 = estimate_cross_days(close_series, 5,  120) if len(close_series) >= 240 else {}
 
     # 四種均線買賣訊號（需要均線序列）
     ma_signals = []
@@ -1250,6 +1255,7 @@ def enhanced_calc_trend(
         'granville':        granville_signals,
         'cross_5_20':       cross_5_20,
         'cross_20_60':      cross_20_60,
+        'cross_5_120':      cross_5_120,
         'ma_signals':       ma_signals,               # ← 新增
         'ma_signals_summary': format_ma_signals_summary(ma_signals),   # ← 新增
     }
@@ -1377,11 +1383,12 @@ def enhanced_generate_recommendation(
             else:
                 reasons_sell.append(f'均線{slabel}【{sname}】（量能不足，觀察）')
 
-    # ── 死亡/黃金交叉預測 ───────────────────────────────────
+    # ── 死亡/黃金交叉預測（以 MA5/MA120 為主，與葛蘭碧頁統一）──
+    cross_5_120 = trend.get('cross_5_120', {})
     cross_5_20  = trend.get('cross_5_20', {})
     cross_20_60 = trend.get('cross_20_60', {})
 
-    for cross, label_short in [(cross_5_20, 'MA5/MA20'), (cross_20_60, 'MA20/MA60')]:
+    for cross, label_short in [(cross_5_120, 'MA5/MA120'), (cross_5_20, 'MA5/MA20'), (cross_20_60, 'MA20/MA60')]:
         if not cross:
             continue
         if cross.get('cross_type') == 'death':
