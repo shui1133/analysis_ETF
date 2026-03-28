@@ -8229,8 +8229,8 @@ function renderGranvilleTab(data) {
     const envIcon = isBull ? '📈' : '📉';
     const bias60  = ((close - ma60v) / ma60v * 100).toFixed(2);
     const suggest = isBull
-      ? `目前處於<strong style="color:#10b981">多頭環境</strong>，優先尋找①②③④買進訊號，遇回測 MA60 守穩可加碼；賣出訊號（⑤⑦）視為減碼時機而非做空。`
-      : `目前處於<strong style="color:#ef4444">空頭環境</strong>，優先尋找⑤⑥⑦⑧賣出訊號，反彈至 MA60 遇壓可減碼；買進訊號（①④）以短線反彈看待，謹慎為宜。`;
+      ? `目前處於<strong style="color:#10b981">多頭環境</strong>，優先尋找①②④⑥買進訊號，遇回測 MA60 守穩可加碼；賣出訊號（③⑤）視為減碼時機而非做空。`
+      : `目前處於<strong style="color:#ef4444">空頭環境</strong>，優先尋找③⑤⑦⑧賣出訊號，反彈至 MA60 遇壓可減碼；買進訊號（①④）以短線反彈看待，謹慎為宜。`;
     ma60env.style.background = bg;
     ma60env.style.borderColor = bdr;
     ma60env.innerHTML = `
