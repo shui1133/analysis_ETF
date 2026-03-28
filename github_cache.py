@@ -312,7 +312,9 @@ def local_save_fundamental(data_dir: str, ticker: str, info: Dict) -> bool:
                        'market_cap', 'div_yield', 'sector', 'industry', 'description'}
     has_data = any(info.get(k) for k in meaningful_keys)
     name_val = info.get('name', '')
-    name_is_ticker = (name_val == ticker or name_val == '')
+    # 只有 name 且與 ticker 相同（純數字代碼），才視為無效空殼
+    # 若 name 是中文名稱（非純數字代碼），即使沒有其他欄位也允許儲存
+    name_is_ticker = (name_val == ticker or name_val == '' or name_val.isdigit())
     if not has_data and name_is_ticker:
         logger.warning("local_save_fundamental %s: 資料不完整（只有 name），跳過儲存", ticker)
         return False

@@ -642,8 +642,13 @@ class ETFDataFetcher:
                 indicators = calc_technical_indicators(ohlcv)
                 gh_data['ohlcv']      = ohlcv
                 gh_data['indicators'] = indicators
-                gh_data['info']       = {'name': GITHUB_ETF_NAMES.get(ticker, ticker)}
-                gh_data['name']       = GITHUB_ETF_NAMES.get(ticker, ticker)
+                _etf_name = GITHUB_ETF_NAMES.get(ticker, ticker)
+                gh_data['info']       = {
+                    'name':     _etf_name,
+                    'sector':   '金融',
+                    'industry': 'ETF',
+                }
+                gh_data['name']       = _etf_name
                 return gh_data
 
         print(f"  ✗ {ticker} 分析資料取得失敗")

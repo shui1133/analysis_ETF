@@ -1194,6 +1194,25 @@ def get_stock_analysis(ticker):
                 if twse_extra.get('div_yield_pct') is not None and info.get('div_yield') in (None, 0):
                     info['_twse_div_yield_pct'] = twse_extra['div_yield_pct']
                 print(f"  TWSE/MOPS 補充完成，補充欄位: {list(twse_extra.keys())}")
+
+                # ★ 修正：TWSE 補充後將完整 info 回存本機與 GitHub 快取
+                # 避免下次請求再次觸發 TWSE 補充（原本只補記憶體，重啟後失效）
+                try:
+                    from github_cache import local_save_fundamental, gh_save_fundamental
+                    local_save_fundamental(DATA_DIR, ticker, info)
+                    # GitHub push 背景執行，不阻塞回應
+                    _info_to_push = dict(info)
+                    _ticker_to_push = ticker
+                    def _bg_twse_push(_t=_ticker_to_push, _i=_info_to_push):
+                        try:
+                            gh_save_fundamental(_t, _i)
+                            print(f"  [{_t}] TWSE 補充後 GitHub fundamental push 完成")
+                        except Exception as _eg:
+                            print(f"  [{_t}] TWSE 補充後 GitHub push 失敗（非致命）: {_eg}")
+                    _threading.Thread(target=_bg_twse_push, daemon=True).start()
+                except Exception as _e_save:
+                    print(f"  [{ticker}] TWSE 補充後存檔失敗（非致命）: {_e_save}")
+
             except Exception as e2:
                 print(f"  TWSE/MOPS 補充失敗（非致命）: {e2}")
 
