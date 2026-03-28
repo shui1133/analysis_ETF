@@ -423,7 +423,42 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               <span>柱狀：差值（OSC）</span>
             </div>
           </div>
-          <div class="flex items-center gap-2 text-xs text-slate-500">
+          <div class="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+            <!-- 畫線工具列 -->
+            <div class="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
+              <button id="macdDrawBtn" onclick="toggleMACDDrawMode()"
+                      class="period-btn flex items-center gap-1 text-xs"
+                      title="畫直線模式">
+                <i class="fa-solid fa-pen-ruler text-xs"></i>畫線
+              </button>
+              <div class="w-px h-4 bg-slate-600 mx-1"></div>
+              <!-- 線條顏色選擇 -->
+              <label class="text-slate-400 text-xs">色：</label>
+              <select id="macdLineColor" onchange="updateMACDLineColor()"
+                      class="bg-slate-700 border border-slate-600 text-white rounded px-1 py-0.5 text-xs outline-none"
+                      title="線條顏色">
+                <option value="#facc15">黃</option>
+                <option value="#f87171">紅</option>
+                <option value="#4ade80">綠</option>
+                <option value="#60a5fa">藍</option>
+                <option value="#e2e8f0">白</option>
+                <option value="#c084fc">紫</option>
+              </select>
+              <div class="w-px h-4 bg-slate-600 mx-1"></div>
+              <button onclick="undoLastMACDLine()"
+                      class="period-btn flex items-center gap-1 text-xs text-orange-300 border-orange-800"
+                      title="撤銷最後一條線">
+                <i class="fa-solid fa-rotate-left text-xs"></i>撤銷
+              </button>
+              <button onclick="clearAllMACDLines()"
+                      class="period-btn flex items-center gap-1 text-xs text-red-400 border-red-900"
+                      title="清除所有直線">
+                <i class="fa-solid fa-trash text-xs"></i>清除
+              </button>
+            </div>
+            <span id="macdDrawHint" class="hidden text-yellow-400 text-xs animate-pulse">
+              <i class="fa-solid fa-crosshairs mr-1"></i>點擊兩點畫線，再次點擊畫線模式可退出
+            </span>
             <span class="hidden sm:inline"><i class="fa-solid fa-magnifying-glass mr-1 text-blue-400 opacity-60"></i>拖曳放大 · 滾輪縮放</span>
             <button id="macdResetZoomBtn" onclick="resetMACDZoom()"
                     class="period-btn hidden items-center gap-1 text-amber-300 border-amber-700"
@@ -432,8 +467,19 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
             </button>
           </div>
         </div>
-        <div class="chart-wrap" style="height:240px">
+        <div class="chart-wrap" style="height:240px;position:relative;">
           <canvas id="macdChart"></canvas>
+          <!-- 覆蓋 SVG 用於畫線顯示 -->
+          <svg id="macdLineOverlay"
+               style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;"
+               xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <!-- 已畫直線清單 -->
+        <div id="macdLineList" class="hidden mt-2 border-t border-slate-700 pt-2">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-slate-400 font-bold"><i class="fa-solid fa-list mr-1"></i>已畫直線（<span id="macdLineCount">0</span> 條）</span>
+          </div>
+          <div id="macdLineItems" class="flex flex-col gap-1 max-h-32 overflow-y-auto"></div>
         </div>
       </div>
 
@@ -4854,6 +4900,229 @@ function resetMACDZoom() {
   const btn = document.getElementById('macdResetZoomBtn');
   if (btn) btn.classList.add('hidden');
 }
+
+// ══════════════════════════════════════════════════════════════
+// MACD 畫直線功能
+// ══════════════════════════════════════════════════════════════
+(function() {
+  // 狀態
+  let _drawMode = false;         // 是否在畫線模式
+  let _firstPoint = null;        // 第一個點 {x, y}（畫布像素座標）
+  let _previewLine = null;       // SVG 預覽線元素
+  let _lines = [];               // 已完成的線 [{x1,y1,x2,y2,color,id}]
+  let _lineColor = '#facc15';    // 目前選取的線條顏色
+  let _lineIdCounter = 0;
+
+  // 取得 SVG overlay 與 canvas
+  function getSVG() { return document.getElementById('macdLineOverlay'); }
+  function getCanvas() { return document.getElementById('macdChart'); }
+
+  // 切換畫線模式
+  window.toggleMACDDrawMode = function() {
+    _drawMode = !_drawMode;
+    const btn = document.getElementById('macdDrawBtn');
+    const hint = document.getElementById('macdDrawHint');
+    const canvas = getCanvas();
+
+    if (_drawMode) {
+      btn.classList.add('active');
+      btn.style.background = '#1e40af';
+      btn.style.color = '#fff';
+      btn.style.borderColor = '#3b82f6';
+      if (hint) hint.classList.remove('hidden');
+      if (canvas) {
+        canvas.style.cursor = 'crosshair';
+        // 畫線模式下暫時停用 zoom pan（pointer-events 交給覆蓋層偵測）
+        // 改用透明 div 攔截事件
+        enableDrawOverlay();
+      }
+    } else {
+      btn.classList.remove('active');
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.borderColor = '';
+      if (hint) hint.classList.add('hidden');
+      if (canvas) canvas.style.cursor = '';
+      disableDrawOverlay();
+      cancelPreview();
+    }
+  };
+
+  // 更新顏色
+  window.updateMACDLineColor = function() {
+    const sel = document.getElementById('macdLineColor');
+    if (sel) _lineColor = sel.value;
+  };
+
+  // 撤銷最後一條線
+  window.undoLastMACDLine = function() {
+    if (_lines.length === 0) return;
+    const last = _lines.pop();
+    const svg = getSVG();
+    if (svg) {
+      const el = svg.querySelector(`[data-line-id="${last.id}"]`);
+      if (el) el.remove();
+    }
+    updateLineList();
+  };
+
+  // 清除所有線
+  window.clearAllMACDLines = function() {
+    _lines = [];
+    const svg = getSVG();
+    if (svg) {
+      // 移除所有 data-line-id 元素
+      svg.querySelectorAll('[data-line-id]').forEach(el => el.remove());
+    }
+    updateLineList();
+  };
+
+  // ── 建立透明覆蓋 div（攔截滑鼠事件，避免影響 chart.js zoom） ──
+  let _overlay = null;
+  function enableDrawOverlay() {
+    const wrap = getCanvas()?.parentElement;
+    if (!wrap) return;
+    if (_overlay) _overlay.remove();
+    _overlay = document.createElement('div');
+    _overlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;cursor:crosshair;';
+    _overlay.addEventListener('mousedown', onOverlayMouseDown);
+    _overlay.addEventListener('mousemove', onOverlayMouseMove);
+    _overlay.addEventListener('mouseleave', () => { if (_previewLine) { _previewLine.remove(); _previewLine = null; } });
+    wrap.appendChild(_overlay);
+  }
+  function disableDrawOverlay() {
+    if (_overlay) { _overlay.remove(); _overlay = null; }
+    _firstPoint = null;
+  }
+  function cancelPreview() {
+    if (_previewLine) { _previewLine.remove(); _previewLine = null; }
+    _firstPoint = null;
+  }
+
+  // 取得 SVG 相對座標
+  function getSVGCoords(e) {
+    const svg = getSVG();
+    if (!svg) return { x: e.offsetX, y: e.offsetY };
+    const rect = svg.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  // 滑鼠按下事件
+  function onOverlayMouseDown(e) {
+    if (!_drawMode) return;
+    e.preventDefault();
+    const pt = getSVGCoords(e);
+
+    if (!_firstPoint) {
+      // 第一個點：顯示起始小圓點
+      _firstPoint = pt;
+      drawStartDot(pt);
+    } else {
+      // 第二個點：完成直線
+      finalizeLine(_firstPoint, pt);
+      _firstPoint = null;
+      if (_previewLine) { _previewLine.remove(); _previewLine = null; }
+      // 移除起始圓點
+      const svg = getSVG();
+      if (svg) svg.querySelectorAll('.macd-start-dot').forEach(el => el.remove());
+    }
+  }
+
+  // 滑鼠移動：顯示預覽線
+  function onOverlayMouseMove(e) {
+    if (!_drawMode || !_firstPoint) return;
+    const pt = getSVGCoords(e);
+    const svg = getSVG();
+    if (!svg) return;
+
+    if (!_previewLine) {
+      _previewLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      _previewLine.setAttribute('stroke-dasharray', '6,3');
+      _previewLine.setAttribute('stroke-width', '1.5');
+      _previewLine.setAttribute('opacity', '0.7');
+      svg.appendChild(_previewLine);
+    }
+    _previewLine.setAttribute('stroke', _lineColor);
+    _previewLine.setAttribute('x1', _firstPoint.x);
+    _previewLine.setAttribute('y1', _firstPoint.y);
+    _previewLine.setAttribute('x2', pt.x);
+    _previewLine.setAttribute('y2', pt.y);
+  }
+
+  // 畫起始點
+  function drawStartDot(pt) {
+    const svg = getSVG();
+    if (!svg) return;
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', pt.x);
+    c.setAttribute('cy', pt.y);
+    c.setAttribute('r', '5');
+    c.setAttribute('fill', _lineColor);
+    c.setAttribute('opacity', '0.9');
+    c.classList.add('macd-start-dot');
+    svg.appendChild(c);
+  }
+
+  // 完成直線，加入 SVG 並記錄
+  function finalizeLine(p1, p2) {
+    const svg = getSVG();
+    if (!svg) return;
+    _lineIdCounter++;
+    const id = _lineIdCounter;
+    const color = _lineColor;
+
+    // 建立線
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', p1.x); line.setAttribute('y1', p1.y);
+    line.setAttribute('x2', p2.x); line.setAttribute('y2', p2.y);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('opacity', '0.95');
+    line.setAttribute('data-line-id', id);
+    line.style.pointerEvents = 'none';
+    svg.appendChild(line);
+
+    _lines.push({ id, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, color });
+    updateLineList();
+  }
+
+  // 更新直線清單 UI
+  function updateLineList() {
+    const listWrap = document.getElementById('macdLineList');
+    const countEl = document.getElementById('macdLineCount');
+    const itemsEl = document.getElementById('macdLineItems');
+    if (!listWrap || !countEl || !itemsEl) return;
+
+    if (_lines.length === 0) {
+      listWrap.classList.add('hidden');
+      return;
+    }
+    listWrap.classList.remove('hidden');
+    countEl.textContent = _lines.length;
+    itemsEl.innerHTML = _lines.map((ln, idx) => `
+      <div class="flex items-center gap-2 text-xs py-1 px-2 rounded bg-slate-800 border border-slate-700">
+        <span style="display:inline-block;width:28px;height:3px;background:${ln.color};border-radius:2px;flex-shrink:0;"></span>
+        <span class="text-slate-300 flex-1">直線 ${idx + 1}</span>
+        <button onclick="deleteMACDLine(${ln.id})"
+                class="text-red-400 hover:text-red-300 ml-auto px-2 py-0.5 rounded border border-red-900 hover:border-red-700 transition text-xs">
+          <i class="fa-solid fa-xmark"></i> 刪除
+        </button>
+      </div>
+    `).join('');
+  }
+
+  // 刪除指定 id 的線
+  window.deleteMACDLine = function(id) {
+    _lines = _lines.filter(ln => ln.id !== id);
+    const svg = getSVG();
+    if (svg) {
+      const el = svg.querySelector(`[data-line-id="${id}"]`);
+      if (el) el.remove();
+    }
+    updateLineList();
+  };
+
+})(); // IIFE end
 
 function drawRSIChart(data) {
   const ctx = document.getElementById('rsiChart');
