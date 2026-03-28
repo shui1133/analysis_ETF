@@ -4466,35 +4466,76 @@ function sentimentBadge(s) {
 // Google News
 // ════════════════════════════════════════════════════════════════
 
-// ── 前端直接抓取 Google News RSS（透過 allorigins proxy 繞過 CORS）──
+// ── 前端直接抓取 Google News RSS（多 proxy 備援，自動容錯）──
 async function _fetchNewsFromRSS(ticker, displayName) {
   const query = displayName && displayName !== ticker
     ? `${displayName} ${ticker} 股票`
     : `${ticker} 股票`;
   const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
 
-  const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
-  if (!resp.ok) throw new Error(`allorigins HTTP ${resp.status}`);
-  const json = await resp.json();
-  if (!json.contents) throw new Error('allorigins 回傳空內容');
+  // 多個備用 CORS proxy，依序嘗試
+  const PROXIES = [
+    {
+      build: url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      parse: async resp => {
+        if (!resp.ok) throw new Error(`corsproxy.io HTTP ${resp.status}`);
+        return await resp.text();
+      }
+    },
+    {
+      build: url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+      parse: async resp => {
+        if (!resp.ok) throw new Error(`allorigins HTTP ${resp.status}`);
+        const j = await resp.json();
+        if (!j.contents) throw new Error('allorigins 回傳空內容');
+        return j.contents;
+      }
+    },
+    {
+      build: url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+      parse: async resp => {
+        if (!resp.ok) throw new Error(`codetabs HTTP ${resp.status}`);
+        return await resp.text();
+      }
+    },
+    {
+      build: url => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
+      parse: async resp => {
+        if (!resp.ok) throw new Error(`thingproxy HTTP ${resp.status}`);
+        return await resp.text();
+      }
+    }
+  ];
 
-  const parser = new DOMParser();
-  const doc    = parser.parseFromString(json.contents, 'text/xml');
-  const items  = Array.from(doc.querySelectorAll('item'));
-  if (items.length === 0) throw new Error('RSS 無新聞項目');
+  let lastErr = null;
+  for (const proxy of PROXIES) {
+    try {
+      const proxyUrl = proxy.build(rssUrl);
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+      const xmlText = await proxy.parse(resp);
 
-  return items.slice(0, 20).map(item => {
-    const title   = item.querySelector('title')?.textContent || '';
-    const link    = item.querySelector('link')?.textContent  || '';
-    const pubDate = item.querySelector('pubDate')?.textContent || '';
-    const desc    = item.querySelector('description')?.textContent
-                      .replace(/<[^>]*>/g, '').slice(0, 200) || '';
-    const srcEl   = item.querySelector('source');
-    const source  = srcEl?.textContent || (title.match(/ - ([^-]+)$/) || [])[1] || 'Google News';
-    const cleanTitle = title.replace(/ - [^-]+$/, '').trim();
-    return { title: cleanTitle, link, pubDate, desc, source };
-  });
+      const parser = new DOMParser();
+      const doc    = parser.parseFromString(xmlText, 'text/xml');
+      const items  = Array.from(doc.querySelectorAll('item'));
+      if (items.length === 0) throw new Error('RSS 無新聞項目');
+
+      return items.slice(0, 20).map(item => {
+        const title   = item.querySelector('title')?.textContent || '';
+        const link    = item.querySelector('link')?.textContent  || '';
+        const pubDate = item.querySelector('pubDate')?.textContent || '';
+        const desc    = item.querySelector('description')?.textContent
+                          .replace(/<[^>]*>/g, '').slice(0, 200) || '';
+        const srcEl   = item.querySelector('source');
+        const source  = srcEl?.textContent || (title.match(/ - ([^-]+)$/) || [])[1] || 'Google News';
+        const cleanTitle = title.replace(/ - [^-]+$/, '').trim();
+        return { title: cleanTitle, link, pubDate, desc, source };
+      });
+    } catch(e) {
+      console.warn(`RSS proxy 失敗 (${e.message})，嘗試下一個...`);
+      lastErr = e;
+    }
+  }
+  throw new Error(lastErr?.message || '所有 RSS proxy 均失敗');
 }
 
 async function loadNews() {
@@ -4528,10 +4569,10 @@ async function loadNews() {
     console.warn('loadNews 後端失敗，切換至 RSS fallback:', e.message);
   }
 
-  // ── Step 2：後端無資料時，改用前端 RSS proxy 直接抓取 ─────────
+  // ── Step 2：後端無資料時，改用前端 RSS proxy 直接抓取（多 proxy 自動容錯）──
   if (articles.length === 0) {
     const loadTxt = document.querySelector('#newsLoading .text-slate-400');
-    if (loadTxt) loadTxt.textContent = '後端無資料，改用 RSS 搜尋中...';
+    if (loadTxt) loadTxt.textContent = '正在透過 RSS 搜尋新聞（自動切換備援）...';
     try {
       articles = await _fetchNewsFromRSS(ticker, displayName);
     } catch (e) {
