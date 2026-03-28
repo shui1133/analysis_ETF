@@ -8444,10 +8444,20 @@ function _drawGranCandleChart(data, period) {
     }
   }
 
-  // ── Y 軸範圍 ──────────────────────────────────────────────
-  const validCloses = closes.filter(v => v != null && isFinite(v));
-  const yMin = validCloses.length ? Math.min(...validCloses) * 0.88 : undefined;
-  const yMax = validCloses.length ? Math.max(...validCloses) * 1.12 : undefined;
+  // ── Y 軸動態範圍：納入收盤價 + 全部均線的上下限，再取 ±10% ──
+  // 確保任何均線（MA5/20/60/120）都不會超出 Y 軸而擠在邊緣
+  const _allVals = [
+    ...closes,
+    ...ma5, ...ma20, ...ma60, ...ma120,
+  ].filter(v => v != null && isFinite(v));
+  let yMin, yMax;
+  if (_allVals.length) {
+    const _lo = Math.min(..._allVals);
+    const _hi = Math.max(..._allVals);
+    const _pad = (_hi - _lo) || _lo * 0.1;   // 若所有值相同，用值的 10% 當 padding
+    yMin = Math.floor((_lo - _pad * 1.0) * 10) / 10;   // 下方留 100% 波動幅度
+    yMax = Math.ceil ((_hi + _pad * 1.0) * 10) / 10;   // 上方留 100% 波動幅度
+  }
 
   // ── Canvas 直接繪製交叉標記（金星 / 紅X），完全可靠 ─────────
   const crossDrawPlugin = {
@@ -8723,8 +8733,31 @@ function _drawGranCandleChart(data, period) {
           ticks: { color:'#94a3b8', font:{size:9} },
           grid:  { color:'#1e293b' },
           afterDataLimits(scale) {
-            if (yMin !== undefined) scale.min = yMin;
-            if (yMax !== undefined) scale.max = yMax;
+            // 取得目前 X 軸可視的索引範圍
+            const chart = scale.chart;
+            const xScale = chart.scales.x;
+            const iMin = Math.max(0, Math.floor(xScale.min));
+            const iMax = Math.min(labels.length - 1, Math.ceil(xScale.max));
+
+            // 收集可視範圍內所有均線 + 收盤價的有效值
+            const visibleVals = [];
+            for (let i = iMin; i <= iMax; i++) {
+              [closes, ma5, ma20, ma60, ma120].forEach(arr => {
+                if (arr[i] != null && isFinite(arr[i])) visibleVals.push(arr[i]);
+              });
+            }
+
+            if (visibleVals.length) {
+              const lo  = Math.min(...visibleVals);
+              const hi  = Math.max(...visibleVals);
+              const pad = (hi - lo) || lo * 0.1;
+              scale.min = Math.floor((lo - pad * 1.0) * 10) / 10;
+              scale.max = Math.ceil ((hi + pad * 1.0) * 10) / 10;
+            } else {
+              // 無可視資料時 fallback 到初始靜態範圍
+              if (yMin !== undefined) scale.min = yMin;
+              if (yMax !== undefined) scale.max = yMax;
+            }
           }
         }
       }
