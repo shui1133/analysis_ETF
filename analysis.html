@@ -4613,16 +4613,16 @@ function drawCandleChart(data) {
           min: (function() {
             const vals = [...lows, ...closes].filter(v => v != null && v > 0);
             if (!vals.length) return undefined;
-            const minVal = Math.min(...vals), maxVal = Math.max(...vals);
-            const pad = (maxVal - minVal) * 0.05 || minVal * 0.02;
-            return Math.floor((minVal - pad) * 10) / 10;
+            const minVal = Math.min(...vals), maxVal = Math.max(...[...highs, ...closes].filter(v => v != null && v > 0));
+            const range = maxVal - minVal || minVal * 0.1;
+            return Math.floor((minVal - range * 0.10) * 10) / 10;
           })(),
           max: (function() {
             const vals = [...highs, ...closes].filter(v => v != null && v > 0);
             if (!vals.length) return undefined;
-            const minVal = Math.min(...vals), maxVal = Math.max(...vals);
-            const pad = (maxVal - minVal) * 0.05 || maxVal * 0.02;
-            return Math.ceil((maxVal + pad) * 10) / 10;
+            const minVal = Math.min(...[...lows, ...closes].filter(v => v != null && v > 0)), maxVal = Math.max(...vals);
+            const range = maxVal - minVal || maxVal * 0.1;
+            return Math.ceil((maxVal + range * 0.10) * 10) / 10;
           })(),
           ticks:{ color:'#64748b', font:{size:10}, callback: v => v.toLocaleString() },
           grid:{ color:'rgba(255,255,255,.06)' }
