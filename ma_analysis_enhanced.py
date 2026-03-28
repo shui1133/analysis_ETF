@@ -257,6 +257,7 @@ def calc_granville_signals(
         vol_shrink= is_vol_shrink(i)
 
         rule, strength, note = 0, 'moderate', ''
+        up_count, down_count = 0, 0   # ★ 修正：確保所有 rule 分支都有預設值，避免 UnboundLocalError
 
         # ① 起漲買進：均線走平/上彎 + 放量上穿 + 前期多在均線下方
         if cross_up and (ma_trend_up(i) or ma_flat(i)) and can_mark(1, i):
