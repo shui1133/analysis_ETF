@@ -7608,9 +7608,20 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       ? '<span class="mono ' + (row.div_yield >= 5 ? 'up' : row.div_yield >= 3 ? 'text-amber-400' : 'flat') + '">' + row.div_yield.toFixed(2) + '%</span>'
       : '<span class="flat text-xs">--</span>';
     const trendHtml = '<span style="color:' + row.trend_color + '" class="text-xs font-bold">' + (row.trend_label || '--') + '</span>';
-    const signals = row.reasons_buy.concat(row.reasons_sell).slice(0,3);
-    const signalHtml = signals.length
-      ? signals.map(s => { const isBuy = row.reasons_buy.includes(s); return '<span class="signal-tag ' + (isBuy?'signal-buy':'signal-sell') + '">' + s.replace(/（[^）]*）/g,'') + '</span>'; }).join('')
+    // ── 主要訊號：買進理由（綠）+ 賣出考量（紅），各取最多2筆，合計≤4筆 ──
+    // 文字清理：去除括號補充說明、去除前綴emoji圖示，保留核心關鍵字
+    const _cleanSig = s => s
+      .replace(/（[^）]{0,20}）/g, '')   // 去括號補充
+      .replace(/^[⭐⚠🔴✅🚀⬆⬇➡💰📈📉•·▲▼]\s*/u, '')  // 去前綴符號
+      .replace(/[：:]\s*.+$/, '')         // 去「XXX：詳細說明」後段
+      .trim()
+      .slice(0, 18);                       // 最多18字
+    const _buyTags  = (row.reasons_buy  || []).slice(0, 2)
+      .map(s => '<span class="signal-tag signal-buy">'  + _cleanSig(s) + '</span>');
+    const _sellTags = (row.reasons_sell || []).slice(0, 2)
+      .map(s => '<span class="signal-tag signal-sell">' + _cleanSig(s) + '</span>');
+    const signalHtml = (_buyTags.length || _sellTags.length)
+      ? _buyTags.concat(_sellTags).join('')
       : '<span class="text-slate-600 text-xs">資料不足</span>';
     extraCols =
       '<td class="py-2 px-3 text-center">' + ratingHtml + '</td>' +
