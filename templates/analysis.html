@@ -4466,76 +4466,94 @@ function sentimentBadge(s) {
 // Google News
 // ════════════════════════════════════════════════════════════════
 
-// ── 前端直接抓取 Google News RSS（多 proxy 備援，自動容錯）──
+// ── 解析 RSS XML 字串為文章陣列（共用）──
+function _parseRssXml(xmlText) {
+  const parser = new DOMParser();
+  const doc    = parser.parseFromString(xmlText, 'text/xml');
+  // 檢查是否為有效 XML（parsererror 代表解析失敗）
+  if (doc.querySelector('parsererror')) throw new Error('RSS XML 解析失敗');
+  const items  = Array.from(doc.querySelectorAll('item'));
+  if (items.length === 0) throw new Error('RSS 無新聞項目');
+  return items.slice(0, 20).map(item => {
+    const title   = item.querySelector('title')?.textContent || '';
+    const link    = item.querySelector('link')?.textContent  || '';
+    const pubDate = item.querySelector('pubDate')?.textContent || '';
+    const desc    = (item.querySelector('description')?.textContent || '')
+                      .replace(/<[^>]*>/g, '').slice(0, 200);
+    const srcEl   = item.querySelector('source');
+    const source  = srcEl?.textContent || (title.match(/ - ([^-]+)$/) || [])[1] || 'Google News';
+    const cleanTitle = title.replace(/ - [^-]+$/, '').trim();
+    return { title: cleanTitle, link, pubDate, desc, source };
+  });
+}
+
+// ── 前端直接抓取 Google News RSS（多策略備援）──
 async function _fetchNewsFromRSS(ticker, displayName) {
   const query = displayName && displayName !== ticker
     ? `${displayName} ${ticker} 股票`
     : `${ticker} 股票`;
   const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
 
-  // 多個備用 CORS proxy，依序嘗試
-  const PROXIES = [
-    {
-      build: url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-      parse: async resp => {
-        if (!resp.ok) throw new Error(`corsproxy.io HTTP ${resp.status}`);
-        return await resp.text();
-      }
-    },
-    {
-      build: url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-      parse: async resp => {
-        if (!resp.ok) throw new Error(`allorigins HTTP ${resp.status}`);
-        const j = await resp.json();
-        if (!j.contents) throw new Error('allorigins 回傳空內容');
-        return j.contents;
-      }
-    },
-    {
-      build: url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-      parse: async resp => {
-        if (!resp.ok) throw new Error(`codetabs HTTP ${resp.status}`);
-        return await resp.text();
-      }
-    },
-    {
-      build: url => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
-      parse: async resp => {
-        if (!resp.ok) throw new Error(`thingproxy HTTP ${resp.status}`);
-        return await resp.text();
-      }
-    }
-  ];
-
-  let lastErr = null;
-  for (const proxy of PROXIES) {
-    try {
-      const proxyUrl = proxy.build(rssUrl);
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-      const xmlText = await proxy.parse(resp);
-
-      const parser = new DOMParser();
-      const doc    = parser.parseFromString(xmlText, 'text/xml');
-      const items  = Array.from(doc.querySelectorAll('item'));
-      if (items.length === 0) throw new Error('RSS 無新聞項目');
-
-      return items.slice(0, 20).map(item => {
-        const title   = item.querySelector('title')?.textContent || '';
-        const link    = item.querySelector('link')?.textContent  || '';
-        const pubDate = item.querySelector('pubDate')?.textContent || '';
-        const desc    = item.querySelector('description')?.textContent
-                          .replace(/<[^>]*>/g, '').slice(0, 200) || '';
-        const srcEl   = item.querySelector('source');
-        const source  = srcEl?.textContent || (title.match(/ - ([^-]+)$/) || [])[1] || 'Google News';
-        const cleanTitle = title.replace(/ - [^-]+$/, '').trim();
-        return { title: cleanTitle, link, pubDate, desc, source };
-      });
-    } catch(e) {
-      console.warn(`RSS proxy 失敗 (${e.message})，嘗試下一個...`);
-      lastErr = e;
-    }
+  // ── 策略 1：rss2json.com（專為前端設計，有 CORS，免費額度充足）──
+  try {
+    const r2jUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=20`;
+    const resp = await fetch(r2jUrl, { signal: AbortSignal.timeout(12000) });
+    if (!resp.ok) throw new Error(`rss2json HTTP ${resp.status}`);
+    const j = await resp.json();
+    if (j.status !== 'ok' || !j.items || j.items.length === 0) throw new Error(`rss2json status: ${j.status}`);
+    console.log('[RSS] rss2json 成功，文章數:', j.items.length);
+    return j.items.map(item => ({
+      title:   (item.title || '').replace(/ - [^-]+$/, '').trim(),
+      link:    item.link  || item.guid || '',
+      pubDate: item.pubDate || '',
+      desc:    (item.description || '').replace(/<[^>]*>/g, '').slice(0, 200),
+      source:  item.author || (item.title?.match(/ - ([^-]+)$/) || [])[1] || 'Google News'
+    }));
+  } catch(e) {
+    console.warn('[RSS] rss2json 失敗:', e.message);
   }
-  throw new Error(lastErr?.message || '所有 RSS proxy 均失敗');
+
+  // ── 策略 2：allorigins.win（回傳 JSON.contents，需解析 XML）──
+  try {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+    if (!resp.ok) throw new Error(`allorigins HTTP ${resp.status}`);
+    const j = await resp.json();
+    if (!j.contents) throw new Error('allorigins 回傳空內容');
+    const articles = _parseRssXml(j.contents);
+    console.log('[RSS] allorigins 成功，文章數:', articles.length);
+    return articles;
+  } catch(e) {
+    console.warn('[RSS] allorigins 失敗:', e.message);
+  }
+
+  // ── 策略 3：corsproxy.io（直接回傳 XML 文字）──
+  try {
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(rssUrl)}`;
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+    if (!resp.ok) throw new Error(`corsproxy.io HTTP ${resp.status}`);
+    const xmlText = await resp.text();
+    const articles = _parseRssXml(xmlText);
+    console.log('[RSS] corsproxy.io 成功，文章數:', articles.length);
+    return articles;
+  } catch(e) {
+    console.warn('[RSS] corsproxy.io 失敗:', e.message);
+  }
+
+  // ── 策略 4：feedburner-style jsonp via jsonp.afeld.me ──
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}`;
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+    if (!resp.ok) throw new Error(`allorigins/raw HTTP ${resp.status}`);
+    const xmlText = await resp.text();
+    const articles = _parseRssXml(xmlText);
+    console.log('[RSS] allorigins/raw 成功，文章數:', articles.length);
+    return articles;
+  } catch(e) {
+    console.warn('[RSS] allorigins/raw 失敗:', e.message);
+  }
+
+  throw new Error('所有 RSS 策略均失敗');
 }
 
 async function loadNews() {
