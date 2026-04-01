@@ -2830,19 +2830,23 @@ function renderTechSignalDetail(data) {
   }
 
   // ▼ 均線交叉預測（已移至葛蘭碧╱均線訊號 Tab，此處僅顯示摘要導覽）
-  const cross520  = maAn.cross_5_20  || {};
-  const cross2060 = maAn.cross_20_60 || {};
+  // ★ 修正 v2：主角統一為 MA5/MA120，MA5/MA20、MA20/MA60 為補充
+  const cross5120_rc = maAn.cross_5_120 || {};
+  const cross520_rc  = maAn.cross_5_20  || {};
+  const cross2060_rc = maAn.cross_20_60 || {};
   const crossItems = [
-    {label:'MA5/MA20',  key:'5_20',  data: cross520},
-    {label:'MA20/MA60', key:'20_60', data: cross2060},
+    {label:'MA5/MA120', key:'5_120', data: cross5120_rc, primary: true},
+    {label:'MA5/MA20',  key:'5_20',  data: cross520_rc,  primary: false},
+    {label:'MA20/MA60', key:'20_60', data: cross2060_rc, primary: false},
   ].filter(c => c.data.cross_type && c.data.cross_type !== 'none');
   if (crossItems.length > 0) {
     const hasDeathCross = crossItems.some(c=>c.data.cross_type==='death');
     const crossSt  = hasDeathCross ? 'sell' : 'buy';
-    const allDays  = crossItems.filter(c=>c.data.est_days!=null).map(c=>c.data.est_days);
-    const minDays  = allDays.length ? Math.min(...allDays) : null;
-    const titleStr = minDays!=null ? `最快 ${minDays} 交易日後交叉` : `${crossItems.length} 組預測`;
-    const crossHtml = `<div class="text-slate-300 text-sm mb-2">偵測到 <strong style="color:${hasDeathCross?'#ef4444':'#10b981'}">${crossItems.length} 組</strong>均線交叉預測，詳細數據請前往專屬分析頁。</div>
+    // 主角天數（MA5/MA120），若無則取最短
+    const primaryItem = crossItems.find(c=>c.primary) || crossItems[0];
+    const primaryDays = primaryItem.data.est_days;
+    const titleStr = primaryDays!=null ? `${primaryItem.label} 約 ${primaryDays} 交易日後交叉` : `${crossItems.length} 組預測`;
+    const crossHtml = `<div class="text-slate-300 text-sm mb-2">偵測到 <strong style="color:${hasDeathCross?'#ef4444':'#10b981'}">${crossItems.length} 組</strong>均線交叉預測（主要：${primaryItem.label}），詳細數據請前往專屬分析頁。</div>
       <button onclick="switchTab('granville')" class="text-xs px-3 py-1.5 rounded-lg font-bold" style="background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f680;">
         <i class="fa-solid fa-scroll mr-1 text-amber-400"></i>前往葛蘭碧╱均線訊號 Tab →
       </button>`;
@@ -3404,7 +3408,9 @@ function renderRecommendation(data) {
     if (targetDesc) targetDesc.textContent='資料不足';
   }
 
-  // ▼ 死亡/黃金交叉警示橫幅（以 MA5/MA120 為主，與葛蘭碧頁統一）
+  // ▼ 死亡/黃金交叉警示橫幅
+  // ★ 修正 v2：主角統一為 MA5/MA120（與葛蘭碧頁一致），MA5/MA20、MA20/MA60 降為補充說明
+  //   原本三組全部並列顯示，導致天數最短的 MA20/MA60 被誤認為主要警告
   const maAna   = (data.technical||{}).ma_analysis || rec.ma_analysis || {};
   const c5120   = maAna.cross_5_120 || {};
   const c520    = maAna.cross_5_20  || {};
@@ -3413,39 +3419,52 @@ function renderRecommendation(data) {
   const goldenAlert = document.getElementById('goldenCrossAlert');
   if (deathAlert) deathAlert.classList.add('hidden');
   if (goldenAlert) goldenAlert.classList.add('hidden');
-  const allCross = [
-    {key:'MA5/MA120', d: c5120},   // ★ 主要（與葛蘭碧頁一致）
-    {key:'MA5/MA20',  d: c520},
-    {key:'MA20/MA60', d: c2060},
-  ];
-  let deathLines = [], goldenLines = [];
-  allCross.forEach(c => {
-    if (!c.d.cross_type || c.d.cross_type==='none') return;
-    const days    = c.d.est_days;
-    const calDays = c.d.est_calendar_days || '?';
-    const conf    = {high:'高',medium:'中',low:'低'}[c.d.confidence]||c.d.confidence||'';
-    // 緊急程度顏色
+
+  // 主角：MA5/MA120（與葛蘭碧頁統一）；次要：MA5/MA20、MA20/MA60 僅在主角有訊號時補充
+  function _buildCrossLine(c, key, isPrimary) {
+    if (!c.cross_type || c.cross_type==='none') return null;
+    const days    = c.est_days;
+    const calDays = c.est_calendar_days || '?';
+    const conf    = {high:'高',medium:'中',low:'低'}[c.confidence]||c.confidence||'';
     const urgency = days!=null && days<=5  ? '#dc2626'
                   : days!=null && days<=10 ? '#f97316'
                   : days!=null && days<=20 ? '#f59e0b' : '#fbbf24';
-    // ★ 修正：強化顯示預估天數，≤10天加警戒標示
     const daysPart = days!=null
-      ? `預估 <strong style="color:${urgency};font-size:15px">${days}</strong> 個交易日（<strong style="color:${urgency}">${calDays}</strong> 自然日）後`
+      ? `預估 <strong style="color:${urgency};font-size:${isPrimary?'15':'13'}px">${days}</strong> 個交易日（<strong style="color:${urgency}">${calDays}</strong> 自然日）後`
       : '預估時間不明，';
-    const urgWarn  = days!=null && days<=10
+    const urgWarn  = isPrimary && days!=null && days<=10
       ? ` <span style="background:${urgency};color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:bold">⚠ 緊急</span>` : '';
-    if (c.d.cross_type==='death') {
-      deathLines.push(`${c.key} ${daysPart} 出現<strong>死亡交叉</strong>，信心度：${conf}${urgWarn}。${c.d.details||''}`);
-    } else if (c.d.cross_type==='golden') {
-      goldenLines.push(`${c.key} ${daysPart} 出現<strong>黃金交叉</strong>，信心度：${conf}。${c.d.details||''}`);
+    const prefix   = isPrimary ? `<strong>${key}</strong>` : `<span style="opacity:.75">${key}</span>`;
+    return { type: c.cross_type, html: `${prefix} ${daysPart} 出現<strong>${c.cross_type==='death'?'死亡交叉':'黃金交叉'}</strong>，信心度：${conf}${urgWarn}。<span style="opacity:.7;font-size:11px">${c.details||''}</span>` };
+  }
+
+  const primaryDeath = [], primaryGolden = [];
+  const secondaryDeath = [], secondaryGolden = [];
+
+  // MA5/MA120 為主角
+  const r5120 = _buildCrossLine(c5120, 'MA5/MA120', true);
+  if (r5120) { r5120.type==='death' ? primaryDeath.push(r5120.html) : primaryGolden.push(r5120.html); }
+
+  // 次要：MA5/MA20、MA20/MA60 — 僅在天數與主角不同時才補充（避免重複資訊混淆）
+  [['MA5/MA20', c520], ['MA20/MA60', c2060]].forEach(([key, c]) => {
+    const r = _buildCrossLine(c, key, false);
+    if (!r) return;
+    // 只有當該組合天數比主角短（更緊急）或主角無訊號時才顯示
+    const mainDays = r5120 && r5120.type===r.type ? (c5120.est_days||999) : 999;
+    if (!r5120 || r5120.type!==r.type || c.est_days < mainDays) {
+      r.type==='death' ? secondaryDeath.push(r.html) : secondaryGolden.push(r.html);
     }
   });
+
+  const deathLines  = [...primaryDeath,  ...secondaryDeath];
+  const goldenLines = [...primaryGolden, ...secondaryGolden];
+
   if (deathLines.length && deathAlert) {
-    document.getElementById('deathCrossAlertText').innerHTML = deathLines.join('<br>');
+    document.getElementById('deathCrossAlertText').innerHTML = deathLines.join('<br><span style="border-top:1px solid rgba(255,100,100,.2);display:block;margin:4px 0"></span>');
     deathAlert.classList.remove('hidden');
   }
   if (goldenLines.length && goldenAlert) {
-    document.getElementById('goldenCrossAlertText').innerHTML = goldenLines.join('<br>');
+    document.getElementById('goldenCrossAlertText').innerHTML = goldenLines.join('<br><span style="border-top:1px solid rgba(100,255,150,.2);display:block;margin:4px 0"></span>');
     goldenAlert.classList.remove('hidden');
   }
 
@@ -8180,7 +8199,8 @@ function renderMAAnalysisTab(data) {
   }
 
   // ── 均線交叉分析 ──
-  const maAna   = (data.technical && data.technical.ma_analysis) || {};
+  const maAna    = (data.technical && data.technical.ma_analysis) || {};
+  const cross5120 = maAna.cross_5_120 || {};   // ★ 主角（與葛蘭碧頁統一）
   const cross520  = maAna.cross_5_20  || {};
   const cross2060 = maAna.cross_20_60 || {};
 
@@ -8415,7 +8435,8 @@ function resetMAChart2Zoom() {
         ${obj.desc ? `<div class="text-slate-400 text-xs mt-1">${obj.desc}</div>` : ''}
       </div>`;
     };
-    const html = mkCross(cross520,'MA5','MA20') + mkCross(cross2060,'MA20','MA60');
+    // ★ 修正 v2：主角 MA5/MA120 優先顯示，次要組合補充
+    const html = mkCross(cross5120,'MA5','MA120') + mkCross(cross520,'MA5','MA20') + mkCross(cross2060,'MA20','MA60');
     crossSect.innerHTML = html || '<div class="rounded-xl p-4 border border-slate-700 text-slate-400 text-sm">目前無交叉訊號預測。均線走勢平穩，請持續觀察。</div>';
   }
 
@@ -8456,6 +8477,7 @@ function resetMAChart2Zoom() {
   const deathPredBox = document.getElementById('maDeathCrossPredictBox');
   const deathPredContent = document.getElementById('maDeathCrossPredictContent');
   if (deathPredBox && deathPredContent) {
+    const c5120 = maAna.cross_5_120 || {};   // ★ 主角
     const c520  = maAna.cross_5_20  || {};
     const c2060 = maAna.cross_20_60 || {};
     const predLines = [];
@@ -8476,9 +8498,11 @@ function resetMAChart2Zoom() {
         price: obj.price_at_cross || obj.est_price || null,
         conf: obj.confidence_pct != null ? obj.confidence_pct : (obj.confidence != null ? Math.round(obj.confidence*100) : null) };
     };
+    // ★ 修正 v2：主角 MA5/MA120 優先，次要補充
+    const p0 = buildPredLine(c5120,'MA5','MA120');
     const p1 = buildPredLine(c520,'MA5','MA20');
     const p2 = buildPredLine(c2060,'MA20','MA60');
-    [p1, p2].forEach(p => {
+    [p0, p1, p2].forEach(p => {
       if (!p) return;
       const col   = p.isBuy ? '#fbbf24' : '#f43f5e';
       const icon  = p.isBuy ? '★ 黃金交叉' : '✕ 死亡交叉';
