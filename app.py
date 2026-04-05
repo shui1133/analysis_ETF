@@ -2439,22 +2439,50 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # 本機存快取同步，GitHub push 背景執行
-            from github_cache import local_save_price, gh_save_price
+            # ★ 修正：efficient_frontier 存快取時「只存 date+close」會覆蓋 stock_analysis
+            #   存進去的完整 OHLCV（含 open/high/low），導致 K 線圖 open 全部失效。
+            #   修復策略：
+            #   - 逐一以 Ticker.history() 取完整 OHLCV，存完整格式（含 open/high/low/volume）
+            #   - 若取不到完整資料，則略過快取寫入（寧可不寫，也不覆蓋完整快取）
+            from github_cache import local_save_price, gh_save_price, CacheManager as _CM
             _ef_push_list = []
             for tk in need_fetch:
                 if tk not in prices:
                     continue
-                price_series = prices[tk]
-                try:
-                    price_list = [
-                        {'date': str(d)[:10], 'close': round(float(v), 2)}
-                        for d, v in price_series.items() if pd.notna(v)
-                    ]
-                    local_save_price(DATA_DIR, tk, price_list)
-                    _ef_push_list.append((tk, price_list))
-                except Exception as e_save:
-                    print(f"  [EF] 存快取 {tk} 失敗（非致命）: {e_save}")
+                # ── 嘗試取完整 OHLCV（有 open/high/low）──────────────
+                _full_ohlcv = None
+                for _sfx in ['.TW', '.TWO']:
+                    try:
+                        import yfinance as _yf_ef
+                        _hist = _yf_ef.Ticker(f"{tk}{_sfx}").history(period=period, timeout=15)
+                        if _hist is not None and not _hist.empty:
+                            _full_ohlcv = [
+                                {
+                                    'date':   str(_dt.date()),
+                                    'open':   round(float(_row['Open']),   2),
+                                    'high':   round(float(_row['High']),   2),
+                                    'low':    round(float(_row['Low']),    2),
+                                    'close':  round(float(_row['Close']),  2),
+                                    'volume': int(_row.get('Volume', 0) or 0),
+                                }
+                                for _dt, _row in _hist.iterrows()
+                                if float(_row['Close']) > 0
+                            ]
+                            if _full_ohlcv:
+                                break
+                    except Exception:
+                        continue
+                if _full_ohlcv:
+                    # 有完整 OHLCV → 正常存入（不會丟失 open/high/low）
+                    try:
+                        local_save_price(DATA_DIR, tk, _full_ohlcv)
+                        _ef_push_list.append((tk, _full_ohlcv))
+                        print(f"  [EF] {tk} 完整 OHLCV 已存本機快取（{len(_full_ohlcv)} 筆）")
+                    except Exception as e_save:
+                        print(f"  [EF] 存快取 {tk} 失敗（非致命）: {e_save}")
+                else:
+                    # 取不到完整 OHLCV → 略過寫入，保護現有快取不被 date+close 格式覆蓋
+                    print(f"  [EF] {tk} 無法取得完整 OHLCV，略過快取寫入（保護現有快取）")
             def _bg_ef_push(_lst=_ef_push_list):
                 for _tk, _pl in _lst:
                     try: gh_save_price(_tk, _pl)
