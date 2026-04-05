@@ -729,9 +729,9 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         # _summaryToDataFormat 的 chart.volumes 目前為空陣列導致圖表空白
         'chart': (lambda rows: {
             'dates':   [r['date']   for r in rows],
-            # ★ 修正：open 缺值時退化為當日 close（顯示一字線），
-            #   而非前日 close（前日 close ≠ 當日開盤，會產生方向/大小完全錯誤的假蠟燭體）
-            'opens':   [(r.get('open') if (r.get('open') and r.get('open') > 0)
+            # ★ open 缺值時用前根 close（保留漲跌色判斷），避免日線 K 棒全部消失
+            # ★ 修正：open 缺值退化為當日 close（一字線），絕不用前日 close（會產生假蠟燭體）
+            'opens':   [(r.get('open') if (r.get('open') and float(r.get('open', 0)) > 0)
                          else r['close'])
                         for r in rows],
             'highs':   [r.get('high', r['close']) for r in rows],
@@ -799,20 +799,27 @@ def _fetch_one_hot(ticker: str, fetcher) -> tuple:
         if ohlcv_rows and len(ohlcv_rows) >= 20:
             def _norm_ohlcv(rows):
                 result = []
-                prev_close = None
                 for r in rows:
                     date_val  = r.get('date') or r.get('日期') or ''
                     close_val = r.get('close') or r.get('Close') or r.get('收盤價')
-                    open_val  = r.get('open')  or r.get('Open')  or r.get('開盤價')
-                    high_val  = r.get('high')  or r.get('High')  or r.get('最高價')
-                    low_val   = r.get('low')   or r.get('Low')   or r.get('最低價')
-                    vol_val   = r.get('volume') or r.get('Volume') or r.get('成交量') or 0
+                    # ★ 修正：改用 _get_ohlc_field 安全讀取，避免值為 0 時 `or` 誤跳到下一欄位
+                    def _fv(keys, row=r):
+                        for k in keys:
+                            v = row.get(k)
+                            if v is not None and v != '':
+                                return v
+                        return None
+                    open_val  = _fv(['open',  'Open',  '開盤價'])
+                    high_val  = _fv(['high',  'High',  '最高價'])
+                    low_val   = _fv(['low',   'Low',   '最低價'])
+                    vol_val   = _fv(['volume','Volume','成交量']) or 0
                     if not close_val:
                         continue
                     try:
                         close_f = float(close_val)
-                        # ★ 修正：open 缺值時優先用前根 close（保留漲跌方向），再 fallback 當根 close
-                        open_f  = float(open_val) if open_val else (prev_close if prev_close else close_f)
+                        # ★ 修正：open 缺值時退化為當日 close（顯示一字線），
+                        #   絕不用前日 close（前日收盤≠當日開盤，台股跳空常見，用前日close會產生方向錯誤的假蠟燭體）
+                        open_f  = float(open_val) if (open_val is not None and open_val != '' and float(open_val) > 0) else close_f
                         high_f  = float(high_val) if high_val else close_f
                         low_f   = float(low_val)  if low_val  else close_f
                         # ★ 修正：volume 閾值從 10000 改為 100000（快取已是「張」通常 < 10萬，原始股數才 > 10萬）
@@ -829,7 +836,6 @@ def _fetch_one_hot(ticker: str, fetcher) -> tuple:
                                 'close':  close_f,
                                 'volume': lot_vol,
                             })
-                        prev_close = close_f
                     except (ValueError, TypeError):
                         continue
                 return result
@@ -1022,20 +1028,27 @@ def get_stock_analysis(ticker):
         if ohlcv_rows and len(ohlcv_rows) >= 20:
             def _norm_cache_ohlcv(rows):
                 result = []
-                prev_close = None
                 for r in rows:
                     date_val  = r.get('date') or r.get('日期') or ''
                     close_val = r.get('close') or r.get('Close') or r.get('收盤價')
-                    open_val  = r.get('open')  or r.get('Open')  or r.get('開盤價')
-                    high_val  = r.get('high')  or r.get('High')  or r.get('最高價')
-                    low_val   = r.get('low')   or r.get('Low')   or r.get('最低價')
-                    vol_val   = r.get('volume') or r.get('Volume') or r.get('成交量') or 0
+                    # ★ 修正：改用安全讀取，避免值為 0 時 `or` 誤跳到下一欄位
+                    def _fv(keys, row=r):
+                        for k in keys:
+                            v = row.get(k)
+                            if v is not None and v != '':
+                                return v
+                        return None
+                    open_val  = _fv(['open',  'Open',  '開盤價'])
+                    high_val  = _fv(['high',  'High',  '最高價'])
+                    low_val   = _fv(['low',   'Low',   '最低價'])
+                    vol_val   = _fv(['volume','Volume','成交量']) or 0
                     if not close_val:
                         continue
                     try:
                         close_f = float(close_val)
-                        # ★ 修正：open 缺值時優先用前根 close（保留漲跌方向），再 fallback 當根 close
-                        open_f  = float(open_val) if open_val else (prev_close if prev_close else close_f)
+                        # ★ 修正：open 缺值時退化為當日 close（顯示一字線），
+                        #   絕不用前日 close（前日收盤≠當日開盤，台股跳空常見，用前日close會產生方向錯誤的假蠟燭體）
+                        open_f  = float(open_val) if (open_val is not None and open_val != '' and float(open_val) > 0) else close_f
                         high_f  = float(high_val) if high_val else close_f
                         low_f   = float(low_val)  if low_val  else close_f
                         # ★ 修正：volume 閾值從 10000 改為 100000（快取已是「張」通常 < 10萬，原始股數才 > 10萬）
@@ -1052,7 +1065,6 @@ def get_stock_analysis(ticker):
                             'close':  close_f,
                             'volume': lot_vol,
                         })
-                        prev_close = close_f
                     except (ValueError, TypeError):
                         continue
                 return result
@@ -1386,13 +1398,12 @@ def get_stock_analysis(ticker):
             # 圖表資料
             'chart': {
                 'dates':        [r['date']   for r in chart_ohlcv],
-                # ★ 修正：open 缺值時退化為當日 close（顯示一字線），
-                #   而非前日 close（前日 close ≠ 當日開盤，會產生方向/大小完全錯誤的假蠟燭體）
-                'opens':        [(r.get('open') if (r.get('open') and r.get('open') > 0)
+                # ★ 修正：open 缺值退化為當日 close（一字線），絕不用前日 close（會產生假蠟燭體）
+                'opens':        [(r.get('open') if (r.get('open') and float(r.get('open', 0)) > 0)
                                   else r['close'])
                                  for r in chart_ohlcv],
-                'highs':        [r.get('high',  r['close']) for r in chart_ohlcv],
-                'lows':         [r.get('low',   r['close']) for r in chart_ohlcv],
+                'highs':        [r['high']   for r in chart_ohlcv],
+                'lows':         [r['low']    for r in chart_ohlcv],
                 'closes':       [r['close']  for r in chart_ohlcv],
                 'volumes':      [to_lots(r.get('volume', 0)) for r in chart_ohlcv],
                 'ma5':          slice_ind('ma5'),
