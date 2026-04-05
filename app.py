@@ -95,15 +95,134 @@ cached_results    = {}
 etf_memory_cache  = {}
 analysis_cache    = {}   # 股票分析快取（key=ticker）
 
-# ★ 新增：啟動時背景預熱快取（從 GitHub 拉取 → 存本機）
+# ═══════════════════════════════════════════════════════════════
+# 工具函式：判斷一批 price rows 是否為殘缺格式（只有 date+close）
+# ═══════════════════════════════════════════════════════════════
+def _is_incomplete_price_rows(rows: list) -> bool:
+    """
+    回傳 True 表示此快取是殘缺格式（缺少 open/high/low）。
+    判斷方式：取前幾筆，若 open/high/low 全部缺值或等於 close → 殘缺。
+    """
+    if not rows:
+        return False
+    sample = rows[:min(10, len(rows))]
+    missing_count = 0
+    for r in sample:
+        o = r.get('open') or r.get('Open') or r.get('開盤價')
+        h = r.get('high') or r.get('High') or r.get('最高價')
+        l = r.get('low')  or r.get('Low')  or r.get('最低價')
+        c = r.get('close') or r.get('Close') or r.get('收盤價')
+        # 若 open/high/low 全部缺值，或三者都等於 close → 殘缺
+        if not o and not h and not l:
+            missing_count += 1
+        elif c and o and h and l:
+            try:
+                if float(o) == float(c) and float(h) == float(c) and float(l) == float(c):
+                    missing_count += 1
+            except (ValueError, TypeError):
+                pass
+    # 超過 70% 的樣本是殘缺的，視為整批殘缺
+    return missing_count >= len(sample) * 0.7
+
+
+def _repair_incomplete_cache(tickers: list, data_dir: str, delay: float = 1.5) -> dict:
+    """
+    對 tickers 中快取為殘缺格式（只有 date+close）的股票，
+    從 yfinance 重新抓取完整 OHLCV 並覆寫本機 + GitHub 快取。
+
+    回傳 dict：{ticker: 'repaired'/'skipped'/'failed'}
+    delay：每支之間的間隔秒數，避免 yfinance rate limit。
+    """
+    import time as _t
+    import yfinance as _yf
+    results = {}
+
+    try:
+        from github_cache import (GitHubCache, local_save_price,
+                                  gh_save_price, CacheManager)
+        gh = GitHubCache()
+        gh_writable = getattr(gh, 'enabled', False)
+    except Exception as _e:
+        print(f"  [RepairCache] github_cache import 失敗: {_e}")
+        return {tk: 'failed' for tk in tickers}
+
+    for tk in tickers:
+        try:
+            # ── 檢查 GitHub 上的快取是否殘缺 ──────────────────
+            rows = gh.load_price(tk) if gh_writable else []
+            if not _is_incomplete_price_rows(rows if rows else []):
+                results[tk] = 'skipped'   # 快取完整，不需要修復
+                continue
+
+            print(f"  [RepairCache] {tk} 快取殘缺，開始修復...")
+
+            # ── 從 yfinance 重新抓取完整 OHLCV ────────────────
+            full_ohlcv = None
+            for sfx in ['.TW', '.TWO']:
+                try:
+                    hist = _yf.Ticker(f"{tk}{sfx}").history(period='5y', timeout=30)
+                    if hist is not None and not hist.empty:
+                        full_ohlcv = [
+                            {
+                                'date':   str(dt.date()),
+                                'open':   round(float(row['Open']),   2),
+                                'high':   round(float(row['High']),   2),
+                                'low':    round(float(row['Low']),    2),
+                                'close':  round(float(row['Close']),  2),
+                                'volume': int(row.get('Volume', 0) or 0),
+                            }
+                            for dt, row in hist.iterrows()
+                            if float(row['Close']) > 0
+                        ]
+                        if full_ohlcv:
+                            break
+                except Exception as _e_yf:
+                    print(f"  [RepairCache] {tk}{sfx} yfinance 失敗: {_e_yf}")
+                    continue
+
+            if not full_ohlcv:
+                print(f"  [RepairCache] {tk} yfinance 無資料，修復失敗")
+                results[tk] = 'failed'
+                _t.sleep(delay)
+                continue
+
+            # ── 寫入本機快取 ───────────────────────────────────
+            local_save_price(data_dir, tk, full_ohlcv)
+            print(f"  [RepairCache] {tk} 本機快取已修復（{len(full_ohlcv)} 筆完整 OHLCV）")
+
+            # ── 寫回 GitHub 快取（背景執行，不阻塞）─────────────
+            if gh_writable:
+                _tk_s, _o_s = tk, full_ohlcv
+                def _bg(_t=_tk_s, _o=_o_s):
+                    try:
+                        gh_save_price(_t, _o)
+                        print(f"  [RepairCache] {_t} GitHub 快取已修復")
+                    except Exception as _eg:
+                        print(f"  [RepairCache] {_t} GitHub push 失敗（非致命）: {_eg}")
+                import threading as _th
+                _th.Thread(target=_bg, daemon=True).start()
+
+            results[tk] = 'repaired'
+
+        except Exception as _e_outer:
+            print(f"  [RepairCache] {tk} 修復例外: {_e_outer}")
+            results[tk] = 'failed'
+
+        _t.sleep(delay)   # 每支間隔，避免 yfinance rate limit
+
+    return results
+
+
+# ★ 新增：啟動時背景預熱快取（從 GitHub 拉取 → 存本機）+ 自動修復殘缺快取
 def _background_warmup():
     """
-    Render 部署後快取為空，這個背景執行緒在啟動後立即從 GitHub
-    把最近一次的快取拉回本機，讓第一次前端請求直接命中 L1/L2。
+    Render 部署後快取為空，這個背景執行緒在啟動後：
+    1. 從 GitHub 把最近一次的快取拉回本機（warmup）
+    2. 自動偵測 open/high/low 殘缺的快取並從 yfinance 修復
     不阻塞 gunicorn 健康檢查，失敗也不影響正常服務。
     """
     import time as _t
-    _t.sleep(5)    # ★ 修正：health check 通常 3s 內完成，5s 已足夠，縮短讓快取更早就緒
+    _t.sleep(5)
     try:
         from github_cache import (GitHubCache, local_save_price,
                                   local_save_dividend, local_save_fundamental,
@@ -120,24 +239,42 @@ def _background_warmup():
                 code = s.get('code') or s.get('ticker') if isinstance(s, dict) else s
                 if code and code not in tickers:
                     tickers.append(code)
+
+        # ── Phase 1：從 GitHub 拉取快取到本機（warmup）─────────
         print(f"  [Warmup] 開始預熱 {len(tickers)} 支股票快取...")
         hit = 0
+        incomplete = []   # 記錄殘缺的 ticker，Phase 2 修復
         for tk in tickers:
             try:
                 rows = gh.load_price(tk)
                 if rows:
                     local_save_price(DATA_DIR, tk, rows)
                     hit += 1
+                    # ★ 同步偵測是否為殘缺格式（只有 date+close）
+                    if _is_incomplete_price_rows(rows):
+                        incomplete.append(tk)
+                        print(f"  [Warmup] ⚠️  {tk} 快取殘缺（缺 open/high/low），已加入修復佇列")
                 rows_d = gh.load_dividend(tk)
                 if rows_d:
                     local_save_dividend(DATA_DIR, tk, rows_d)
                 info = gh.load_fundamental(tk)
                 if info:
                     local_save_fundamental(DATA_DIR, tk, info)
-                _t.sleep(0.05)   # ★ 每次請求間隔，避免 rate limit
+                _t.sleep(0.05)
             except Exception:
                 pass
-        print(f"  [Warmup] ✅ 預熱完成，命中 {hit}/{len(tickers)} 支")
+        print(f"  [Warmup] ✅ 預熱完成，命中 {hit}/{len(tickers)} 支，殘缺 {len(incomplete)} 支")
+
+        # ── Phase 2：自動修復殘缺快取（yfinance 重新抓取）───────
+        if incomplete:
+            print(f"  [Warmup] 🔧 開始自動修復殘缺快取：{incomplete}")
+            repair_results = _repair_incomplete_cache(incomplete, DATA_DIR, delay=2.0)
+            repaired = [k for k, v in repair_results.items() if v == 'repaired']
+            failed   = [k for k, v in repair_results.items() if v == 'failed']
+            print(f"  [Warmup] 🔧 修復完成：成功 {len(repaired)} 支 {repaired}，失敗 {len(failed)} 支 {failed}")
+        else:
+            print(f"  [Warmup] ✅ 所有快取格式完整，無需修復")
+
     except Exception as e:
         print(f"  [Warmup] 預熱失敗（不影響服務）: {e}")
 
@@ -453,6 +590,99 @@ def health_check():
 # 輸入: { "tickers": ["2330", "00878"] }  或  { "ticker": "2330" }
 # 說明: 忽略所有快取，直接向 yfinance 重抓，並同步存本機 + GitHub
 # ─────────────────────────────────────────────────────────────────
+@app.route('/api/repair_cache', methods=['POST'])
+def repair_cache_api():
+    """
+    手動觸發殘缺快取修復 API。
+    用於部署後強制把 GitHub 上只有 date+close 的殘缺快取
+    替換為含完整 open/high/low/volume 的 OHLCV 格式。
+
+    POST body（JSON）：
+      {}                          → 自動掃描所有熱門股票，修復殘缺的
+      {"tickers": ["00919",...]}  → 強制修復指定股票（忽略殘缺偵測，直接重抓）
+      {"force": true}             → 強制修復所有熱門股票（不做殘缺偵測）
+    """
+    import time as _t0
+    t_start = _t0.time()
+    try:
+        body   = request.get_json(force=True) or {}
+        force  = bool(body.get('force', False))
+
+        # 建立 ticker 清單
+        if body.get('tickers'):
+            tickers = [str(t).strip().upper() for t in body['tickers'] if str(t).strip()]
+            # 指定了清單 → 直接強制修復，不做殘缺偵測
+            force = True
+        else:
+            from github_cache import TOP50_STOCKS
+            tickers = list(TOP50_STOCKS)
+            if isinstance(POPULAR_STOCKS, dict):
+                tickers += [k for k in POPULAR_STOCKS.keys() if k not in tickers]
+            elif isinstance(POPULAR_STOCKS, list):
+                for s in POPULAR_STOCKS:
+                    code = s.get('code') or s.get('ticker') if isinstance(s, dict) else s
+                    if code and code not in tickers:
+                        tickers.append(code)
+
+        MAX_TICKERS = 30
+        tickers = tickers[:MAX_TICKERS]
+
+        if force:
+            # 強制模式：全部重抓，不做殘缺偵測
+            to_repair = tickers
+        else:
+            # 自動模式：只修復殘缺的
+            from github_cache import GitHubCache
+            gh = GitHubCache()
+            to_repair = []
+            scan_results = {}
+            for tk in tickers:
+                try:
+                    rows = gh.load_price(tk) if getattr(gh, 'enabled', False) else []
+                    is_bad = _is_incomplete_price_rows(rows or [])
+                    scan_results[tk] = 'incomplete' if is_bad else 'ok'
+                    if is_bad:
+                        to_repair.append(tk)
+                except Exception:
+                    scan_results[tk] = 'scan_error'
+
+        if not to_repair:
+            return jsonify({
+                'status':  'success',
+                'message': '所有快取格式完整，無需修復',
+                'scanned': len(tickers),
+                'repaired': 0,
+                'elapsed_s': round(_t0.time() - t_start, 2),
+            })
+
+        print(f"  [RepairAPI] 開始修復 {len(to_repair)} 支：{to_repair}")
+
+        # 背景執行修復（避免 HTTP timeout）
+        import threading as _th
+        _repair_status = {'done': False, 'results': {}}
+        def _bg_repair(_tks=to_repair, _dir=DATA_DIR, _st=_repair_status):
+            _st['results'] = _repair_incomplete_cache(_tks, _dir, delay=1.5)
+            _st['done'] = True
+            repaired = [k for k, v in _st['results'].items() if v == 'repaired']
+            failed   = [k for k, v in _st['results'].items() if v == 'failed']
+            print(f"  [RepairAPI] 背景修復完成：成功 {repaired}，失敗 {failed}")
+
+        _th.Thread(target=_bg_repair, daemon=True).start()
+
+        return jsonify({
+            'status':      'accepted',
+            'message':     f'已在背景開始修復 {len(to_repair)} 支股票快取，約需 {len(to_repair) * 2} 秒完成',
+            'to_repair':   to_repair,
+            'force_mode':  force,
+            'elapsed_s':   round(_t0.time() - t_start, 2),
+            'note':        '修復進度請查看 Render Log，完成後重新查詢股票即可看到正確 K 線',
+        })
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/api/force_refresh_price', methods=['POST'])
 def force_refresh_price():
     """強制從 yfinance 取得最新股價並更新快取（跳過所有快取層）"""
@@ -2439,50 +2669,22 @@ def efficient_frontier():
                 if tk not in prices:
                     failed.append(tk)
 
-            # ★ 修正：efficient_frontier 存快取時「只存 date+close」會覆蓋 stock_analysis
-            #   存進去的完整 OHLCV（含 open/high/low），導致 K 線圖 open 全部失效。
-            #   修復策略：
-            #   - 逐一以 Ticker.history() 取完整 OHLCV，存完整格式（含 open/high/low/volume）
-            #   - 若取不到完整資料，則略過快取寫入（寧可不寫，也不覆蓋完整快取）
-            from github_cache import local_save_price, gh_save_price, CacheManager as _CM
+            # 本機存快取同步，GitHub push 背景執行
+            from github_cache import local_save_price, gh_save_price
             _ef_push_list = []
             for tk in need_fetch:
                 if tk not in prices:
                     continue
-                # ── 嘗試取完整 OHLCV（有 open/high/low）──────────────
-                _full_ohlcv = None
-                for _sfx in ['.TW', '.TWO']:
-                    try:
-                        import yfinance as _yf_ef
-                        _hist = _yf_ef.Ticker(f"{tk}{_sfx}").history(period=period, timeout=15)
-                        if _hist is not None and not _hist.empty:
-                            _full_ohlcv = [
-                                {
-                                    'date':   str(_dt.date()),
-                                    'open':   round(float(_row['Open']),   2),
-                                    'high':   round(float(_row['High']),   2),
-                                    'low':    round(float(_row['Low']),    2),
-                                    'close':  round(float(_row['Close']),  2),
-                                    'volume': int(_row.get('Volume', 0) or 0),
-                                }
-                                for _dt, _row in _hist.iterrows()
-                                if float(_row['Close']) > 0
-                            ]
-                            if _full_ohlcv:
-                                break
-                    except Exception:
-                        continue
-                if _full_ohlcv:
-                    # 有完整 OHLCV → 正常存入（不會丟失 open/high/low）
-                    try:
-                        local_save_price(DATA_DIR, tk, _full_ohlcv)
-                        _ef_push_list.append((tk, _full_ohlcv))
-                        print(f"  [EF] {tk} 完整 OHLCV 已存本機快取（{len(_full_ohlcv)} 筆）")
-                    except Exception as e_save:
-                        print(f"  [EF] 存快取 {tk} 失敗（非致命）: {e_save}")
-                else:
-                    # 取不到完整 OHLCV → 略過寫入，保護現有快取不被 date+close 格式覆蓋
-                    print(f"  [EF] {tk} 無法取得完整 OHLCV，略過快取寫入（保護現有快取）")
+                price_series = prices[tk]
+                try:
+                    price_list = [
+                        {'date': str(d)[:10], 'close': round(float(v), 2)}
+                        for d, v in price_series.items() if pd.notna(v)
+                    ]
+                    local_save_price(DATA_DIR, tk, price_list)
+                    _ef_push_list.append((tk, price_list))
+                except Exception as e_save:
+                    print(f"  [EF] 存快取 {tk} 失敗（非致命）: {e_save}")
             def _bg_ef_push(_lst=_ef_push_list):
                 for _tk, _pl in _lst:
                     try: gh_save_price(_tk, _pl)
