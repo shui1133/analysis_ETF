@@ -489,7 +489,23 @@ class ETFDataFetcher:
         _yf_period = '5y'   # ← 首次或快取過舊時，上限固定 5 年
         if _existing_rows:
             _last_date  = _existing_rows[-1]['date']
-            _days_behind = (pd.Timestamp.now() - pd.Timestamp(_last_date)).days
+            # ★ 修正：統一使用 tz-naive 比較，避免 "Cannot subtract tz-naive and tz-aware" 錯誤
+            #   pd.Timestamp(_last_date) 若字串含時區會是 tz-aware，.normalize() 後仍可能帶tz
+            #   改用 .date() 轉為純 date 物件後再比較，完全迴避 tz 問題
+            try:
+                _last_ts = pd.Timestamp(_last_date)
+                if _last_ts.tzinfo is not None:
+                    _last_ts = _last_ts.tz_convert(None)  # 轉為 tz-naive（UTC）
+                _now_ts = pd.Timestamp.now()              # tz-naive
+                _days_behind = (_now_ts - _last_ts).days
+            except Exception:
+                # 終極保底：純字串比較計算天數差
+                import datetime as _dt_mod
+                try:
+                    _last_d = _dt_mod.date.fromisoformat(str(_last_date)[:10])
+                    _days_behind = (_dt_mod.date.today() - _last_d).days
+                except Exception:
+                    _days_behind = 999  # 視為過舊，觸發全量更新
             if _days_behind <= 30:
                 _yf_period = '6mo'
                 print(f"  [L3] 已有快取至 {_last_date}（差 {_days_behind} 天），改抓近 6 個月（增量）")
