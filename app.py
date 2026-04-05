@@ -729,10 +729,11 @@ def _build_hot_summary(ticker: str, raw: dict) -> dict | None:
         # _summaryToDataFormat 的 chart.volumes 目前為空陣列導致圖表空白
         'chart': (lambda rows: {
             'dates':   [r['date']   for r in rows],
-            # ★ open 缺值時用前根 close（保留漲跌色判斷），避免日線 K 棒全部消失
-            'opens':   [rows[i].get('open') if rows[i].get('open')
-                        else (rows[i-1]['close'] if i > 0 else rows[i]['close'])
-                        for i in range(len(rows))],
+            # ★ 修正：open 缺值時退化為當日 close（顯示一字線），
+            #   而非前日 close（前日 close ≠ 當日開盤，會產生方向/大小完全錯誤的假蠟燭體）
+            'opens':   [(r.get('open') if (r.get('open') and r.get('open') > 0)
+                         else r['close'])
+                        for r in rows],
             'highs':   [r.get('high', r['close']) for r in rows],
             'lows':    [r.get('low',  r['close']) for r in rows],
             'closes':  [r['close']  for r in rows],
@@ -1385,12 +1386,13 @@ def get_stock_analysis(ticker):
             # 圖表資料
             'chart': {
                 'dates':        [r['date']   for r in chart_ohlcv],
-                # ★ 修正：open 缺值時用前根 close 作為 fallback，確保日線 K 棒正常顯示紅/綠色
-                'opens':        [chart_ohlcv[i].get('open') if chart_ohlcv[i].get('open')
-                                 else (chart_ohlcv[i-1]['close'] if i > 0 else chart_ohlcv[i]['close'])
-                                 for i in range(len(chart_ohlcv))],
-                'highs':        [r['high']   for r in chart_ohlcv],
-                'lows':         [r['low']    for r in chart_ohlcv],
+                # ★ 修正：open 缺值時退化為當日 close（顯示一字線），
+                #   而非前日 close（前日 close ≠ 當日開盤，會產生方向/大小完全錯誤的假蠟燭體）
+                'opens':        [(r.get('open') if (r.get('open') and r.get('open') > 0)
+                                  else r['close'])
+                                 for r in chart_ohlcv],
+                'highs':        [r.get('high',  r['close']) for r in chart_ohlcv],
+                'lows':         [r.get('low',   r['close']) for r in chart_ohlcv],
                 'closes':       [r['close']  for r in chart_ohlcv],
                 'volumes':      [to_lots(r.get('volume', 0)) for r in chart_ohlcv],
                 'ma5':          slice_ind('ma5'),

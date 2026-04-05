@@ -364,17 +364,27 @@ class ETFDataFetcher:
 
                     date_col  = next((c for c in price_df.columns if c in ['日期','date','Date']), None)
                     close_col = next((c for c in price_df.columns if c in ['收盤價','close','Close']), None)
+                    open_col  = next((c for c in price_df.columns if c in ['開盤價','open','Open']),  None)
+                    high_col  = next((c for c in price_df.columns if c in ['最高價','high','High']),  None)
+                    low_col   = next((c for c in price_df.columns if c in ['最低價','low','Low']),    None)
+                    vol_col   = next((c for c in price_df.columns if c in ['成交量','volume','Volume']), None)
                     if date_col and close_col and len(price_df) >= 5:
                         ohlcv = []
                         for _, row in price_df.iterrows():
                             c = float(row[close_col])
+                            # ★ 修正：優先讀對應欄位，欄位不存在才退化成 close，
+                            #   確保有 OHLCV 資料的 CSV 能正確還原蠟燭圖
+                            o = float(row[open_col])     if open_col else c
+                            h = float(row[high_col])     if high_col else c
+                            l = float(row[low_col])      if low_col  else c
+                            v = int(float(row[vol_col])) if vol_col  else 0
                             ohlcv.append({
                                 'date':   str(row[date_col]),
-                                'open':   float(row.get('open', row.get('開盤價', c))),
-                                'high':   float(row.get('high', row.get('最高價', c))),
-                                'low':    float(row.get('low',  row.get('最低價', c))),
+                                'open':   o,
+                                'high':   h,
+                                'low':    l,
                                 'close':  c,
-                                'volume': int(float(row.get('volume', row.get('成交量', 0)))),
+                                'volume': v,
                             })
                         # ★ 修正：配息路徑也改為子資料夾格式，同時向下相容舊路徑
                         div_csv = os.path.join(ticker_dir, "dividend.csv")
@@ -896,12 +906,25 @@ class ETFDataFetcher:
             elif data.get('price_data'):
                 price_df = pd.DataFrame(data['price_data'])
                 for old, new in [('date','date'),('Date','date'),('日期','date'),
-                                  ('close','close'),('Close','close'),('收盤價','close')]:
+                                  ('close','close'),('Close','close'),('收盤價','close'),
+                                  ('open','open'),('Open','open'),('開盤價','open'),
+                                  ('high','high'),('High','high'),('最高價','high'),
+                                  ('low','low'),('Low','low'),('最低價','low'),
+                                  ('volume','volume'),('Volume','volume'),('成交量','volume')]:
                     if old in price_df.columns and new not in price_df.columns:
                         price_df = price_df.rename(columns={old: new})
                 if 'date' in price_df.columns and 'close' in price_df.columns:
                     price_df = price_df[price_df['date'] >= _cutoff_5y]
-                    price_df[['date','close']].to_csv(
+                    # ★ 修正：盡可能保留 OHLCV 全欄位；若缺 open/high/low 則以 close 補齊，
+                    #   確保讀回時 drawCandleChartPeriod 能畫出正確蠟燭體（而非退化為細線）
+                    for col_fill in ['open', 'high', 'low']:
+                        if col_fill not in price_df.columns:
+                            price_df[col_fill] = price_df['close']
+                    if 'volume' not in price_df.columns:
+                        price_df['volume'] = 0
+                    keep_cols = [c for c in ['date','open','high','low','close','volume']
+                                 if c in price_df.columns]
+                    price_df[keep_cols].to_csv(
                         os.path.join(ticker_dir, "price.csv"),
                         index=False, encoding='utf-8-sig'
                     )

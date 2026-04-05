@@ -3819,14 +3819,24 @@ function buildPeriodChartData(rawData, period) {
   const daily = rawData.chart;
 
   // 重建日線 OHLCV 陣列（從 chart 物件）
-  const dailyOHLCV = daily.dates.map((d, i) => ({
-    date:   d,
-    open:   daily.opens[i],
-    high:   daily.highs[i],
-    low:    daily.lows[i],
-    close:  daily.closes[i],
-    volume: daily.volumes[i],
-  }));
+  // ★ 修正：daily.opens/highs/lows/volumes 可能不存在（舊版快取僅有 dates+closes），
+  //   需做空陣列 fallback，避免 undefined[i] 導致整條 opens 全為 undefined
+  const _safeOHLC = arr => (Array.isArray(arr) && arr.length > 0) ? arr : null;
+  const _dOpens   = _safeOHLC(daily.opens);
+  const _dHighs   = _safeOHLC(daily.highs);
+  const _dLows    = _safeOHLC(daily.lows);
+  const _dVols    = _safeOHLC(daily.volumes);
+  const dailyOHLCV = daily.dates.map((d, i) => {
+    const c = daily.closes[i];
+    return {
+      date:   d,
+      open:   (_dOpens && _dOpens[i] != null && !isNaN(_dOpens[i])) ? Number(_dOpens[i]) : null,
+      high:   (_dHighs && _dHighs[i] != null && !isNaN(_dHighs[i])) ? Number(_dHighs[i]) : null,
+      low:    (_dLows  && _dLows[i]  != null && !isNaN(_dLows[i]))  ? Number(_dLows[i])  : null,
+      close:  (c != null && !isNaN(c)) ? Number(c) : null,
+      volume: (_dVols  && _dVols[i]  != null && !isNaN(_dVols[i]))  ? Number(_dVols[i])  : 0,
+    };
+  });
 
   // 週線：按自然週分組（ISO week），避免固定5天導致空白
   let agg;
@@ -4277,9 +4287,13 @@ function drawCandleChartPeriod(data, period) {
   const ma3    = sl(ch.ma3);
   const cfg    = PERIOD_CFG[period];
 
+  // ★ 修正：open 為 null/NaN 時，退化為當日 close（而非前日 close），
+  //   避免蠟燭顏色和方向被前日收盤價扭曲。
+  //   前日收盤 ≠ 當日開盤（台股跳空情況常見），用前日收盤替代會產生假蠟燭體。
   const effectiveOpens = opens.map((o, i) => {
-    if (o != null && !isNaN(o)) return o;
-    return (i > 0 && closes[i-1] != null) ? closes[i-1] : closes[i];
+    if (o != null && !isNaN(o) && o > 0) return o;
+    // 退化：用當日 close（顯示為一字線，明確表達缺資料，不產生誤導性蠟燭體）
+    return closes[i];
   });
 
   // ── 自訂蠟燭 Plugin（用 category 軸，barW 動態根據可見根數計算）──
