@@ -160,6 +160,8 @@ def calc_granville_signals(
     def ma_slope5(i: int) -> float:
         if i < 5:
             return 0.0
+        if mas[i] is None or mas[i - 5] is None:   # 修復：任一端點為 None 時回傳 0
+            return 0.0
         return mas[i] - mas[i - 5]
 
     def ma_trend_up(i: int) -> bool:
@@ -170,6 +172,8 @@ def calc_granville_signals(
 
     def ma_flat(i: int) -> bool:
         # 走平：斜率絕對值 < 0.5%，或斜率已由負轉正趨勢（5日加速收斂）
+        if not mas[i]:                          # 修復：mas[i] 為 None 時直接回傳 False
+            return False
         slope = ma_slope5(i)
         abs_slope = abs(slope)
         if abs_slope < (mas[i] * 0.005):
