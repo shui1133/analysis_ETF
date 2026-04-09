@@ -596,6 +596,11 @@ def calc_ma_signals(
         ma_label = ma_key.upper()
 
         for i in range(1, n):
+            # 修復：任一端點為 None 時跳過（資料筆數不足導致 MA 尚未收斂）
+            if mas[i] is None or mas[i - 1] is None:
+                continue
+            if prices[i] is None or prices[i - 1] is None:
+                continue
             abs_i      = base_idx + i      # 完整序列中的絕對索引
             prev_above = prices[i - 1] > mas[i - 1]
             curr_above = prices[i]     > mas[i]
@@ -620,7 +625,8 @@ def calc_ma_signals(
                 else:
                     # 趨勢確認：前期應在均線下方才算有效突破（轉折意義）
                     prev_below_cnt = sum(1 for k in range(max(0, i - 10), i)
-                                        if prices[k] < mas[k])
+                                        if prices[k] is not None and mas[k] is not None
+                                        and prices[k] < mas[k])
                     ratio = prev_below_cnt / min(10, i)
                     is_breakout = ratio >= 0.4   # 前期至少 40% 在均線下方
                     ma_not_falling = not _ma_down(ma_arr, abs_i)
@@ -649,7 +655,8 @@ def calc_ma_signals(
                 ma_not_rising = not _ma_up(ma_arr, abs_i)
 
                 prev_above_cnt = sum(1 for k in range(max(0, i - 10), i)
-                                     if prices[k] > mas[k])
+                                     if prices[k] is not None and mas[k] is not None
+                                     and prices[k] > mas[k])
                 ratio = prev_above_cnt / min(10, i)
                 meaningful = ratio >= 0.4  # 前期至少 40% 在均線上方
 
@@ -706,6 +713,10 @@ def calc_ma_signals(
         for i in range(1, n):
             i_ext = i + offset_ext   # 在 ext 陣列中的索引
             if i_ext < 2:
+                continue
+            # 修復：任一端點為 None 時跳過
+            if (s_mas[i_ext] is None or s_mas[i_ext - 1] is None or
+                    l_mas[i_ext] is None or l_mas[i_ext - 1] is None):
                 continue
             prev_s_above = s_mas[i_ext - 1] > l_mas[i_ext - 1]
             curr_s_above = s_mas[i_ext]     > l_mas[i_ext]
