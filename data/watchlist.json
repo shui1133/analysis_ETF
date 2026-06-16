@@ -1,6 +1,11 @@
 {
   "items": [
     {
+      "code": "00403A",
+      "name": "主動統一升級50",
+      "category": "ETF"
+    },
+    {
       "code": "009816",
       "name": "凱基台灣TOP50",
       "category": "ETF"
@@ -8,11 +13,6 @@
     {
       "code": "00981A",
       "name": "主動統一台股增長",
-      "category": "ETF"
-    },
-    {
-      "code": "00403A",
-      "name": "主動統一升級50",
       "category": "ETF"
     },
     {
@@ -116,5 +116,5 @@
       "category": "ETF"
     }
   ],
-  "updated_at": "2026-06-17T07:57:11.341978+08:00"
+  "updated_at": "2026-06-17T07:57:13.174245+08:00"
 }
