@@ -35,7 +35,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 .card{background:var(--c-card);border:1px solid var(--c-border);border-radius:16px;}
 .card-sm{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;}
 .mono{font-family:'JetBrains Mono',monospace;}
-.up{color:#10b981;} .down{color:#ef4444;} .flat{color:#94a3b8;}
+.up{color:#ef4444;} .down{color:#10b981;} .flat{color:#e2e8f0;}
 
 /* 搜尋欄 */
 .search-input{background:#1e293b;border:2px solid #334155;color:#e2e8f0;border-radius:12px;padding:10px 16px;width:100%;font-size:14px;outline:none;transition:border-color .2s;}
@@ -1496,8 +1496,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
         <div class="text-xs text-slate-500 mt-2">
           <i class="fa-solid fa-circle-info mr-1"></i>
-          <span style="color:#10b981">▲</span> 買入訊號（①②④⑥）&nbsp;&nbsp;
-          <span style="color:#ef4444">▼</span> 賣出訊號（③⑤⑦⑧）&nbsp;&nbsp;
+          <span style="color:#ef4444">▲</span> 買入訊號（①②④⑥）&nbsp;&nbsp;
+          <span style="color:#10b981">▼</span> 賣出訊號（③⑤⑦⑧）&nbsp;&nbsp;
           <span style="color:#fbbf24">★</span> 黃金交叉（MA5↑穿 MA120↑，兩者均上升）&nbsp;&nbsp;
           <span style="color:#f43f5e">✕</span> 死亡交叉（MA5↓穿 MA120↓，兩者均下降）&nbsp;&nbsp;
           <span style="color:#14b8a6">━</span> MA60（季線）
@@ -1531,7 +1531,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.08);border-color:#10b981aa">
-              <div class="font-black mb-1 flex items-center gap-1" style="color:#10b981">① 起漲買進
+              <div class="font-black mb-1 flex items-center gap-1" style="color:#ef4444">① 起漲買進
                 <span class="text-xs font-normal px-1.5 py-0.5 rounded" style="background:rgba(16,185,129,0.2);color:#6ee7b7">交叉當天標記</span>
               </div>
               <div class="text-slate-300 text-xs leading-relaxed">平均線由下降逐漸轉為<strong class="text-white">水平且往上趨勢</strong>，股價由下往上突破均線時為起漲關鍵訊號，為最強起漲買入時機。<span class="text-emerald-300">放量突破更可靠；縮量突破需留意假突破。</span></div>
@@ -1563,7 +1563,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.08);border-color:#ef4444aa">
-              <div class="font-black mb-1 flex items-center gap-1" style="color:#ef4444">⑤ 趨勢轉空賣出
+              <div class="font-black mb-1 flex items-center gap-1" style="color:#10b981">⑤ 趨勢轉空賣出
                 <span class="text-xs font-normal px-1.5 py-0.5 rounded" style="background:rgba(239,68,68,0.2);color:#fca5a5">交叉當天標記</span>
               </div>
               <div class="text-slate-300 text-xs leading-relaxed">平均線由上升逐漸轉為<strong class="text-white">水平且往下趨勢</strong>，股價由上往下跌破均線，為趨勢由多轉空的最強賣出訊號，建議及時減碼或出場。<span class="text-red-300">放量跌破賣壓更重。</span></div>
@@ -2653,7 +2653,7 @@ function renderTechnical(data) {
   const macdEl = document.getElementById('ind-macd');
   if (ind.macd != null) {
     macdEl.textContent = ind.macd.toFixed(3);
-    macdEl.style.color = ind.macd > 0 ? '#10b981' : '#ef4444';
+    macdEl.style.color = ind.macd > 0 ? '#ef4444' : '#10b981';
   }
   const rsiEl = document.getElementById('ind-rsi');
   if (ind.rsi != null) {
@@ -2892,7 +2892,7 @@ function setIndCard(id, val, close) {
   const el = document.getElementById(id);
   if (val == null) { el.textContent = '--'; return; }
   el.textContent = val.toFixed(2);
-  el.style.color = close > val ? '#10b981' : close < val ? '#ef4444' : '#e2e8f0';
+  el.style.color = close > val ? '#ef4444' : close < val ? '#10b981' : '#e2e8f0';
 }
 
 // ── 基本面 ────────────────────────────────────────────────────
@@ -3396,11 +3396,11 @@ function renderRecommendation(data) {
     targetEl.textContent = rec.target_price + ' 元';
     const tType = rec.target_type || 'fair';
     if (tType==='upside') {
-      targetEl.style.color='#10b981'; targetLabel.textContent='⬆ 上漲目標價'; targetLabel.style.color='#10b981';
+      targetEl.style.color='#ef4444'; targetLabel.textContent='⬆ 上漲目標價'; targetLabel.style.color='#ef4444';
       const p=((rec.target_price-close)/close*100).toFixed(1);
       targetDesc.textContent=`潛在漲幅 +${p}%`; targetDesc.style.color='#6ee7b7';
     } else if (tType==='downside') {
-      targetEl.style.color='#ef4444'; targetLabel.textContent='⬇ 下行風險估值'; targetLabel.style.color='#ef4444';
+      targetEl.style.color='#10b981'; targetLabel.textContent='⬇ 下行風險估值'; targetLabel.style.color='#10b981';
       const p=((rec.target_price-close)/close*100).toFixed(1);
       targetDesc.textContent=`下行空間 ${p}%`; targetDesc.style.color='#fca5a5';
     } else {
@@ -8898,9 +8898,9 @@ function renderGranvilleTab(data) {
     const isBull  = close > ma60v;
     const arr     = maAna.array || {};
     const slope60 = arr.ma60_slope || (isBull ? '向上' : '向下');
-    const col     = isBull ? '#10b981' : '#ef4444';
+    const col     = isBull ? '#ef4444' : '#10b981';
     const bg      = isBull ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)';
-    const bdr     = isBull ? '#10b98150' : '#ef444450';
+    const bdr     = isBull ? '#ef444450' : '#10b98150';
     const env     = isBull ? '多頭環境' : '空頭環境';
     const envIcon = isBull ? '📈' : '📉';
     const bias60  = ((close - ma60v) / ma60v * 100).toFixed(2);
@@ -8931,7 +8931,7 @@ function renderGranvilleTab(data) {
       const strColr = { strong:'#10b981', moderate:'#94a3b8', weak:'#f59e0b' };
       sigList.innerHTML = allGran.map(g => {
         const isBuy  = g.signal === 'buy';
-        const col    = isBuy ? '#10b981' : '#ef4444';
+        const col    = isBuy ? '#ef4444' : '#10b981';
         const bg     = isBuy ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
         const strTxt = strMap[g.strength]  || '中等';
         const strCol = strColr[g.strength] || '#94a3b8';
@@ -8960,7 +8960,7 @@ function renderGranvilleTab(data) {
     }
     el.innerHTML = list.map(g => {
       const isBuy = g.signal === 'buy';
-      const col   = isBuy ? '#10b981' : '#ef4444';
+      const col   = isBuy ? '#ef4444' : '#10b981';
       return `<div class="rounded-lg p-3 border text-sm" style="background:${isBuy?'rgba(16,185,129,0.06)':'rgba(239,68,68,0.06)'};border-color:${col}50">
         <div class="font-bold mb-1" style="color:${col}">${g.name || ''} <span class="text-xs font-normal text-slate-400">（${g.strength==='strong'?'強':'中'}）</span></div>
         <div class="text-slate-300">${g.desc || ''}</div>
