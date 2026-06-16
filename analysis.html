@@ -1890,6 +1890,7 @@ const STOCK_NAMES_ZH = {
   '00938':'永豐ESG低碳高息','00941':'台新臺灣高息低波',
   '00943':'元大臺灣高股息低波','00944':'第一金工業大台灣',
   '00945':'野村臺灣新科技50',
+  '00403A':'主動統一升級50',
 };
 
 // ── 從 Stock_Dictory.csv 載入的完整股票字典（1261筆上市股票+ETF）──
@@ -7396,6 +7397,53 @@ function _customCategories() {
 }
 
 // 渲染管理列（分類 datalist + 篩選下拉）
+// ── 特選股拖曳排序 ────────────────────────────────────────────
+let _dragSrcCode = null;
+
+function customDragStart(e) {
+  _dragSrcCode = e.currentTarget.dataset.code;
+  e.currentTarget.style.opacity = '0.4';
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', _dragSrcCode);
+}
+
+function customDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.style.borderTop = '2px solid #7c3aed';
+}
+
+function customDragLeave(e) {
+  e.currentTarget.style.borderTop = '';
+}
+
+function customDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const tr = e.currentTarget;
+  tr.style.borderTop = '';
+  const targetCode = tr.dataset.code;
+  if (!targetCode || targetCode === _dragSrcCode) return;
+
+  const srcIdx = customWatchlist.findIndex(w => w.code === _dragSrcCode);
+  const tgtIdx = customWatchlist.findIndex(w => w.code === targetCode);
+  if (srcIdx === -1 || tgtIdx === -1) return;
+
+  const [moved] = customWatchlist.splice(srcIdx, 1);
+  const newTgt  = customWatchlist.findIndex(w => w.code === targetCode);
+  customWatchlist.splice(newTgt, 0, moved);
+
+  hotStockList = buildCustomList();
+  renderHotTable();
+  saveWatchlistToServer();
+}
+
+function customDragEnd(e) {
+  e.currentTarget.style.opacity = '';
+  e.currentTarget.style.borderTop = '';
+  _dragSrcCode = null;
+}
+
 function renderCustomManageBar() {
   const cats = _customCategories();
   // datalist
@@ -8175,7 +8223,15 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
     '<button onclick="event.stopPropagation();forceRefreshSingleHotStock(\'' + row.code + '\')" class="text-sky-400 hover:text-sky-300 text-xs border border-sky-700/50 rounded px-2 py-0.5 hover:bg-sky-900/30 transition flex items-center gap-0.5" title="從 yfinance 取得最新股價"><i class="fa-solid fa-bolt text-xs"></i>最新</button>' +
     delBtn +
     '</div></td>';
-  return '<tr class="' + trClass + '"' + indexTrAttr + ' onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
+  const dragAttrs = (hotIsCustom && !isIndexRow)
+    ? ' draggable="true" data-code="' + row.code + '"'
+      + ' ondragstart="customDragStart(event)"'
+      + ' ondragover="customDragOver(event)"'
+      + ' ondragleave="customDragLeave(event)"'
+      + ' ondrop="customDrop(event)"'
+      + ' ondragend="customDragEnd(event)"'
+    : '';
+  return '<tr class="' + trClass + '"' + indexTrAttr + dragAttrs + ' onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
 }
 
 // ── 同步大盤列（保留空函式以防其他地方呼叫）────────────────────
