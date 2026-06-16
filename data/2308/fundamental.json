@@ -1,3 +1,10 @@
 {
-  "name": "2308"
+  "name": "2308",
+  "pe_ratio": 21.0,
+  "pb_ratio": 5.5,
+  "eps": 20.1,
+  "roe": 0.26,
+  "profit_margin": 0.08,
+  "description": "台達電子為全球電源供應器龍頭，並深耕工業自動化、網路電信及能源解決方案。",
+  "_twse_div_yield_pct": 0.5
 }
