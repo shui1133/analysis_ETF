@@ -640,7 +640,7 @@ def calc_ma_signals(
                             'name':           f'價格上破 {ma_label}',
                             'description':    (
                                 f'股價由 {ma_label} 下方向上穿越（{vol_note}），'
-                                f'均線{'走平/上彎' if _ma_up(ma_arr, abs_i) else '走平'}，有效突破訊號。'
+                                f'均線{"走平/上彎" if _ma_up(ma_arr, abs_i) else "走平"}，有效突破訊號。'
                             ),
                             'ma_pair':        ('price', ma_key),
                             'strength':       strength,
