@@ -35,7 +35,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
 .card{background:var(--c-card);border:1px solid var(--c-border);border-radius:16px;}
 .card-sm{background:var(--c-card);border:1px solid var(--c-border);border-radius:12px;}
 .mono{font-family:'JetBrains Mono',monospace;}
-.up{color:#10b981;} .down{color:#ef4444;} .flat{color:#94a3b8;}
+.up{color:#ef4444;} .down{color:#10b981;} .flat{color:#e2e8f0;}
 
 /* 搜尋欄 */
 .search-input{background:#1e293b;border:2px solid #334155;color:#e2e8f0;border-radius:12px;padding:10px 16px;width:100%;font-size:14px;outline:none;transition:border-color .2s;}
@@ -186,6 +186,11 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
               id="btnHotETF"
               class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
         <i class="fa-solid fa-chart-pie"></i>熱門ETF總覽
+      </button>
+      <button onclick="openCustomStockPanel()"
+              id="btnCustomStock"
+              class="bg-violet-600 hover:bg-violet-500 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm shrink-0 flex items-center gap-2">
+        <i class="fa-solid fa-star"></i>特選股分析
       </button>
     </div>
 
@@ -1491,8 +1496,8 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
         </div>
         <div class="text-xs text-slate-500 mt-2">
           <i class="fa-solid fa-circle-info mr-1"></i>
-          <span style="color:#10b981">▲</span> 買入訊號（①②④⑥）&nbsp;&nbsp;
-          <span style="color:#ef4444">▼</span> 賣出訊號（③⑤⑦⑧）&nbsp;&nbsp;
+          <span style="color:#ef4444">▲</span> 買入訊號（①②④⑥）&nbsp;&nbsp;
+          <span style="color:#10b981">▼</span> 賣出訊號（③⑤⑦⑧）&nbsp;&nbsp;
           <span style="color:#fbbf24">★</span> 黃金交叉（MA5↑穿 MA120↑，兩者均上升）&nbsp;&nbsp;
           <span style="color:#f43f5e">✕</span> 死亡交叉（MA5↓穿 MA120↓，兩者均下降）&nbsp;&nbsp;
           <span style="color:#14b8a6">━</span> MA60（季線）
@@ -1526,7 +1531,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div class="rounded-lg p-3 border" style="background:rgba(16,185,129,0.08);border-color:#10b981aa">
-              <div class="font-black mb-1 flex items-center gap-1" style="color:#10b981">① 起漲買進
+              <div class="font-black mb-1 flex items-center gap-1" style="color:#ef4444">① 起漲買進
                 <span class="text-xs font-normal px-1.5 py-0.5 rounded" style="background:rgba(16,185,129,0.2);color:#6ee7b7">交叉當天標記</span>
               </div>
               <div class="text-slate-300 text-xs leading-relaxed">平均線由下降逐漸轉為<strong class="text-white">水平且往上趨勢</strong>，股價由下往上突破均線時為起漲關鍵訊號，為最強起漲買入時機。<span class="text-emerald-300">放量突破更可靠；縮量突破需留意假突破。</span></div>
@@ -1558,7 +1563,7 @@ body{font-family:'Noto Sans TC',sans-serif;background:#0f172a;color:#e2e8f0;marg
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             <div class="rounded-lg p-3 border" style="background:rgba(239,68,68,0.08);border-color:#ef4444aa">
-              <div class="font-black mb-1 flex items-center gap-1" style="color:#ef4444">⑤ 趨勢轉空賣出
+              <div class="font-black mb-1 flex items-center gap-1" style="color:#10b981">⑤ 趨勢轉空賣出
                 <span class="text-xs font-normal px-1.5 py-0.5 rounded" style="background:rgba(239,68,68,0.2);color:#fca5a5">交叉當天標記</span>
               </div>
               <div class="text-slate-300 text-xs leading-relaxed">平均線由上升逐漸轉為<strong class="text-white">水平且往下趨勢</strong>，股價由上往下跌破均線，為趨勢由多轉空的最強賣出訊號，建議及時減碼或出場。<span class="text-red-300">放量跌破賣壓更重。</span></div>
@@ -1885,6 +1890,7 @@ const STOCK_NAMES_ZH = {
   '00938':'永豐ESG低碳高息','00941':'台新臺灣高息低波',
   '00943':'元大臺灣高股息低波','00944':'第一金工業大台灣',
   '00945':'野村臺灣新科技50',
+  '00403A':'主動統一升級50',
 };
 
 // ── 從 Stock_Dictory.csv 載入的完整股票字典（1261筆上市股票+ETF）──
@@ -2647,7 +2653,7 @@ function renderTechnical(data) {
   const macdEl = document.getElementById('ind-macd');
   if (ind.macd != null) {
     macdEl.textContent = ind.macd.toFixed(3);
-    macdEl.style.color = ind.macd > 0 ? '#10b981' : '#ef4444';
+    macdEl.style.color = ind.macd > 0 ? '#ef4444' : '#10b981';
   }
   const rsiEl = document.getElementById('ind-rsi');
   if (ind.rsi != null) {
@@ -2886,7 +2892,7 @@ function setIndCard(id, val, close) {
   const el = document.getElementById(id);
   if (val == null) { el.textContent = '--'; return; }
   el.textContent = val.toFixed(2);
-  el.style.color = close > val ? '#10b981' : close < val ? '#ef4444' : '#e2e8f0';
+  el.style.color = close > val ? '#ef4444' : close < val ? '#10b981' : '#e2e8f0';
 }
 
 // ── 基本面 ────────────────────────────────────────────────────
@@ -3390,11 +3396,11 @@ function renderRecommendation(data) {
     targetEl.textContent = rec.target_price + ' 元';
     const tType = rec.target_type || 'fair';
     if (tType==='upside') {
-      targetEl.style.color='#10b981'; targetLabel.textContent='⬆ 上漲目標價'; targetLabel.style.color='#10b981';
+      targetEl.style.color='#ef4444'; targetLabel.textContent='⬆ 上漲目標價'; targetLabel.style.color='#ef4444';
       const p=((rec.target_price-close)/close*100).toFixed(1);
       targetDesc.textContent=`潛在漲幅 +${p}%`; targetDesc.style.color='#6ee7b7';
     } else if (tType==='downside') {
-      targetEl.style.color='#ef4444'; targetLabel.textContent='⬇ 下行風險估值'; targetLabel.style.color='#ef4444';
+      targetEl.style.color='#10b981'; targetLabel.textContent='⬇ 下行風險估值'; targetLabel.style.color='#10b981';
       const p=((rec.target_price-close)/close*100).toFixed(1);
       targetDesc.textContent=`下行空間 ${p}%`; targetDesc.style.color='#fca5a5';
     } else {
@@ -6863,6 +6869,11 @@ let _hotSortKey      = null;
 let _hotSortAsc      = true;
 let hotViewMode      = 'trade';  // 'trade' | 'risedrop' | 'ma'
 let hotIsETF         = false;   // true = 熱門ETF模式（只顯示 00 開頭 ETF）
+let hotIsCustom      = false;   // true = 特選股分析模式（使用者共用自選清單）
+let customWatchlist  = [];      // 共用自選清單 [{code,name,category}]
+let customCatFilter  = '__all__'; // 分類篩選（'__all__' = 全部）
+let customGroupBy    = true;    // 是否依分類分組顯示
+function _escCat(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 // 設定熱門股票表格檢視模式
 function setHotViewMode(mode) {
@@ -7096,6 +7107,8 @@ function buildETFList(pageSize) {
 
 async function openHotETFPanel() {
   hotIsETF = true;   // 標記為 ETF 模式
+  hotIsCustom = false;
+  document.getElementById('customManageBar')?.classList.add('hidden');
   // 將熱門 ETF 清單注入 hotStockList，然後開啟總覽面板
   const currentPageSize = parseInt(document.getElementById('hotPageSize')?.value) || 20;
   hotPageSize  = currentPageSize;
@@ -7121,6 +7134,8 @@ async function openHotETFPanel() {
   document.body.style.overflow = 'hidden';
   const titleEl = document.getElementById('hotModalTitle');
   if (titleEl) titleEl.textContent = '熱門ETF總覽';
+  const iconElETF = document.getElementById('hotModalIcon');
+  if (iconElETF) iconElETF.className = 'fa-solid fa-chart-pie text-emerald-400 text-xl';
   hotViewMode = 'trade';
   ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
@@ -7133,11 +7148,15 @@ async function openHotETFPanel() {
 // ── 開啟熱門股票總覽面板 ─────────────────────────────────────────────
 async function openHotStockPanel() {
   hotIsETF = false;  // 標記為一般股票模式
+  hotIsCustom = false;
+  document.getElementById('customManageBar')?.classList.add('hidden');
   document.getElementById('hotStockModal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
   hotViewMode  = 'trade';
   const titleEl2 = document.getElementById('hotModalTitle');
   if (titleEl2) titleEl2.textContent = '熱門股票總覽';
+  const iconElHot = document.getElementById('hotModalIcon');
+  if (iconElHot) iconElHot.className = 'fa-solid fa-fire text-amber-400 text-xl';
   ['trade','risedrop','ma','invest'].forEach(m => {
     const btn = document.getElementById('hotViewBtn-' + m);
     if (btn) btn.classList.toggle('active', m === 'trade');
@@ -7179,8 +7198,9 @@ function changeHotPageSize() {
   // ★ 修正：不論筆數是否改變，均保留已有 hotStockData，
   //   loadHotStocksSequential 內部會自動只補抓缺少的股票
   hotPageSize  = newSize;
+  // 特選股模式：顯示完整自選清單（不受每頁筆數截斷）
   // ETF 模式只顯示 00 開頭 ETF；一般模式顯示熱門股票
-  hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
+  hotStockList = rebuildHotList();
   hotLoadAbort = false;
   loadHotStocksSequential();
 }
@@ -7189,8 +7209,258 @@ async function reloadHotStocks() {
   await hotCacheClear();    // 清除 IDB + localStorage 索引，強制重新抓取
   hotStockData = {};
   hotLoadAbort = false;
-  hotStockList = hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
+  hotStockList = rebuildHotList();
   loadHotStocksSequential();
+}
+
+// ════════════════════════════════════════════════════════════════
+// 特選股分析 ── 共用自選清單（後端 JSON，所有人共用）
+// ════════════════════════════════════════════════════════════════
+
+// 依目前模式重建 hotStockList
+function rebuildHotList() {
+  if (hotIsCustom) return buildCustomList();
+  return hotIsETF ? buildETFList(hotPageSize) : buildHotList(hotPageSize);
+}
+
+// 以自選清單建立 hotStockList（第1列固定大盤指數）
+function buildCustomList() {
+  const INDEX_ITEM = { code: '0000', name: '大盤指數' };
+  const list = customWatchlist.map(w => ({
+    code: w.code,
+    name: w.name || STOCK_NAMES_ZH[w.code] || w.code,
+  }));
+  return [INDEX_ITEM, ...list];
+}
+
+// 從後端讀取共用清單
+async function loadWatchlistFromServer() {
+  try {
+    const r = await fetch('/api/watchlist');
+    const d = await r.json();
+    if (d.status === 'success' && Array.isArray(d.items)) {
+      customWatchlist = d.items.map(x => ({
+        code: String(x.code).toUpperCase(),
+        name: x.name || STOCK_NAMES_ZH[String(x.code).toUpperCase()] || '',
+        category: x.category || '未分類',
+      }));
+    }
+  } catch (e) {
+    console.warn('[watchlist] 載入失敗', e);
+  }
+  return customWatchlist;
+}
+
+// 將目前清單存回後端（本機 + GitHub）
+let _watchlistSaving = false;
+async function saveWatchlistToServer() {
+  if (_watchlistSaving) return;
+  _watchlistSaving = true;
+  try {
+    const r = await fetch('/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: customWatchlist }),
+    });
+    const d = await r.json();
+    if (d.status === 'success' && d.persisted && d.persisted.github === false) {
+      // 沒設定 GitHub token 時提示（僅本機暫存）
+      console.info('[watchlist] 已存本機；未設定 GitHub token，重啟後將遺失。');
+    }
+    return d;
+  } catch (e) {
+    console.warn('[watchlist] 儲存失敗', e);
+  } finally {
+    _watchlistSaving = false;
+  }
+}
+
+// 開啟特選股分析面板
+async function openCustomStockPanel() {
+  hotIsETF    = false;
+  hotIsCustom = true;
+  document.getElementById('hotStockModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  document.getElementById('customManageBar')?.classList.remove('hidden');
+  const titleEl = document.getElementById('hotModalTitle');
+  if (titleEl) titleEl.textContent = '特選股分析';
+  const iconEl = document.getElementById('hotModalIcon');
+  if (iconEl) iconEl.className = 'fa-solid fa-star text-violet-400 text-xl';
+
+  hotViewMode = 'trade';
+  ['trade','risedrop','ma','invest'].forEach(m => {
+    const btn = document.getElementById('hotViewBtn-' + m);
+    if (btn) btn.classList.toggle('active', m === 'trade');
+  });
+  renderHotTableHeader();
+
+  // 先載入共用清單
+  await loadWatchlistFromServer();
+  customCatFilter = '__all__';
+  hotStockList = buildCustomList();
+  hotLoadAbort = false;
+  renderCustomManageBar();
+
+  // 已有資料的先顯示，缺的補抓
+  const missing = hotStockList.filter(s => hotStockData[s.code] === undefined);
+  renderHotTable();
+  updateHotSummary();
+  if (customWatchlist.length === 0) {
+    updateHotProgress(1, 1, '清單是空的 — 從上方輸入代號新增第一檔');
+    document.getElementById('hotProgress').classList.remove('hidden');
+    return;
+  }
+  if (missing.length === 0) {
+    updateHotProgress(hotStockList.length, hotStockList.length, '資料已是最新（共 ' + customWatchlist.length + ' 檔）');
+    document.getElementById('hotSummaryRow').classList.remove('hidden');
+    document.getElementById('hotProgress').classList.remove('hidden');
+    return;
+  }
+  await loadHotStocksSequential(missing.map(s => s.code));
+}
+
+// 新增一檔到自選清單
+async function addCustomStock() {
+  const codeEl = document.getElementById('customAddCode');
+  const catEl  = document.getElementById('customAddCat');
+  const msgEl  = document.getElementById('customAddMsg');
+  const setMsg = (txt, cls) => { if (msgEl) { msgEl.textContent = txt; msgEl.className = 'text-xs self-center ml-1 ' + (cls||'text-slate-400'); } };
+
+  let code = (codeEl?.value || '').trim().toUpperCase();
+  const category = (catEl?.value || '').trim() || '未分類';
+  if (!code) { setMsg('請輸入代號', 'text-red-400'); return; }
+  if (!/^\d[\dA-Z]{2,6}$/.test(code)) { setMsg('代號格式不正確', 'text-red-400'); return; }
+  if (code === '0000') { setMsg('大盤指數已固定顯示', 'text-amber-400'); return; }
+  if (customWatchlist.find(w => w.code === code)) { setMsg('清單中已有 ' + code, 'text-amber-400'); return; }
+
+  const name = STOCK_NAMES_ZH[code] || (STOCK_DICT_CSV[code] && STOCK_DICT_CSV[code] !== '台灣標竿' ? STOCK_DICT_CSV[code] : '') || '';
+  customWatchlist.push({ code, name, category });
+  if (codeEl) codeEl.value = '';
+  setMsg('已新增 ' + code + (name ? '（' + name + '）' : ''), 'text-emerald-400');
+
+  hotStockList = buildCustomList();
+  renderCustomManageBar();
+  renderHotTable();
+  saveWatchlistToServer();          // 非同步存後端
+  await loadHotStocksSequential([code]);  // 只抓新增這檔
+}
+
+// 從清單刪除一檔
+async function deleteCustomStock(code) {
+  code = String(code).toUpperCase();
+  const w = customWatchlist.find(x => x.code === code);
+  if (!w) return;
+  if (!confirm('確定要從特選清單移除 ' + code + (w.name ? '（' + w.name + '）' : '') + ' 嗎？')) return;
+  customWatchlist = customWatchlist.filter(x => x.code !== code);
+  hotStockList = buildCustomList();
+  renderCustomManageBar();
+  renderHotTable();
+  updateHotSummary();
+  saveWatchlistToServer();
+}
+
+// 修改某檔的分類
+function editCustomCategory(code) {
+  code = String(code).toUpperCase();
+  const w = customWatchlist.find(x => x.code === code);
+  if (!w) return;
+  const next = prompt('設定「' + (w.name || code) + '」的分類：', w.category || '未分類');
+  if (next === null) return;
+  w.category = (next.trim() || '未分類').slice(0, 24);
+  renderCustomManageBar();
+  renderHotTable();
+  saveWatchlistToServer();
+}
+
+// 分類篩選
+function applyCustomCatFilter() {
+  customCatFilter = document.getElementById('customCatFilter')?.value || '__all__';
+  renderHotTable();
+  updateHotSummary();
+}
+
+// 切換分組顯示
+function toggleCustomGroup() {
+  customGroupBy = !!document.getElementById('customGroupChk')?.checked;
+  renderHotTable();
+}
+
+// 取得目前所有分類（依首次出現順序）
+function _customCategories() {
+  const order = [];
+  const seen = new Set();
+  customWatchlist.forEach(w => {
+    const c = w.category || '未分類';
+    if (!seen.has(c)) { seen.add(c); order.push(c); }
+  });
+  return order;
+}
+
+// 渲染管理列（分類 datalist + 篩選下拉）
+// ── 特選股拖曳排序 ────────────────────────────────────────────
+let _dragSrcCode = null;
+
+function customDragStart(e) {
+  _dragSrcCode = e.currentTarget.dataset.code;
+  e.currentTarget.style.opacity = '0.4';
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', _dragSrcCode);
+}
+
+function customDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.style.borderTop = '2px solid #7c3aed';
+}
+
+function customDragLeave(e) {
+  e.currentTarget.style.borderTop = '';
+}
+
+function customDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const tr = e.currentTarget;
+  tr.style.borderTop = '';
+  const targetCode = tr.dataset.code;
+  if (!targetCode || targetCode === _dragSrcCode) return;
+
+  const srcIdx = customWatchlist.findIndex(w => w.code === _dragSrcCode);
+  const tgtIdx = customWatchlist.findIndex(w => w.code === targetCode);
+  if (srcIdx === -1 || tgtIdx === -1) return;
+
+  const [moved] = customWatchlist.splice(srcIdx, 1);
+  const newTgt  = customWatchlist.findIndex(w => w.code === targetCode);
+  customWatchlist.splice(newTgt, 0, moved);
+
+  hotStockList = buildCustomList();
+  renderHotTable();
+  saveWatchlistToServer();
+}
+
+function customDragEnd(e) {
+  e.currentTarget.style.opacity = '';
+  e.currentTarget.style.borderTop = '';
+  _dragSrcCode = null;
+}
+
+function renderCustomManageBar() {
+  const cats = _customCategories();
+  // datalist
+  const dl = document.getElementById('customCatList');
+  if (dl) dl.innerHTML = cats.map(c => '<option value="' + _escCat(c) + '">').join('');
+  // 篩選下拉
+  const sel = document.getElementById('customCatFilter');
+  if (sel) {
+    const cur = customCatFilter;
+    sel.innerHTML = '<option value="__all__">全部分類（' + customWatchlist.length + '）</option>' +
+      cats.map(c => {
+        const n = customWatchlist.filter(w => (w.category || '未分類') === c).length;
+        return '<option value="' + _escCat(c) + '">' + _escCat(c) + '（' + n + '）</option>';
+      }).join('');
+    sel.value = cats.includes(cur) || cur === '__all__' ? cur : '__all__';
+    customCatFilter = sel.value;
+  }
 }
 
 // ── 強制從 yfinance 取得最新股價（熱門股票/ETF 整批）────────────
@@ -7798,12 +8068,15 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       '</tr>';
   }
   if (row.error) {
+    const errDelBtn = (hotIsCustom && !isIndexRow)
+      ? '<button onclick="event.stopPropagation();deleteCustomStock(\'' + row.code + '\')" class="text-red-400 hover:text-red-300 text-xs border border-red-700/50 rounded px-2 py-0.5 hover:bg-red-900/30 transition flex items-center gap-0.5" title="從特選清單移除"><i class="fa-solid fa-trash text-xs"></i></button>'
+      : '';
     return '<tr class="text-slate-500"' + indexTrAttr + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold text-red-400 ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
       '<td colspan="4" class="py-2 px-3 text-red-400 text-center"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>' +
-      '<td class="py-2 px-3 text-center"><button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1"><i class="fa-solid fa-rotate-right"></i>重新載入</button></td>' +
+      '<td class="py-2 px-3 text-center"><div class="flex items-center gap-1 justify-center"><button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1"><i class="fa-solid fa-rotate-right"></i>重新載入</button>' + errDelBtn + '</div></td>' +
       '</tr>';
   }
 
@@ -7816,9 +8089,16 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
   const codeDisplay = isIndexRow
     ? '<span class="text-amber-400 font-black text-xs">▲ 大盤</span>'
     : '<span class="font-black text-blue-400">' + row.code + '</span>';
-  const nameDisplay = isIndexRow
+  let nameDisplay = isIndexRow
     ? '<span class="text-amber-300 font-bold">' + name + '</span><span class="ml-1 text-xs text-amber-600">(^TWII)</span>'
     : '<span class="font-bold text-white">' + name + '</span>';
+  if (hotIsCustom && !isIndexRow) {
+    const _w = customWatchlist.find(x => x.code === row.code);
+    const _cat = _w && _w.category ? _w.category : '未分類';
+    nameDisplay += '<span onclick="event.stopPropagation();editCustomCategory(\'' + row.code + '\')" title="點擊修改分類" '
+      + 'class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-violet-900/50 text-violet-300 border border-violet-700/40 cursor-pointer hover:bg-violet-800/60">'
+      + _escCat(_cat) + '</span>';
+  }
   const closeDisplay = isIndexRow
     ? '<span class="font-black text-lg ' + chgCls + '">' + row.close.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>'
     : '<span class="font-bold ' + chgCls + '">' + row.close.toFixed(2) + '</span>';
@@ -7934,12 +8214,24 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       '<td class="py-2 px-3"><div class="flex flex-wrap gap-0.5">' + signalHtml + '</div></td>';
   }
 
+  const delBtn = (hotIsCustom && !isIndexRow)
+    ? '<button onclick="event.stopPropagation();deleteCustomStock(\'' + row.code + '\')" class="text-red-400 hover:text-red-300 text-xs border border-red-700/50 rounded px-2 py-0.5 hover:bg-red-900/30 transition flex items-center gap-0.5" title="從特選清單移除"><i class="fa-solid fa-trash text-xs"></i></button>'
+    : '';
   const actionCol = '<td class="py-2 px-3 text-center">' +
     '<div class="flex items-center gap-1 justify-center">' +
     '<button onclick="event.stopPropagation();loadStock(\'' + row.code + '\');closeHotStockPanel()" class="text-blue-400 hover:text-blue-300 text-xs border border-blue-700/50 rounded px-2 py-0.5 hover:bg-blue-900/30 transition">分析</button>' +
     '<button onclick="event.stopPropagation();forceRefreshSingleHotStock(\'' + row.code + '\')" class="text-sky-400 hover:text-sky-300 text-xs border border-sky-700/50 rounded px-2 py-0.5 hover:bg-sky-900/30 transition flex items-center gap-0.5" title="從 yfinance 取得最新股價"><i class="fa-solid fa-bolt text-xs"></i>最新</button>' +
+    delBtn +
     '</div></td>';
-  return '<tr class="' + trClass + '"' + indexTrAttr + ' onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
+  const dragAttrs = (hotIsCustom && !isIndexRow)
+    ? ' draggable="true" data-code="' + row.code + '"'
+      + ' ondragstart="customDragStart(event)"'
+      + ' ondragover="customDragOver(event)"'
+      + ' ondragleave="customDragLeave(event)"'
+      + ' ondrop="customDrop(event)"'
+      + ' ondragend="customDragEnd(event)"'
+    : '';
+  return '<tr class="' + trClass + '"' + indexTrAttr + dragAttrs + ' onclick="loadStock(\'' + row.code + '\');closeHotStockPanel()">' + baseCols + extraCols + actionCol + '</tr>';
 }
 
 // ── 同步大盤列（保留空函式以防其他地方呼叫）────────────────────
@@ -7987,6 +8279,38 @@ function renderHotTable() {
       if (typeof av === 'number' && typeof bv === 'number') return _hotSortAsc ? av-bv : bv-av;
       return _hotSortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
     });
+  }
+
+  // ── 特選股模式：分類篩選 + 分組顯示 ──
+  if (hotIsCustom) {
+    const catOf = {};
+    customWatchlist.forEach(w => { catOf[w.code] = w.category || '未分類'; });
+    if (customCatFilter && customCatFilter !== '__all__') {
+      rows = rows.filter(r => (catOf[r.code] || '未分類') === customCatFilter);
+    }
+    if (customGroupBy && customCatFilter === '__all__') {
+      const groups = {}; const order = [];
+      rows.forEach(r => {
+        const c = catOf[r.code] || '未分類';
+        if (!(c in groups)) { groups[c] = []; order.push(c); }
+        groups[c].push(r);
+      });
+      let n = 0;
+      tbody.innerHTML = order.map(cat => {
+        const head = '<tr class="bg-violet-950/40 border-y border-violet-800/40">' +
+          '<td colspan="20" class="py-1.5 px-3 text-violet-300 font-bold text-xs">' +
+          '<i class="fa-solid fa-folder-open mr-1.5"></i>' + _escCat(cat) +
+          ' <span class="text-violet-500 font-normal">(' + groups[cat].length + ')</span></td></tr>';
+        return head + groups[cat].map(r => _buildHotRowHtml(r, ++n, false)).join('');
+      }).join('') || '<tr><td colspan="20" class="py-10 text-center text-slate-500">清單是空的，從上方新增第一檔</td></tr>';
+      updateHotSummary();
+      return;
+    }
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="20" class="py-10 text-center text-slate-500">此分類沒有資料</td></tr>';
+      updateHotSummary();
+      return;
+    }
   }
 
   tbody.innerHTML = rows.map((row, idx) => _buildHotRowHtml(row, idx+1, false)).join('');
@@ -8574,9 +8898,9 @@ function renderGranvilleTab(data) {
     const isBull  = close > ma60v;
     const arr     = maAna.array || {};
     const slope60 = arr.ma60_slope || (isBull ? '向上' : '向下');
-    const col     = isBull ? '#10b981' : '#ef4444';
+    const col     = isBull ? '#ef4444' : '#10b981';
     const bg      = isBull ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)';
-    const bdr     = isBull ? '#10b98150' : '#ef444450';
+    const bdr     = isBull ? '#ef444450' : '#10b98150';
     const env     = isBull ? '多頭環境' : '空頭環境';
     const envIcon = isBull ? '📈' : '📉';
     const bias60  = ((close - ma60v) / ma60v * 100).toFixed(2);
@@ -8607,7 +8931,7 @@ function renderGranvilleTab(data) {
       const strColr = { strong:'#10b981', moderate:'#94a3b8', weak:'#f59e0b' };
       sigList.innerHTML = allGran.map(g => {
         const isBuy  = g.signal === 'buy';
-        const col    = isBuy ? '#10b981' : '#ef4444';
+        const col    = isBuy ? '#ef4444' : '#10b981';
         const bg     = isBuy ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
         const strTxt = strMap[g.strength]  || '中等';
         const strCol = strColr[g.strength] || '#94a3b8';
@@ -8636,7 +8960,7 @@ function renderGranvilleTab(data) {
     }
     el.innerHTML = list.map(g => {
       const isBuy = g.signal === 'buy';
-      const col   = isBuy ? '#10b981' : '#ef4444';
+      const col   = isBuy ? '#ef4444' : '#10b981';
       return `<div class="rounded-lg p-3 border text-sm" style="background:${isBuy?'rgba(16,185,129,0.06)':'rgba(239,68,68,0.06)'};border-color:${col}50">
         <div class="font-bold mb-1" style="color:${col}">${g.name || ''} <span class="text-xs font-normal text-slate-400">（${g.strength==='strong'?'強':'中'}）</span></div>
         <div class="text-slate-300">${g.desc || ''}</div>
@@ -10207,7 +10531,7 @@ ${newsSection}
       <!-- Modal Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
         <div class="flex items-center gap-3">
-          <i class="fa-solid fa-fire text-amber-400 text-xl"></i>
+          <i class="fa-solid fa-fire text-amber-400 text-xl" id="hotModalIcon"></i>
           <h2 class="text-lg font-black text-white" id="hotModalTitle">熱門股票總覽</h2>
         </div>
         <div class="flex items-center gap-3">
@@ -10250,6 +10574,44 @@ ${newsSection}
                 class="tab-btn text-xs py-1.5 px-3">
           <i class="fa-solid fa-lightbulb mr-1"></i>投資分析
         </button>
+      </div>
+
+      <!-- 特選股分析：清單管理列（僅特選股模式顯示） -->
+      <div id="customManageBar" class="hidden px-6 py-3 border-b border-slate-700 shrink-0 bg-violet-950/20">
+        <div class="flex flex-wrap items-end gap-2">
+          <div class="flex flex-col">
+            <label class="text-[11px] text-slate-400 mb-0.5">股票 / ETF 代號</label>
+            <input id="customAddCode" type="text" placeholder="如 2330、00878"
+                   onkeydown="if(event.key==='Enter')addCustomStock()"
+                   class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm w-32 outline-none focus:border-violet-500">
+          </div>
+          <div class="flex flex-col">
+            <label class="text-[11px] text-slate-400 mb-0.5">分類（可自由輸入）</label>
+            <input id="customAddCat" type="text" placeholder="如 半導體、存股" list="customCatList"
+                   onkeydown="if(event.key==='Enter')addCustomStock()"
+                   class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm w-36 outline-none focus:border-violet-500">
+            <datalist id="customCatList"></datalist>
+          </div>
+          <button onclick="addCustomStock()"
+                  class="bg-violet-600 hover:bg-violet-500 text-white font-bold px-4 py-1.5 rounded-lg text-sm flex items-center gap-1">
+            <i class="fa-solid fa-plus"></i>新增
+          </button>
+          <div id="customAddMsg" class="text-xs self-center ml-1 text-slate-400"></div>
+
+          <div class="flex-1 min-w-[8px]"></div>
+
+          <div class="flex flex-col">
+            <label class="text-[11px] text-slate-400 mb-0.5">分類篩選</label>
+            <select id="customCatFilter" onchange="applyCustomCatFilter()"
+                    class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:border-violet-500">
+              <option value="__all__">全部分類</option>
+            </select>
+          </div>
+          <label class="flex items-center gap-1.5 text-xs text-slate-300 self-center cursor-pointer select-none pb-1.5">
+            <input id="customGroupChk" type="checkbox" checked onchange="toggleCustomGroup()" class="accent-violet-500 w-4 h-4">
+            依分類分組
+          </label>
+        </div>
       </div>
 
       <!-- 進度列 -->
