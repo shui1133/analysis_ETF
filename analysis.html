@@ -8020,12 +8020,15 @@ function _buildHotRowHtml(row, idx, isIndexRow) {
       '</tr>';
   }
   if (row.error) {
+    const errDelBtn = (hotIsCustom && !isIndexRow)
+      ? '<button onclick="event.stopPropagation();deleteCustomStock(\'' + row.code + '\')" class="text-red-400 hover:text-red-300 text-xs border border-red-700/50 rounded px-2 py-0.5 hover:bg-red-900/30 transition flex items-center gap-0.5" title="從特選清單移除"><i class="fa-solid fa-trash text-xs"></i></button>'
+      : '';
     return '<tr class="text-slate-500"' + indexTrAttr + '>' +
       '<td class="py-2 px-3 sticky left-0 z-10 ' + stickyBg + '">' + (isIndexRow ? '<i class="fa-solid fa-chart-line text-amber-500"></i>' : rowNum) + '</td>' +
       '<td class="py-2 px-3 font-bold text-red-400 ' + stickyBase + '" style="left:32px">' + row.code + '</td>' +
       '<td class="py-2 px-3 ' + stickyBase + '" style="left:96px">' + name + '</td>' +
       '<td colspan="4" class="py-2 px-3 text-red-400 text-center"><i class="fa-solid fa-circle-exclamation mr-1"></i>資料載入失敗</td>' +
-      '<td class="py-2 px-3 text-center"><button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1"><i class="fa-solid fa-rotate-right"></i>重新載入</button></td>' +
+      '<td class="py-2 px-3 text-center"><div class="flex items-center gap-1 justify-center"><button onclick="event.stopPropagation();reloadSingleHotStock(\'' + row.code + '\')" class="text-amber-400 hover:text-amber-300 text-xs border border-amber-700/50 rounded px-2 py-0.5 hover:bg-amber-900/30 transition flex items-center gap-1"><i class="fa-solid fa-rotate-right"></i>重新載入</button>' + errDelBtn + '</div></td>' +
       '</tr>';
   }
 
