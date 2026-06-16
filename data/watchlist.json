@@ -6,11 +6,6 @@
       "category": "ETF"
     },
     {
-      "code": "009816",
-      "name": "凱基台灣TOP50",
-      "category": "ETF"
-    },
-    {
       "code": "0050",
       "name": "元大台灣50",
       "category": "ETF"
@@ -28,6 +23,11 @@
     {
       "code": "00403A",
       "name": "主動統一升級50",
+      "category": "ETF"
+    },
+    {
+      "code": "009816",
+      "name": "凱基台灣TOP50",
       "category": "ETF"
     },
     {
@@ -111,5 +111,5 @@
       "category": "其它"
     }
   ],
-  "updated_at": "2026-06-17T07:50:28.972148+08:00"
+  "updated_at": "2026-06-17T07:50:30.589023+08:00"
 }
