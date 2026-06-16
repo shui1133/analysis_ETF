@@ -575,6 +575,102 @@ def get_popular_stocks():
 
 
 # ─────────────────────────────────────────────────────────────────
+# 特選股分析 ── 共用自選清單
+#   讀取：GitHub（主）→ 本機快取（備）→ 空清單
+#   寫入：本機快取（即時）+ GitHub（持久化，需 GH_CACHE_TOKEN）
+#   schema: {"items":[{"code","name","category"},...], "updated_at":"ISO"}
+# ─────────────────────────────────────────────────────────────────
+_WATCHLIST_LOCAL = os.path.join(DATA_DIR, 'watchlist.json')
+_WATCHLIST_GH    = 'data/watchlist.json'
+
+
+def _watchlist_normalize(items):
+    cleaned, seen = [], set()
+    if not isinstance(items, list):
+        return cleaned
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        code = str(it.get('code', '')).strip().upper()
+        if not code or code in seen or not (3 <= len(code) <= 7) or not code[0].isdigit():
+            continue
+        seen.add(code)
+        cleaned.append({
+            'code':     code,
+            'name':     str(it.get('name',     '')).strip()[:40],
+            'category': str(it.get('category', '')).strip()[:24] or '未分類',
+        })
+    return cleaned[:200]
+
+
+@app.route('/api/watchlist', methods=['GET'])
+def get_watchlist():
+    # 1) GitHub（最權威、重啟不遺失）
+    try:
+        from github_cache import _gh_raw_get
+        raw = _gh_raw_get(_WATCHLIST_GH)
+        if raw:
+            data  = json.loads(raw)
+            items = _watchlist_normalize(data.get('items', []))
+            try:
+                with open(_WATCHLIST_LOCAL, 'w', encoding='utf-8') as f:
+                    json.dump({'items': items, 'updated_at': data.get('updated_at')},
+                              f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+            return jsonify({'status': 'success', 'items': items,
+                            'updated_at': data.get('updated_at'), 'source': 'github'})
+    except Exception as e:
+        print(f'[watchlist-GET] GitHub 讀取失敗: {e}')
+
+    # 2) 本機快取
+    try:
+        if os.path.exists(_WATCHLIST_LOCAL):
+            with open(_WATCHLIST_LOCAL, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return jsonify({'status': 'success',
+                            'items': _watchlist_normalize(data.get('items', [])),
+                            'updated_at': data.get('updated_at'), 'source': 'local'})
+    except Exception as e:
+        print(f'[watchlist-GET] 本機讀取失敗: {e}')
+
+    return jsonify({'status': 'success', 'items': [], 'updated_at': None, 'source': 'empty'})
+
+
+@app.route('/api/watchlist', methods=['POST'])
+def save_watchlist():
+    try:
+        body = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({'status': 'error', 'message': '無效的 JSON'}), 400
+
+    items   = _watchlist_normalize(body.get('items', []))
+    payload = {'items': items,
+               'updated_at': pd.Timestamp.now(tz='Asia/Taipei').isoformat()}
+    content = json.dumps(payload, ensure_ascii=False, indent=2)
+
+    local_ok = False
+    try:
+        with open(_WATCHLIST_LOCAL, 'w', encoding='utf-8') as f:
+            f.write(content)
+        local_ok = True
+    except Exception as e:
+        print(f'[watchlist-POST] 本機寫入失敗: {e}')
+
+    gh_ok = False
+    try:
+        from github_cache import _gh_put_file_safe
+        gh_ok = _gh_put_file_safe(
+            _WATCHLIST_GH, content.encode('utf-8'), '[bot] update watchlist')
+    except Exception as e:
+        print(f'[watchlist-POST] GitHub 推送失敗: {e}')
+
+    return jsonify({'status': 'success', 'items': items,
+                    'updated_at': payload['updated_at'],
+                    'persisted': {'local': local_ok, 'github': gh_ok}})
+
+
+# ─────────────────────────────────────────────────────────────────
 # 強制從 yfinance 取得最新股價（熱門股票/ETF/個股共用）
 # ─────────────────────────────────────────────────────────────────
 # GET /api/health — 服務健康檢查（前端 warmup ping 用）

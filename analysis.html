@@ -7234,45 +7234,100 @@ function buildCustomList() {
 }
 
 // 從後端讀取共用清單
-async function loadWatchlistFromServer() {
+const _LS_WL_KEY = 'customWatchlist_v1';
+
+function _lsSaveWatchlist() {
   try {
-    const r = await fetch('/api/watchlist');
-    const d = await r.json();
-    if (d.status === 'success' && Array.isArray(d.items)) {
-      customWatchlist = d.items.map(x => ({
-        code: String(x.code).toUpperCase(),
-        name: x.name || STOCK_NAMES_ZH[String(x.code).toUpperCase()] || '',
-        category: x.category || '未分類',
-      }));
-    }
-  } catch (e) {
-    console.warn('[watchlist] 載入失敗', e);
+    localStorage.setItem(_LS_WL_KEY, JSON.stringify(customWatchlist));
+  } catch(e) { console.warn('[watchlist-ls] 寫入失敗', e); }
+}
+
+function _lsLoadWatchlist() {
+  try {
+    const raw = localStorage.getItem(_LS_WL_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return null;
+    return arr.map(x => ({
+      code:     String(x.code||'').toUpperCase(),
+      name:     x.name || STOCK_NAMES_ZH[String(x.code||'').toUpperCase()] || '',
+      category: x.category || '未分類',
+    })).filter(x => x.code && x.code.length >= 3);
+  } catch(e) { return null; }
+}
+
+async function loadWatchlistFromServer() {
+  // ① localStorage（最快、不受重啟影響）
+  const lsData = _lsLoadWatchlist();
+  if (lsData && lsData.length > 0) {
+    customWatchlist = lsData;
+    console.info('[watchlist] localStorage 命中，共', lsData.length, '檔');
+    // 背景同步後端（不阻塞 UI）
+    _syncWatchlistFromServer();
+    return customWatchlist;
   }
+  // ② 後端（GitHub → 本機快取）
+  await _syncWatchlistFromServer();
   return customWatchlist;
 }
 
-// 將目前清單存回後端（本機 + GitHub）
+async function _syncWatchlistFromServer() {
+  try {
+    const r = await fetch('/api/watchlist');
+    const d = await r.json();
+    if (d.status === 'success' && Array.isArray(d.items) && d.items.length > 0) {
+      const fromServer = d.items.map(x => ({
+        code:     String(x.code).toUpperCase(),
+        name:     x.name || STOCK_NAMES_ZH[String(x.code).toUpperCase()] || '',
+        category: x.category || '未分類',
+      }));
+      // 以 localStorage 為主；若後端有更多筆就合併
+      const lsCodes = new Set(customWatchlist.map(w => w.code));
+      let merged = false;
+      fromServer.forEach(s => {
+        if (!lsCodes.has(s.code)) {
+          customWatchlist.push(s);
+          lsCodes.add(s.code);
+          merged = true;
+        }
+      });
+      if (merged || customWatchlist.length === 0) {
+        if (customWatchlist.length === 0) customWatchlist = fromServer;
+        _lsSaveWatchlist();
+        hotStockList = buildCustomList();
+        renderCustomManageBar();
+        renderHotTable();
+        console.info('[watchlist] 後端同步完成，共', customWatchlist.length, '檔');
+      }
+    }
+  } catch (e) {
+    console.warn('[watchlist] 後端同步失敗（不影響 localStorage 資料）', e);
+  }
+}
+
+// 將目前清單存回 localStorage（立即）+ 後端（背景）
 let _watchlistSaving = false;
-async function saveWatchlistToServer() {
+function saveWatchlistToServer() {
+  // ① 立即寫 localStorage（不受後端重啟影響）
+  _lsSaveWatchlist();
+  // ② 背景推後端（GitHub + 本機快取），不等結果
   if (_watchlistSaving) return;
   _watchlistSaving = true;
-  try {
-    const r = await fetch('/api/watchlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: customWatchlist }),
-    });
-    const d = await r.json();
-    if (d.status === 'success' && d.persisted && d.persisted.github === false) {
-      // 沒設定 GitHub token 時提示（僅本機暫存）
-      console.info('[watchlist] 已存本機；未設定 GitHub token，重啟後將遺失。');
+  fetch('/api/watchlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: customWatchlist }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.persisted && !d.persisted.github) {
+      console.info('[watchlist] localStorage ✓，後端本機 ✓，GitHub ✗（未設 token）');
+    } else {
+      console.info('[watchlist] 全部儲存成功 localStorage ✓ 後端 ✓ GitHub ✓');
     }
-    return d;
-  } catch (e) {
-    console.warn('[watchlist] 儲存失敗', e);
-  } finally {
-    _watchlistSaving = false;
-  }
+  })
+  .catch(e => console.warn('[watchlist] 後端儲存失敗（localStorage 已存）', e))
+  .finally(() => { _watchlistSaving = false; });
 }
 
 // 開啟特選股分析面板
@@ -7326,14 +7381,37 @@ async function addCustomStock() {
   const msgEl  = document.getElementById('customAddMsg');
   const setMsg = (txt, cls) => { if (msgEl) { msgEl.textContent = txt; msgEl.className = 'text-xs self-center ml-1 ' + (cls||'text-slate-400'); } };
 
-  let code = (codeEl?.value || '').trim().toUpperCase();
+  let input = (codeEl?.value || '').trim();
   const category = (catEl?.value || '').trim() || '未分類';
-  if (!code) { setMsg('請輸入代號', 'text-red-400'); return; }
+  if (!input) { setMsg('請輸入股票代號或中文名稱', 'text-red-400'); return; }
+
+  // ── 支援中文名稱輸入：先嘗試反查代號 ──
+  let code = input.toUpperCase();
+  let name = '';
+  if (!/^\d/.test(input)) {
+    // 輸入的不是數字開頭，視為中文名稱，嘗試反查
+    const q = input.trim();
+    // 先查 STOCK_NAMES_ZH（精確比對）
+    let found = Object.entries(STOCK_NAMES_ZH).find(([c, n]) => n === q || n.includes(q));
+    if (!found) {
+      // 再查 STOCK_DICT_CSV
+      found = Object.entries(STOCK_DICT_CSV).find(([c, n]) => n === q || n.includes(q));
+    }
+    if (found) {
+      code = found[0];
+      name = found[1];
+      setMsg('找到：' + code + ' ' + name, 'text-slate-400');
+    } else {
+      setMsg('找不到「' + q + '」，請確認名稱或改用代號輸入', 'text-red-400');
+      return;
+    }
+  } else {
+    name = STOCK_NAMES_ZH[code] || (STOCK_DICT_CSV[code] && STOCK_DICT_CSV[code] !== '台灣標竿' ? STOCK_DICT_CSV[code] : '') || '';
+  }
+
   if (!/^\d[\dA-Z]{2,6}$/.test(code)) { setMsg('代號格式不正確', 'text-red-400'); return; }
   if (code === '0000') { setMsg('大盤指數已固定顯示', 'text-amber-400'); return; }
-  if (customWatchlist.find(w => w.code === code)) { setMsg('清單中已有 ' + code, 'text-amber-400'); return; }
-
-  const name = STOCK_NAMES_ZH[code] || (STOCK_DICT_CSV[code] && STOCK_DICT_CSV[code] !== '台灣標竿' ? STOCK_DICT_CSV[code] : '') || '';
+  if (customWatchlist.find(w => w.code === code)) { setMsg('清單中已有 ' + code + (name ? '（' + name + '）' : ''), 'text-amber-400'); return; }
   customWatchlist.push({ code, name, category });
   if (codeEl) codeEl.value = '';
   setMsg('已新增 ' + code + (name ? '（' + name + '）' : ''), 'text-emerald-400');
@@ -10581,7 +10659,7 @@ ${newsSection}
         <div class="flex flex-wrap items-end gap-2">
           <div class="flex flex-col">
             <label class="text-[11px] text-slate-400 mb-0.5">股票 / ETF 代號</label>
-            <input id="customAddCode" type="text" placeholder="如 2330、00878"
+            <input id="customAddCode" type="text" placeholder="代號 2330 或中文 台積電"
                    onkeydown="if(event.key==='Enter')addCustomStock()"
                    class="bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm w-32 outline-none focus:border-violet-500">
           </div>
