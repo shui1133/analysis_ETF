@@ -11,6 +11,11 @@
       "category": "ETF"
     },
     {
+      "code": "00403A",
+      "name": "主動統一升級50",
+      "category": "ETF"
+    },
+    {
       "code": "0050",
       "name": "元大台灣50",
       "category": "ETF"
@@ -23,11 +28,6 @@
     {
       "code": "00878",
       "name": "國泰永續高股息",
-      "category": "ETF"
-    },
-    {
-      "code": "00403A",
-      "name": "主動統一升級50",
       "category": "ETF"
     },
     {
@@ -109,7 +109,12 @@
       "code": "6770",
       "name": "力積電",
       "category": "其它"
+    },
+    {
+      "code": "0056",
+      "name": "元大高股息",
+      "category": "ETF"
     }
   ],
-  "updated_at": "2026-06-17T07:50:58.785753+08:00"
+  "updated_at": "2026-06-17T07:51:18.692195+08:00"
 }
