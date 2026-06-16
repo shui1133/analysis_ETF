@@ -1,3 +1,10 @@
 {
-  "name": "2382"
+  "name": "2382",
+  "pe_ratio": 15.3,
+  "pb_ratio": 4.2,
+  "eps": 32.5,
+  "roe": 0.27,
+  "profit_margin": 0.065,
+  "description": "廣達電腦為全球最大筆記型電腦代工廠之一，近年積極布局 AI 伺服器業務。",
+  "_twse_div_yield_pct": 4.64
 }
