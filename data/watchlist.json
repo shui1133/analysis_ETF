@@ -6,11 +6,6 @@
       "category": "ETF"
     },
     {
-      "code": "00981A",
-      "name": "主動統一台股增長",
-      "category": "ETF"
-    },
-    {
       "code": "009816",
       "name": "凱基台灣TOP50",
       "category": "ETF"
@@ -33,6 +28,11 @@
     {
       "code": "00878",
       "name": "國泰永續高股息",
+      "category": "ETF"
+    },
+    {
+      "code": "00981A",
+      "name": "主動統一台股增長",
       "category": "ETF"
     },
     {
@@ -111,5 +111,5 @@
       "category": "其它"
     }
   ],
-  "updated_at": "2026-06-17T07:49:39.656448+08:00"
+  "updated_at": "2026-06-17T07:49:50.354462+08:00"
 }
