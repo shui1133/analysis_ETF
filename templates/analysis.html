@@ -4597,7 +4597,7 @@ async function loadNews() {
   try {
     // ── 呼叫後端 API（後端直接爬 Google News RSS，避免 CORS 問題）──
     const resp = await fetch(`/api/news/${encodeURIComponent(ticker)}`,
-                             { signal: AbortSignal.timeout(20000) });
+                             { signal: AbortSignal.timeout(35000) });
     const json = await resp.json();
 
     document.getElementById('newsLoading').classList.add('hidden');
@@ -4621,7 +4621,7 @@ async function loadNews() {
   } catch (e) {
     document.getElementById('newsLoading').classList.add('hidden');
     document.getElementById('newsError').classList.remove('hidden');
-    document.getElementById('newsErrorMsg').textContent = '新聞載入逾時，請稍後重試。';
+    document.getElementById('newsErrorMsg').textContent = '新聞載入逾時（Google News 連線不穩），請按「重新整理」再試，或稍後重試。';
     console.warn('loadNews 失敗:', e.message);
   }
 }

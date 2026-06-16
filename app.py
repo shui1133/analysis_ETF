@@ -575,112 +575,6 @@ def get_popular_stocks():
 
 
 # ─────────────────────────────────────────────────────────────────
-# 特選股分析 ── 共用自選清單（所有人共用同一份 JSON）
-#   儲存策略：本機 DATA_DIR/watchlist.json（快取） + GitHub data/watchlist.json（持久化）
-#   schema: { "items": [ {"code","name","category"} , ... ], "updated_at": "ISO" }
-# ─────────────────────────────────────────────────────────────────
-_WATCHLIST_LOCAL = os.path.join(DATA_DIR, 'watchlist.json')
-_WATCHLIST_GH    = 'data/watchlist.json'
-
-
-def _watchlist_normalize(items):
-    """清洗 / 驗證清單項目，回傳乾淨的 list[dict]。"""
-    cleaned = []
-    seen = set()
-    if not isinstance(items, list):
-        return cleaned
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        code = str(it.get('code', '')).strip().upper()
-        if not code or code in seen:
-            continue
-        # 代號格式：純數字 / 數字+英文（如 00679B），長度 3~7
-        if not (3 <= len(code) <= 7) or not code[0].isdigit():
-            continue
-        seen.add(code)
-        cleaned.append({
-            'code': code,
-            'name': str(it.get('name', '')).strip()[:40],
-            'category': str(it.get('category', '')).strip()[:24] or '未分類',
-        })
-    return cleaned[:200]   # 上限 200 檔，避免濫用
-
-
-@app.route('/api/watchlist', methods=['GET'])
-def get_watchlist():
-    """讀取共用自選清單：本機優先，缺漏時回退至 GitHub。"""
-    # 1) 本機快取
-    try:
-        if os.path.exists(_WATCHLIST_LOCAL):
-            with open(_WATCHLIST_LOCAL, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return jsonify({'status': 'success',
-                            'items': _watchlist_normalize(data.get('items', [])),
-                            'updated_at': data.get('updated_at'),
-                            'source': 'local'})
-    except Exception as e:
-        print(f"[watchlist] 讀取本機失敗：{e}")
-
-    # 2) 回退 GitHub
-    try:
-        from github_cache import _gh_raw_get
-        raw = _gh_raw_get(_WATCHLIST_GH)
-        if raw:
-            data = json.loads(raw)
-            items = _watchlist_normalize(data.get('items', []))
-            # 回填本機快取
-            try:
-                with open(_WATCHLIST_LOCAL, 'w', encoding='utf-8') as f:
-                    json.dump({'items': items, 'updated_at': data.get('updated_at')},
-                              f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-            return jsonify({'status': 'success', 'items': items,
-                            'updated_at': data.get('updated_at'), 'source': 'github'})
-    except Exception as e:
-        print(f"[watchlist] 讀取 GitHub 失敗：{e}")
-
-    # 3) 都沒有 → 空清單
-    return jsonify({'status': 'success', 'items': [], 'updated_at': None, 'source': 'empty'})
-
-
-@app.route('/api/watchlist', methods=['POST'])
-def save_watchlist():
-    """寫入共用自選清單：本機 + GitHub（持久化）。"""
-    try:
-        body = request.get_json(force=True) or {}
-    except Exception:
-        return jsonify({'status': 'error', 'message': '無效的 JSON'}), 400
-
-    items = _watchlist_normalize(body.get('items', []))
-    payload = {'items': items, 'updated_at': pd.Timestamp.now(tz='Asia/Taipei').isoformat()}
-    content = json.dumps(payload, ensure_ascii=False, indent=2)
-
-    # 1) 寫本機（即時生效）
-    local_ok = False
-    try:
-        with open(_WATCHLIST_LOCAL, 'w', encoding='utf-8') as f:
-            f.write(content)
-        local_ok = True
-    except Exception as e:
-        print(f"[watchlist] 寫入本機失敗：{e}")
-
-    # 2) 推 GitHub（持久化，重啟不遺失；無 token 時自動略過）
-    gh_ok = False
-    try:
-        from github_cache import _gh_put_file_safe
-        gh_ok = _gh_put_file_safe(_WATCHLIST_GH, content.encode('utf-8'),
-                                  '[bot] update watchlist')
-    except Exception as e:
-        print(f"[watchlist] 推送 GitHub 失敗：{e}")
-
-    return jsonify({'status': 'success', 'items': items,
-                    'updated_at': payload['updated_at'],
-                    'persisted': {'local': local_ok, 'github': gh_ok}})
-
-
-# ─────────────────────────────────────────────────────────────────
 # 強制從 yfinance 取得最新股價（熱門股票/ETF/個股共用）
 # ─────────────────────────────────────────────────────────────────
 # GET /api/health — 服務健康檢查（前端 warmup ping 用）
@@ -3270,7 +3164,7 @@ def get_stock_news(ticker):
         articles   = []
         seen_titles = set()
 
-        for idx, q in enumerate(query_terms):
+        for idx, q in enumerate(query_terms[:3]):   # 最多跑前3個查詢詞
             if len(articles) >= 20:
                 break
             ua = user_agents[idx % len(user_agents)]
@@ -3286,12 +3180,12 @@ def get_stock_news(ticker):
             )
             print(f'  [news] 查詢詞「{q}」→ {rss_url[:80]}...')
 
-            # 最多重試 2 次
-            for attempt in range(2):
+            # 最多重試 1 次（縮短整體耗時）
+            for attempt in range(1):
                 try:
                     resp = req.get(
                         rss_url, headers=headers,
-                        timeout=20,        # 延長 timeout（原 12s 太短）
+                        timeout=8,         # 單次 8s，整體才不會超過前端 30s 限制
                         verify=False,      # Render 環境 SSL 有時有問題
                         allow_redirects=True,
                     )
@@ -3329,6 +3223,37 @@ def get_stock_news(ticker):
                         time.sleep(1)  # 等 1 秒再重試
 
         print(f'  [news] {ticker} 共收集 {len(articles)} 篇新聞')
+
+        # ── 備援：若 Google News 完全無結果，改抓 Yahoo Finance 新聞 ──
+        if not articles:
+            print(f'  [news] Google News 無結果，嘗試 Yahoo Finance 備援')
+            try:
+                import yfinance as yf
+                yf_ticker_str = f'{ticker}.TW' if not ticker.startswith('^') else ticker
+                yt = yf.Ticker(yf_ticker_str)
+                yf_news = yt.news or []
+                for item in yf_news[:20]:
+                    title = (item.get('title') or '').strip()
+                    link  = (item.get('link') or item.get('url') or '#').strip()
+                    pub   = ''
+                    try:
+                        import datetime
+                        ts = item.get('providerPublishTime') or item.get('publishedAt') or 0
+                        if ts:
+                            pub = datetime.datetime.fromtimestamp(int(ts)).strftime('%a, %d %b %Y %H:%M:%S +0800')
+                    except Exception:
+                        pass
+                    source = (item.get('publisher') or item.get('source') or {})
+                    if isinstance(source, dict):
+                        source = source.get('name', 'Yahoo Finance')
+                    desc = ''
+                    if title and title not in seen_titles:
+                        seen_titles.add(title)
+                        articles.append({'title': title, 'link': link,
+                                         'pubDate': pub, 'source': source, 'desc': desc})
+                print(f'  [news] Yahoo Finance 備援取得 {len(articles)} 篇')
+            except Exception as ye:
+                print(f'  [news] Yahoo Finance 備援失敗: {ye}')
 
         # 依時間排序（最新在前）
         def parse_dt(s):
