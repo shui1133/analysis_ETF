@@ -1,3 +1,10 @@
 {
-  "name": "2303"
+  "name": "2303",
+  "pe_ratio": 16.8,
+  "pb_ratio": 2.1,
+  "eps": 4.2,
+  "roe": 0.12,
+  "profit_margin": 0.18,
+  "description": "聯電為台灣第二大晶圓代工廠，專注於成熟製程，提供多元化的晶圓代工服務。",
+  "_twse_div_yield_pct": 5.2
 }
