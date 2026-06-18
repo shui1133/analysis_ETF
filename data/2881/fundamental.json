@@ -1,3 +1,10 @@
 {
-  "name": "2881"
+  "name": "2881",
+  "pe_ratio": 13.2,
+  "pb_ratio": 1.5,
+  "eps": 5.8,
+  "roe": 0.115,
+  "profit_margin": 0.22,
+  "description": "富邦金控旗下包含台北富邦銀行、富邦人壽、富邦產險等子公司，為台灣規模最大的金融控股公司之一。",
+  "_twse_div_yield_pct": 5.5
 }
