@@ -1,3 +1,10 @@
 {
-  "name": "2603"
+  "name": "2603",
+  "pe_ratio": 8.5,
+  "pb_ratio": 1.2,
+  "eps": 12.5,
+  "roe": 0.14,
+  "profit_margin": 0.165,
+  "description": "長榮海運為台灣最大貨櫃航運公司，航線遍及全球，是全球前五大貨櫃航運集團。",
+  "_twse_div_yield_pct": 8.5
 }
