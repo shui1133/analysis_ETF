@@ -1,3 +1,10 @@
 {
-  "name": "2882"
+  "name": "2882",
+  "pe_ratio": 14.0,
+  "pb_ratio": 1.6,
+  "eps": 5.2,
+  "roe": 0.11,
+  "profit_margin": 0.2,
+  "description": "國泰金控旗下包含國泰世華銀行、國泰人壽等子公司，提供完整的金融服務。",
+  "_twse_div_yield_pct": 5.2
 }
