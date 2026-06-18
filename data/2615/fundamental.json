@@ -1,3 +1,10 @@
 {
-  "name": "2615"
+  "name": "2615",
+  "pe_ratio": 7.8,
+  "pb_ratio": 1.0,
+  "eps": 8.2,
+  "roe": 0.125,
+  "profit_margin": 0.12,
+  "description": "萬海航運專注於亞洲區域內的貨櫃航運服務，提供快速、密集的亞洲航線運輸。",
+  "_twse_div_yield_pct": 6.8
 }
