@@ -1,3 +1,10 @@
 {
-  "name": "2357"
+  "name": "2357",
+  "pe_ratio": 14.8,
+  "pb_ratio": 2.8,
+  "eps": 65.0,
+  "roe": 0.19,
+  "profit_margin": 0.065,
+  "description": "華碩為台灣主要電腦品牌廠商，產品涵蓋筆電、主機板、顯示卡及手機等消費性電子產品。",
+  "_twse_div_yield_pct": 3.5
 }
