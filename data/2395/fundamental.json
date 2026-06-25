@@ -1,3 +1,10 @@
 {
-  "name": "2395"
+  "name": "2395",
+  "pe_ratio": 20.5,
+  "pb_ratio": 3.1,
+  "eps": 20.5,
+  "roe": 0.15,
+  "profit_margin": 0.12,
+  "description": "研華科技為工業電腦全球領導品牌，專注於工業 IoT、嵌入式運算及智能系統整合解決方案。",
+  "_twse_div_yield_pct": 3.8
 }
