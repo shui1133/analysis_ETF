@@ -1,10 +1,18 @@
 {
-  "name": "2603",
-  "pe_ratio": 8.5,
-  "pb_ratio": 1.2,
-  "eps": 12.5,
-  "roe": 0.14,
-  "profit_margin": 0.165,
-  "description": "長榮海運為台灣最大貨櫃航運公司，航線遍及全球，是全球前五大貨櫃航運集團。",
-  "_twse_div_yield_pct": 8.5
+  "name": "Evergreen Marine Corporation (Taiwan) Ltd.",
+  "sector": "Industrials",
+  "industry": "Marine Shipping",
+  "market_cap": 400532930560,
+  "pe_ratio": 5.845182,
+  "pb_ratio": 0.68848485,
+  "dividend_yield": 8.58,
+  "eps": 31.65,
+  "revenue": 355609542656,
+  "profit_margin": 0.13927001,
+  "roe": 0.082229994,
+  "debt_ratio": 30.996,
+  "52w_high": 242.5,
+  "52w_low": 175.0,
+  "avg_volume": 17585790,
+  "description": "Evergreen Marine Corporation (Taiwan) Ltd., together with its subsidiaries, engages in the shipping carrier and agency, container terminal operations, and commercial port area ship repair businesses in Taiwan, North America, Europe, Asia, and internationally. The company provides cargo loading and discharging, terminal, inland transportation, real estate leasing, security, computer system, terminal logistics, leasing storehouse, management consultancy and self-owned property leasing, and container shipping services; inspections of containers at the custom house; storage, repair, and cleaning for containers; agency services dealing with port formalities; and data processing and information technology consulting services. In addition, it manufactures dry steel containers and parts; distributes containers; invests in transportation-related business, and counter yards and port terminals; and invests in and leases operating machinery and equipment of port terminals. Evergreen Marine Corporation (Taiwan) Ltd. was founded in 1968 and is based in Taipei, Taiwan."
 }
