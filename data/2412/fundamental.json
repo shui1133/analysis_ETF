@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 23.5,
-  "pb_ratio": 2.5,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 5.2,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.115,
-  "roe": 0.105,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "中華電信為台灣最大電信業者，提供固網、行動、寬頻及雲端等全方位電信服務。",
-  "_twse_div_yield_pct": 4.2
+  "description": ""
 }
