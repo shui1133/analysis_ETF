@@ -3,16 +3,17 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
-  "pb_ratio": null,
+  "pe_ratio": 11.5,
+  "pb_ratio": 1.8,
   "dividend_yield": null,
-  "eps": null,
+  "eps": 10.8,
   "revenue": null,
-  "profit_margin": null,
-  "roe": null,
+  "profit_margin": 0.04,
+  "roe": 0.16,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": ""
+  "description": "鴻海精密（富士康）為全球最大電子製造服務廠商，主要從事電子產品組裝代工，客戶包括蘋果等國際大廠。",
+  "_twse_div_yield_pct": 2.96
 }
