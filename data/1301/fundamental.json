@@ -3,16 +3,17 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
-  "pb_ratio": null,
+  "pe_ratio": 18.5,
+  "pb_ratio": 1.3,
   "dividend_yield": null,
-  "eps": null,
+  "eps": 4.8,
   "revenue": null,
-  "profit_margin": null,
-  "roe": null,
+  "profit_margin": 0.06,
+  "roe": 0.07,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": ""
+  "description": "台塑為台灣最大的塑膠原料製造商，生產 PVC、石化原料及塑膠加工品。",
+  "_twse_div_yield_pct": 4.8
 }
