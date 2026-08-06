@@ -1,18 +1,18 @@
 {
-  "name": "Fubon FTSE TWSE Taiwan 50 ETF",
+  "name": "006208",
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 30.87575,
+  "pe_ratio": null,
   "pb_ratio": null,
-  "dividend_yield": 1.79,
+  "dividend_yield": null,
   "eps": null,
   "revenue": null,
   "profit_margin": null,
   "roe": null,
   "debt_ratio": null,
-  "52w_high": 260.1,
-  "52w_low": 119.0,
-  "avg_volume": 4267451,
-  "description": "富邦台50 ETF 追蹤台灣50指數，持有台灣市值前50大企業，費用率低廉，適合長期指數化投資。"
+  "52w_high": null,
+  "52w_low": null,
+  "avg_volume": null,
+  "description": ""
 }
