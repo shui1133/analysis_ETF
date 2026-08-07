@@ -1,9 +1,9 @@
 {
-  "name": "00403A",
+  "name": "UPAMC Taiwan Stock Upgrade 50 Active ETF",
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
+  "pe_ratio": 40.931908,
   "pb_ratio": null,
   "dividend_yield": null,
   "eps": null,
@@ -11,8 +11,8 @@
   "profit_margin": null,
   "roe": null,
   "debt_ratio": null,
-  "52w_high": null,
-  "52w_low": null,
-  "avg_volume": null,
+  "52w_high": 11.45,
+  "52w_low": 8.31,
+  "avg_volume": 500860337,
   "description": ""
 }
