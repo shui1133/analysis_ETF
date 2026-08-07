@@ -1,18 +1,18 @@
 {
-  "name": "Yuanta/P-shares Taiwan Dividend Plus ETF",
+  "name": "0056",
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 20.065218,
+  "pe_ratio": null,
   "pb_ratio": null,
-  "dividend_yield": 6.82,
+  "dividend_yield": null,
   "eps": null,
   "revenue": null,
   "profit_margin": null,
   "roe": null,
   "debt_ratio": null,
-  "52w_high": 54.9,
-  "52w_low": 34.47,
-  "avg_volume": 60890628,
-  "description": "元大高股息 ETF 追蹤台灣高股息指數，精選預測殖利率最高的30檔股票，以高配息為訴求。"
+  "52w_high": null,
+  "52w_low": null,
+  "avg_volume": null,
+  "description": ""
 }
