@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 35.2,
-  "pb_ratio": 9.8,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 168.0,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.55,
-  "roe": 0.27,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "大立光為全球手機鏡頭模組主要供應商，技術實力居業界領先地位，是蘋果等品牌的核心供應商。",
-  "_twse_div_yield_pct": 1.2
+  "description": ""
 }
