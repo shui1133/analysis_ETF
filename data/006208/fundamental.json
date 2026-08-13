@@ -3,9 +3,9 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 30.71912,
+  "pe_ratio": 31.900372,
   "pb_ratio": null,
-  "dividend_yield": 1.79,
+  "dividend_yield": 3.52,
   "eps": null,
   "revenue": null,
   "profit_margin": null,
@@ -13,6 +13,6 @@
   "debt_ratio": null,
   "52w_high": 260.1,
   "52w_low": 120.5,
-  "avg_volume": 4150568,
-  "description": "富邦台50 ETF 追蹤台灣50指數，持有台灣市值前50大企業，費用率低廉，適合長期指數化投資。"
+  "avg_volume": 3931620,
+  "description": ""
 }
