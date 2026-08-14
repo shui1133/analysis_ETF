@@ -1,18 +1,18 @@
 {
-  "name": "Yuanta Taiwan High Dividend Low Volatility ETF",
+  "name": "00713",
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 18.288355,
+  "pe_ratio": null,
   "pb_ratio": null,
-  "dividend_yield": 5.44,
+  "dividend_yield": null,
   "eps": null,
   "revenue": null,
   "profit_margin": null,
   "roe": null,
   "debt_ratio": null,
-  "52w_high": 61.75,
-  "52w_low": 49.56,
-  "avg_volume": 8094913,
-  "description": "元大台灣高息低波 ETF 篩選高股息且低波動的台股，降低投資組合波動風險同時獲取穩定配息。"
+  "52w_high": null,
+  "52w_low": null,
+  "avg_volume": null,
+  "description": ""
 }
