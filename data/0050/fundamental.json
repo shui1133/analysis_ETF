@@ -3,7 +3,7 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 35.185158,
+  "pe_ratio": 34.851646,
   "pb_ratio": null,
   "dividend_yield": 1.5,
   "eps": null,
@@ -11,8 +11,8 @@
   "profit_margin": null,
   "roe": null,
   "debt_ratio": null,
-  "52w_high": 116.55,
+  "52w_high": 116.6,
   "52w_low": 59.45,
-  "avg_volume": 105791495,
-  "description": "元大台灣50 ETF 追蹤台灣50指數，持有台灣市值前50大企業，是最具代表性的台股指數型基金。"
+  "avg_volume": 105458902,
+  "description": ""
 }
