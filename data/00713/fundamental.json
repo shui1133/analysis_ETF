@@ -3,9 +3,9 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 19.00967,
+  "pe_ratio": 19.114862,
   "pb_ratio": null,
-  "dividend_yield": 5.37,
+  "dividend_yield": 6.07,
   "eps": null,
   "revenue": null,
   "profit_margin": null,
@@ -13,6 +13,6 @@
   "debt_ratio": null,
   "52w_high": 65.2,
   "52w_low": 49.56,
-  "avg_volume": 5095920,
+  "avg_volume": 5099891,
   "description": "元大台灣高息低波 ETF 篩選高股息且低波動的台股，降低投資組合波動風險同時獲取穩定配息。"
 }
