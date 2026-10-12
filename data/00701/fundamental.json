@@ -3,9 +3,9 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 20.088606,
+  "pe_ratio": 20.361721,
   "pb_ratio": null,
-  "dividend_yield": 5.92,
+  "dividend_yield": 5.55,
   "eps": null,
   "revenue": null,
   "profit_margin": null,
@@ -13,6 +13,6 @@
   "debt_ratio": null,
   "52w_high": 42.74,
   "52w_low": 27.08,
-  "avg_volume": 645769,
+  "avg_volume": 646280,
   "description": ""
 }
