@@ -3,16 +3,17 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
-  "pb_ratio": null,
+  "pe_ratio": 14.5,
+  "pb_ratio": 0.85,
   "dividend_yield": null,
-  "eps": null,
+  "eps": 1.8,
   "revenue": null,
-  "profit_margin": null,
-  "roe": null,
+  "profit_margin": 0.04,
+  "roe": 0.058,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": ""
+  "description": "中鋼為台灣最大的鋼鐵製造商，產品涵蓋熱軋、冷軋鋼捲及各式鋼材。",
+  "_twse_div_yield_pct": 5.0
 }
