@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 16.8,
-  "pb_ratio": 2.1,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 4.2,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.18,
-  "roe": 0.12,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "聯電為台灣第二大晶圓代工廠，專注於成熟製程，提供多元化的晶圓代工服務。",
-  "_twse_div_yield_pct": 5.2
+  "description": ""
 }
