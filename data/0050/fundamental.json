@@ -1,18 +1,3 @@
 {
-  "name": "Yuanta/P-shares Taiwan Top 50 ETF",
-  "sector": "",
-  "industry": "",
-  "market_cap": 0,
-  "pe_ratio": 27.953074,
-  "pb_ratio": null,
-  "dividend_yield": 1.43,
-  "eps": null,
-  "revenue": null,
-  "profit_margin": null,
-  "roe": null,
-  "debt_ratio": null,
-  "52w_high": 116.6,
-  "52w_low": 59.45,
-  "avg_volume": 103001741,
-  "description": "元大台灣50 ETF 追蹤台灣50指數，持有台灣市值前50大企業，是最具代表性的台股指數型基金。"
+  "name": "0050"
 }
