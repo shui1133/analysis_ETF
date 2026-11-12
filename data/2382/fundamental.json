@@ -3,16 +3,17 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
-  "pb_ratio": null,
+  "pe_ratio": 15.3,
+  "pb_ratio": 4.2,
   "dividend_yield": null,
-  "eps": null,
+  "eps": 32.5,
   "revenue": null,
-  "profit_margin": null,
-  "roe": null,
+  "profit_margin": 0.065,
+  "roe": 0.27,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": ""
+  "description": "廣達電腦為全球最大筆記型電腦代工廠之一，近年積極布局 AI 伺服器業務。",
+  "_twse_div_yield_pct": 4.64
 }
