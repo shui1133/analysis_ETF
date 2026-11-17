@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 11.5,
-  "pb_ratio": 1.3,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 3.2,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.25,
-  "roe": 0.112,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "中信金控旗下含中國信託商業銀行，為台灣最大民營銀行，業務涵蓋銀行、保險及證券。",
-  "_twse_div_yield_pct": 5.8
+  "description": ""
 }
