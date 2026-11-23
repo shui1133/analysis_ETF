@@ -1,3 +1,10 @@
 {
-  "name": "2454"
+  "name": "2454",
+  "pe_ratio": 18.2,
+  "pb_ratio": 5.1,
+  "eps": 98.5,
+  "roe": 0.28,
+  "profit_margin": 0.32,
+  "description": "聯發科為全球前三大無晶圓廠半導體設計公司，專注於手機、智慧家電、Wi-Fi等晶片設計。",
+  "_twse_div_yield_pct": 3.32
 }
