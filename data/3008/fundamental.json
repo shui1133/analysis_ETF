@@ -1,3 +1,10 @@
 {
-  "name": "3008"
+  "name": "3008",
+  "pe_ratio": 35.2,
+  "pb_ratio": 9.8,
+  "eps": 168.0,
+  "roe": 0.27,
+  "profit_margin": 0.55,
+  "description": "大立光為全球手機鏡頭模組主要供應商，技術實力居業界領先地位，是蘋果等品牌的核心供應商。",
+  "_twse_div_yield_pct": 1.2
 }
