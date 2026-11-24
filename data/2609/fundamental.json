@@ -3,16 +3,17 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
-  "pb_ratio": null,
+  "pe_ratio": 7.2,
+  "pb_ratio": 0.9,
   "dividend_yield": null,
-  "eps": null,
+  "eps": 9.5,
   "revenue": null,
-  "profit_margin": null,
-  "roe": null,
+  "profit_margin": 0.14,
+  "roe": 0.13,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": ""
+  "description": "陽明海運為台灣第二大貨櫃航運公司，提供全球貨櫃航運服務，近年財務大幅改善。",
+  "_twse_div_yield_pct": 7.2
 }
