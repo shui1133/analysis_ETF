@@ -3,16 +3,17 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
-  "pb_ratio": null,
+  "pe_ratio": 9.8,
+  "pb_ratio": 1.5,
   "dividend_yield": null,
-  "eps": null,
+  "eps": 5.8,
   "revenue": null,
-  "profit_margin": null,
-  "roe": null,
+  "profit_margin": 0.03,
+  "roe": 0.15,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": ""
+  "description": "和碩聯合科技為全球主要電子製造服務廠商，主要承接手機、平板及電腦等組裝代工業務。",
+  "_twse_div_yield_pct": 7.5
 }
