@@ -1,3 +1,10 @@
 {
-  "name": "2002"
+  "name": "2002",
+  "pe_ratio": 14.5,
+  "pb_ratio": 0.85,
+  "eps": 1.8,
+  "roe": 0.058,
+  "profit_margin": 0.04,
+  "description": "中鋼為台灣最大的鋼鐵製造商，產品涵蓋熱軋、冷軋鋼捲及各式鋼材。",
+  "_twse_div_yield_pct": 5.0
 }
