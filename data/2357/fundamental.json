@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 14.8,
-  "pb_ratio": 2.8,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 65.0,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.065,
-  "roe": 0.19,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "華碩為台灣主要電腦品牌廠商，產品涵蓋筆電、主機板、顯示卡及手機等消費性電子產品。",
-  "_twse_div_yield_pct": 3.5
+  "description": ""
 }
