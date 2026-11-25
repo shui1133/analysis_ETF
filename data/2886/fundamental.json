@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 10.8,
-  "pb_ratio": 1.1,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 2.8,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.28,
-  "roe": 0.105,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "兆豐金控旗下含兆豐國際商業銀行，業務涵蓋國內外銀行、票券及證券服務。",
-  "_twse_div_yield_pct": 6.2
+  "description": ""
 }
