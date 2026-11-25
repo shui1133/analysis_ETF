@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 18.2,
-  "pb_ratio": 5.1,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 98.5,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.32,
-  "roe": 0.28,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "聯發科為全球前三大無晶圓廠半導體設計公司，專注於手機、智慧家電、Wi-Fi等晶片設計。",
-  "_twse_div_yield_pct": 3.32
+  "description": ""
 }
