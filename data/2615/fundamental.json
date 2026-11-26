@@ -3,17 +3,16 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": 7.8,
-  "pb_ratio": 1.0,
+  "pe_ratio": null,
+  "pb_ratio": null,
   "dividend_yield": null,
-  "eps": 8.2,
+  "eps": null,
   "revenue": null,
-  "profit_margin": 0.12,
-  "roe": 0.125,
+  "profit_margin": null,
+  "roe": null,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": "萬海航運專注於亞洲區域內的貨櫃航運服務，提供快速、密集的亞洲航線運輸。",
-  "_twse_div_yield_pct": 6.8
+  "description": ""
 }
