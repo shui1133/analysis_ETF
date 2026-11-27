@@ -3,16 +3,17 @@
   "sector": "",
   "industry": "",
   "market_cap": 0,
-  "pe_ratio": null,
-  "pb_ratio": null,
+  "pe_ratio": 21.0,
+  "pb_ratio": 5.5,
   "dividend_yield": null,
-  "eps": null,
+  "eps": 20.1,
   "revenue": null,
-  "profit_margin": null,
-  "roe": null,
+  "profit_margin": 0.08,
+  "roe": 0.26,
   "debt_ratio": null,
   "52w_high": null,
   "52w_low": null,
   "avg_volume": null,
-  "description": ""
+  "description": "台達電子為全球電源供應器龍頭，並深耕工業自動化、網路電信及能源解決方案。",
+  "_twse_div_yield_pct": 0.5
 }
